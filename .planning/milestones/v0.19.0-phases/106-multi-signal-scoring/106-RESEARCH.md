@@ -13,7 +13,7 @@
 - 聚合结构：MaxP 主干 + pivoted-size-normalized 对数饱和 breadth，**加性**合成（research §2.3 三步：n_eff 软计数 p=2 → pivoted denom `1-b+b·N_r/N̄` b=0.6 → `log1p` 饱和 n_cap=6；`S_text=(1-λ)·S_top+λ·breadth` λ=0.25）。
 - `N̄` 用全仓能力树节点数**中位数**（抗 monorepo 倾斜）；`N_r` 离线取自 repo_index_nodes 计数（105-02 的 measure command 已有计数逻辑可复用）。
 - MaxP 主干口径（O-3）：优先用单独 dense 查询取余弦（`using="dense"`，105-MEASUREMENTS 已验证可行）+ affine clip 校准；若实现后延迟/成本不可接受，回退 RRF 分 query-local max 归一，取舍记录进 SUMMARY 与代码注释。
-- 机制级断言：golden set 用例锁机制（`breakdown["study-app"]["breadth"] <= breakdown["onion-learning"]["breadth"]`、跨组样本进 Top-5）而非偶然名次；gk-001（Top-1=onion-learning）翻转后 `GENERATE_GOLDEN=1` 重建 baseline 并核对 Recall@5 不降、误自动选中率 ≤10%。
+- 机制级断言：golden set 用例锁机制（`breakdown["sample_web"]["breadth"] <= breakdown["sample_service_service"]["breadth"]`、跨组样本进 Top-5）而非偶然名次；gk-001（Top-1=sample_service_service）翻转后 `GENERATE_GOLDEN=1` 重建 baseline 并核对 Recall@5 不降、误自动选中率 ≤10%。
 - 所有常数（p/b/n_cap/λ/N̄ 快照值）外置，见权重外置节。
 
 **元数据入分（ROUTE-04）**
@@ -115,7 +115,7 @@
 2. `now` 必须参数注入（活跃度衰减用），禁止函数内 `datetime.now()`——否则回放/golden 不确定。快照/fixture 记录 `scored_at`。
 3. 四个调用方同步：`repo_router_v2._stage0_candidates`（传入真实 repo_meta + settings 权重）、`repo_router_replay.replay_route_from_snapshot`（从快照读 repo_meta + 权重）、`repo_router_eval.evaluate_cases`（从 fixture case 读）、`test_repo_router_scoring.py`（30 条性质测试扩展）。
 
-**breadth 在 breakdown 的表示**：CONTEXT 机制断言引用 `breakdown[repo]["breadth"]`，且 λ 合成 `S_text=(1-λ)S_top+λ·breadth` 是加性的——推荐 breakdown 保持扁平并拆成两个 key：`text` 贡献 = `w_text·(1-λ)·S_top/denom`、`breadth` 贡献 = `w_text·λ·breadth/denom`。这样 INV-R3（Σ==score）与机制断言同时成立，前端零结构改动。（机制断言里的 `breakdown["study-app"]` 是 harness 侧「repo_id → breakdown dict」的索引写法，非嵌套 breakdown。）
+**breadth 在 breakdown 的表示**：CONTEXT 机制断言引用 `breakdown[repo]["breadth"]`，且 λ 合成 `S_text=(1-λ)S_top+λ·breadth` 是加性的——推荐 breakdown 保持扁平并拆成两个 key：`text` 贡献 = `w_text·(1-λ)·S_top/denom`、`breadth` 贡献 = `w_text·λ·breadth/denom`。这样 INV-R3（Σ==score）与机制断言同时成立，前端零结构改动。（机制断言里的 `breakdown["sample_web"]` 是 harness 侧「repo_id → breakdown dict」的索引写法，非嵌套 breakdown。）
 
 ### §2 facets 数据实况 [VERIFIED: 代码实读 `facet_service.py` / `summary_service.py` / `repo_index_tree.py` / `models.py`]
 
@@ -205,12 +205,12 @@ results = client.query_points(
 - fixture 现状：`golden_main.json` 14 条（+`golden_holdout.json` 封存 6 条，门禁绝不加载），case 形状 `{id, _notice, query, label_source, cross_group, expected_repos, node_hits}`；hit payload 只有 `node_id/repository_id/repo_name/node_path/facets`，且 facets 大多只有 `活跃度`。baseline：Recall@5=0.9643、Top-1=13/14、误自动选中率=0.0、`weight_set_version="phase105-v1"`。
 - **主 fixture 是手工维护的合成数据**（gk-001 `_notice` 注明「场景合成重写」「预期由 Phase 106 pivoted normalization 翻转」）；`GENERATE_GOLDEN=1` 只重建 **baseline**（指标 JSON），不生成 node_hits。`tests/codegraph/_generate_golden_fixtures.py` 是 layered_search 的生成器，与 repo_router golden 无关。
 - **fixture 必须扩展的字段（离线评估新公式的关键）**：
-  1. hit 级：`payload.facets` 补全五维（业务线/产品线、技术栈、团队归属、关键程度、活跃度）——gk-001 的 study-app/onion-learning 需按 `_notice` 设定合理值；
-  2. case 级：新增 `repo_meta`（或同名结构）：`{repo_id: {n_r, last_commit_at, dense_cos_max?}}`——gk-001 按示意值 N_r(study-app)≈620、N_r(onion-learning)≈30、N̄≈60（research §2.4）；
+  1. hit 级：`payload.facets` 补全五维（业务线/产品线、技术栈、团队归属、关键程度、活跃度）——gk-001 的 sample_web/sample_service_service 需按 `_notice` 设定合理值；
+  2. case 级：新增 `repo_meta`（或同名结构）：`{repo_id: {n_r, last_commit_at, dense_cos_max?}}`——gk-001 按示意值 N_r(sample_web)≈620、N_r(sample_service_service)≈30、N̄≈60（research §2.4）；
   3. case 级：`scored_at`（固定时间戳，活跃度衰减确定性）与（若权重非默认）`weight_overrides`。
   4. T2 匹配分：harness 离线走 **T1-only**（别名词典本身随 fixture/常量可 import，确定性）；或 fixture 直接内联 per-facet 匹配分。推荐 T1-only + 可选内联 override——机制断言不依赖 T2。
 - **门禁翻转流程**：`WEIGHT_SET_VERSION` 升为 `"phase106-v1"` → 版本守护断言强制 `GENERATE_GOLDEN=1 uv run pytest tests/codegraph/test_repo_router_golden.py -q` 重建 baseline → `git diff` 人工 review 逐例 diff → 核对 Recall@5 ≥ 0.9643、Top-1 ≥ 13（gk-001 翻转应使 Top-1=14/14）、误自动选中率 ≤10%。
-- **机制级断言写在** `test_repo_router_golden.py`（现有 `test_gk001_expected_repos_recalled_into_candidates` 处扩展/新增）：`breakdown` 断言 `breadth(study-app) <= breadth(onion-learning)`、`rank(onion-learning) < rank(study-app)`、跨组样本进 Top-5。`evaluate_cases` 签名需接受 weights/constants/repo_meta 透传。
+- **机制级断言写在** `test_repo_router_golden.py`（现有 `test_gk001_expected_repos_recalled_into_candidates` 处扩展/新增）：`breakdown` 断言 `breadth(sample_web) <= breadth(sample_service_service)`、`rank(sample_service_service) < rank(sample_web)`、跨组样本进 Top-5。`evaluate_cases` 签名需接受 weights/constants/repo_meta 透传。
 - 时间预算：全量评估硬断言 <10s（`--disable-socket` 下零网络）——新信号是纯算术，无风险。
 
 ### §9 别名词典：无既有基建，从零最小形态 [VERIFIED: 全库 rg "别名|同义词|synonym|alias" 无相关命中]

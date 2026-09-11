@@ -156,7 +156,7 @@ GSD 能长程、低幻觉、干净上下文的根因不是更大的 prompt，而
 
 ```jsonc
 {
-  "repository_id": "…", "repository_name": "onion-practice",
+  "repository_id": "…", "repository_name": "sample_practice_service",
   "role": "direct",                          // direct | indirect
   "rationale": {
     "text": Block[],                         // 为什么选它：参考了什么、符合哪些原则
@@ -247,7 +247,7 @@ GSD 能长程、低幻觉、干净上下文的根因不是更大的 prompt，而
   "request_example": { … }, "response_example": { … },
   "request_schema": { … }, "response_schema": { … },   // 可选 jsonschema
   "data_source": {                           // consumed 专属：数据来源说明
-    "from_service": "study-course",
+    "from_service": "sample_course_service",
     "from_api": "GET /api/course/chapters",
     "fields_needed": ["chapter_id", "knowledge_points"],
     "availability": "existing | needs_support",         // 已有 or 需对方支持产出
@@ -289,7 +289,7 @@ GSD 能长程、低幻觉、干净上下文的根因不是更大的 prompt，而
   "id": "flow_01", "name": "用户生成习题主路径",
   "trigger": "用户在 xxx 页面点击「开始生成」",
   "steps": [{
-    "seq": 1, "actor": "frontend | backend | service:study-course | user",
+    "seq": 1, "actor": "frontend | backend | service:sample_course_service | user",
     "action": "调用生成接口", "component": "PracticePage.vue",
     "api_ref": "api_01",                     // 引用 api_contracts
     "data_in": "chapter_id, difficulty", "data_out": "practice_id",
@@ -308,7 +308,7 @@ GSD 能长程、低幻觉、干净上下文的根因不是更大的 prompt，而
 ```jsonc
 {
   "truths": ["用户在 xxx 页面点击生成后 3s 内看到首批习题"],   // 可观察行为
-  "artifacts": [{ "path": "onion-practice/src/generate/…", "provides": "生成入口" }],
+  "artifacts": [{ "path": "sample_practice_service/src/generate/…", "provides": "生成入口" }],
   "key_links": [{ "from": "PracticePage.vue", "to": "POST /api/practice/generate", "via": "api_01" }]
 }
 ```
@@ -555,9 +555,9 @@ flowchart TB
 
 | 案例 | 根因 | 揭示的知识缺口 |
 |------|------|----------------|
-| `study-course` 十轮全漏 | 能力树有「专项课与总复习 > 重难点进阶」强相关节点，但被长 query 稀释 + 全空间 top-50 节点名额竞争出局；换一句话摘要 query 立刻升至第 1 | 查询侧问题（spec 摘要化可解），非知识缺口 |
-| `onion-learning` 被 LLM 阶段淘汰 | 代码里有「进阶课（即将上线）」占位入口（`learn-textbook-sync`），但能力树把该 app 抽象为「教材同步课程/章节导航」，无进阶/功能页节点 | **净新增需求在目标仓没有代码痕迹，事实面永远推不出落点** |
-| `study-plan`/`study-practice` 顽固误报（medium 置信 + 理由通顺） | LLM 按能力树推理「权益鉴权→study-plan」逻辑自洽，但团队已决定该职责归属 study-course | **服务边界归属是团队决策，代码/能力树推不出来** |
+| `sample_course_service` 十轮全漏 | 能力树有「专项课与总复习 > 重难点进阶」强相关节点，但被长 query 稀释 + 全空间 top-50 节点名额竞争出局；换一句话摘要 query 立刻升至第 1 | 查询侧问题（spec 摘要化可解），非知识缺口 |
+| `sample_service_service` 被 LLM 阶段淘汰 | 代码里有「进阶课（即将上线）」占位入口（`learn-textbook-sync`），但能力树把该 app 抽象为「教材同步课程/章节导航」，无进阶/功能页节点 | **净新增需求在目标仓没有代码痕迹，事实面永远推不出落点** |
+| `study-plan`/`study-practice` 顽固误报（medium 置信 + 理由通顺） | LLM 按能力树推理「权益鉴权→study-plan」逻辑自洽，但团队已决定该职责归属 sample_course_service | **服务边界归属是团队决策，代码/能力树推不出来** |
 
 结论：能力树是**事实面**（这个仓现在有什么，随索引自动刷新），回答不了净新增需求的「应该落哪」。需要补一个**意图面**知识资产——仓库章程：职责、侧重、落点偏好、边界禁区。其核心内容是决策知识，必须人工确认或从历史行为学习，不可全自动推导。
 
@@ -573,11 +573,11 @@ flowchart TB
     "note": "…", "citations": ["cit_…"]
   }],
   "boundaries": [{                             // 负向禁区（最高价值：LLM 推不出来的边界决策）
-    "rule": "不承接新需求的课程权益鉴权（归 study-course 场景鉴权模块）",
+    "rule": "不承接新需求的课程权益鉴权（归 sample_course_service 场景鉴权模块）",
     "decided_by": "human:…", "citations": ["cit_…"]
   }],
   "placement_preferences": [{                  // 新功能落点偏好（可到子应用/模块粒度，monorepo 友好）
-    "kind": "学生端练习交互页", "target": "apps/*（onion-practice）", "note": "…"
+    "kind": "学生端练习交互页", "target": "apps/*（sample_practice_service）", "note": "…"
   }],
   "audience": "C端学生", "form": "移动端H5",    // 与既有 ai_summary.facets 对齐（服务对象/技术形态）
   "evolution": "active | maintenance_only | deprecated",   // 演进态：maintenance_only = 只修不加新功能
@@ -588,7 +588,7 @@ flowchart TB
 
 **双面路由（意图分流 = 权重融合，不是硬开关）**：
 
-1. **意图分类**：spec_gate 通过后，对每个 `feature_point` 轻量分类 `intent: greenfield（净新增）| brownfield（改造存量）| fix`。一个需求通常是混合体（本次高阶提效营：入口=改造 onion-learning 存量功能页，学习页=净新增），所以按功能点分类，不做整单二选一。
+1. **意图分类**：spec_gate 通过后，对每个 `feature_point` 轻量分类 `intent: greenfield（净新增）| brownfield（改造存量）| fix`。一个需求通常是混合体（本次示例功能营：入口=改造 sample_service_service 存量功能页，学习页=净新增），所以按功能点分类，不做整单二选一。
 2. **两路证据、按意图加权**：route 阶段把两面证据同框给 Stage1 LLM 裁决——
    - `greenfield` 权重：章程（`owned_domains`（含 planned）+ `placement_preferences`）+ **历史同类落点**（delivery knowledge 召回近期 code_change/tech_plan「这类需求实际合进了哪个仓」）为主，能力树只作业务邻近性佐证；
    - `brownfield / fix` 权重：能力树 + 代码检索为主，章程作 sanity check——候选命中 `boundaries` 或 `evolution=maintenance_only` 时降权，LLM 保留它必须给显式理由（防"理由通顺的误报"）。
@@ -748,7 +748,7 @@ BlueprintThreadMessage（多轮消息）
 5. **AI 审查模型档位 — 已定**：默认与起草代理**同一档位**（不强制换模型）；档位可配留作后续实验。
 6. **质量评估基线 — 已定**：**起步即建**蓝图 golden set（对齐 Phase 105 golden set 方法论），回归指标：引用覆盖率 / AI 审查打回率 / 人审修改量 / 澄清轮次；纳入 v0.20.0 第一个 phase 的交付物。
 7. **多容器共享上下文 — 已定**：建会话级 Blueprint Context Bus（§5.6）——作用域绑定从「分支 + 项目」改为「任务 token → 会话 → 项目」（方案期无分支不再阻塞）；容器经扩展的知识 MCP 实时读写；等待恢复走两档原语（保活轮询 / `waiting_context` 退出重派）+ 等待环检测。
-8. **净新增需求的落点知识 — 已定（2026-07-29）**：建 `RepoCharter` 仓库章程（§5.7）补齐路由的**意图面**——能力树只反映既有实现（事实面），回答不了「净新增功能应该落哪」与「服务边界归属」这类团队决策（实证：示例功能专项 5 轮路由试验，onion-learning 因树无进阶/功能页节点被淘汰、study-plan/study-practice 因 LLM 不知边界决策而顽固误报）。路由按 feature_point 意图分流加权（greenfield 重章程/历史落点，brownfield 重能力树），章程经确认门动作回灌（AI 草案 + 人工 confirm），实现收敛在 `blueprint_route` adapter 不改 `repo_router_v2.py`。
+8. **净新增需求的落点知识 — 已定（2026-07-29）**：建 `RepoCharter` 仓库章程（§5.7）补齐路由的**意图面**——能力树只反映既有实现（事实面），回答不了「净新增功能应该落哪」与「服务边界归属」这类团队决策（实证：示例功能专项 5 轮路由试验，sample_service_service 因树无进阶/功能页节点被淘汰、study-plan/study-practice 因 LLM 不知边界决策而顽固误报）。路由按 feature_point 意图分流加权（greenfield 重章程/历史落点，brownfield 重能力树），章程经确认门动作回灌（AI 草案 + 人工 confirm），实现收敛在 `blueprint_route` adapter 不改 `repo_router_v2.py`。
 
 ---
 

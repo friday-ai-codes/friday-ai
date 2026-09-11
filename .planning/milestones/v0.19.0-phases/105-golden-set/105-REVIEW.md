@@ -181,7 +181,7 @@ seen.add(rid)
 - `uv run pytest`（11 个相关测试文件）：**141 passed**, 18.79s
 - `pnpm exec vitest run RoutingDecisionPanel.test.ts`：**10 passed**
 - `pnpm exec vue-tsc --noEmit`：**通过**（exit 0）
-- fixture 完整性脚本：主集 14 / hold-out 6（opened_count=0）、cross_group 2 条且与 project_scope 无交集、gk-001 命中分布 study-app 6 / onion-learning 1 / study-course 2 / study-user-status 1（事故机制编码正确）、id 无重复、baseline recall@5=0.9643 / top1=13/14 / 误自动选中率=0.0
+- fixture 完整性脚本：主集 14 / hold-out 6（opened_count=0）、cross_group 2 条且与 project_scope 无交集、gk-001 命中分布 sample_web 6 / sample_service_service 1 / sample_course_service 2 / sample_user_service 1（事故机制编码正确）、id 无重复、baseline recall@5=0.9643 / top1=13/14 / 误自动选中率=0.0
 - `rg golden_holdout tests/codegraph/test_repo_router_golden.py`：0 命中（hold-out 未被门禁加载）
 - openai SDK `Responses.create` 签名检查：`seed` 形参不存在且无 `**kwargs`（MJ-01 证据）
 

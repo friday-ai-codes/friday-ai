@@ -493,7 +493,7 @@ CR-01 / MJ-01 / MJ-02 的复现探针已**转成永久回归用例**（不是一
 **① 经核实不可行，且硬接会让情况更糟。** `ai_rejection_rate` / `human_edit_volume` /
 `clarification_rounds` 三项全部按 `artifact_id` 查 delivery models，而
 `evaluate_blueprint_golden` 的 golden case 是**静态 JSON fixture**——实测
-`tests/fixtures/blueprint_golden/assessment_boost.json` 顶层只有
+`tests/fixtures/blueprint_golden/sample_exam_boost.json` 顶层只有
 `{name, description, blueprint, expected}`，**没有 `artifact_id`**，DB 里也不存在对应
 artifact；该 command 的 docstring 还明写「全程无 LLM / 无网络 / 无 DB 写，天然过
 `--disable-socket`」。硬接的结果只会是三个**恒 `None`** 的 report 键——那比不接更糟：报表上

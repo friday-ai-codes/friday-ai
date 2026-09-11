@@ -52,7 +52,7 @@
 
 ### Area 4: 基准报告方法 + 默认翻转门禁 + IMPACT-03 回访范围
 
-- **D-15 — 基准报告方法（开启前后对比）**：在代表性仓库上（至少 **1× Vue/TS** + **1× Go**；可用既有 study-course / 集成夹具仓）产出 before/after 报告，指标至少包括：
+- **D-15 — 基准报告方法（开启前后对比）**：在代表性仓库上（至少 **1× Vue/TS** + **1× Go**；可用既有 sample_course_service / 集成夹具仓）产出 before/after 报告，指标至少包括：
   1. 抽取质量：Symbol / Endpoint / CallEdge（及与跨仓相关的 ApiWrapper/ApiCallSite/CrossRepoApiCall 若可得）计数与关键字段差分；
   2. 已知方言：记录 gopls vs tree-sitter 已知差异（如 gin 路由 endpoint 路径，`test_go_extractor` 已提示）；
   3. 耗时：索引墙钟（冷/热）、LSP 冷启动、相对 tree-sitter 增量；

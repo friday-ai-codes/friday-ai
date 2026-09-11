@@ -40,7 +40,7 @@ Coding Agent 要把需求自动跑成 PR，卡点很快就从编码移到了方�
 
 ### 3. 给选仓补上意图面知识
 
-问题：2026-07-29 我用「示例功能专项」的 4000 字符验收清单在 30 个仓的空间里跑了 5 轮完整路由，目标 4 仓稳定只命中 2 到 3 个，5 轮结果几乎一字不差。偏差是系统性的。`study-course` 十轮全漏，能力树里有强相关节点，被长 query 稀释后在全空间 top-50 名额里竞争出局，换一句话摘要当 query 立刻升到第 1；`onion-learning` 被 LLM 阶段淘汰，因为进阶课在它的代码里只有一个占位入口；`study-plan` 顽固误报，LLM 按能力树推理「权益鉴权归 study-plan」逻辑自洽，而团队早已把这个职责判给 study-course。
+问题：2026-07-29 我用「示例功能专项」的 4000 字符验收清单在 30 个仓的空间里跑了 5 轮完整路由，目标 4 仓稳定只命中 2 到 3 个，5 轮结果几乎一字不差。偏差是系统性的。`sample_course_service` 十轮全漏，能力树里有强相关节点，被长 query 稀释后在全空间 top-50 名额里竞争出局，换一句话摘要当 query 立刻升到第 1；`sample_service_service` 被 LLM 阶段淘汰，因为进阶课在它的代码里只有一个占位入口；`study-plan` 顽固误报，LLM 按能力树推理「权益鉴权归 study-plan」逻辑自洽，而团队早已把这个职责判给 sample_course_service。
 
 方案：能力树是事实面知识，随索引自动刷新，回答的是这个仓现在有什么。净新增需求在目标仓没有代码痕迹，事实面推不出落点；服务边界归属是团队决策，代码里也读不出来。因此新增 `RepoCharter` 仓库章程作为意图面知识，写职责、侧重、落点偏好、边界禁区，一仓一份、版本化、人工确认生效，AI 只能提修订草案。章程与历史落点召回在 adapter 层与路由分数融合，`charter_match` 作为一个分量进 score breakdown，不改被冻结的 `repo_router_v2.py`。确认门的删仓、加仓动作回灌为章程修订草案。
 
@@ -64,7 +64,7 @@ GSD 能长程推进且少幻觉，根因是一组工程机制。我把这些机�
 
 ### 2. 用真实需求当验收标尺
 
-路由改造的验收锚点直接取自真实用例，「示例功能专项」的路由结果必须包含前端 `onion-learning`、后端 `study-course` 与 `study-user-status`。断言落在机制级，比较广度加成本身，名次不入断言。整条蓝图流水线的验收也用同一份 1556 行 feature list 跑真实批次，跑出 8 个仓的分仓方案。
+路由改造的验收锚点直接取自真实用例，「示例功能专项」的路由结果必须包含前端 `sample_service_service`、后端 `sample_course_service` 与 `sample_user_service`。断言落在机制级，比较广度加成本身，名次不入断言。整条蓝图流水线的验收也用同一份 1556 行 feature list 跑真实批次，跑出 8 个仓的分仓方案。
 
 价值：设计阶段的每个判断都能被同一份真实语料反驳。前面那三条路由偏差，就是这样被 5 轮复跑逼出来的。
 
@@ -91,7 +91,7 @@ GSD 能长程推进且少幻觉，根因是一组工程机制。我把这些机�
 
 ### 按功能点验收「长程可恢复」，低估了它依赖多少条契约同时成立
 
-一次真实跑批里，`frontend/onion-learning` 和 `backend/study-course` 反复调研成功、在最后提交 RepoPlan 时失败，任务变脏、barrier 死锁，整个会话以 7/9 个方案失败收场。前一批修复之后 8 个方案全部拿到，紧接着出现 20 次连续的 needs_clarification 自旋，撞上 `advance_step_limit`。查完发现 8 条契约彼此耦合、同时不成立。脏 resume 跨了模式，SDK id 抓取太晚，重试回调不唤醒，barrier 接受裸 failed，结构化提交没有上界，repo_plan 的两个自环事件共用一个 `wait_status`。还有三处比较把 `support_repository_id` 只与关联 UUID 比对，已锁定的 `frontend/onion-learning` 因此被当成缺失的 `onion-learning` 报出来。
+一次真实跑批里，`frontend/sample_service_service` 和 `backend/sample_course_service` 反复调研成功、在最后提交 RepoPlan 时失败，任务变脏、barrier 死锁，整个会话以 7/9 个方案失败收场。前一批修复之后 8 个方案全部拿到，紧接着出现 20 次连续的 needs_clarification 自旋，撞上 `advance_step_limit`。查完发现 8 条契约彼此耦合、同时不成立。脏 resume 跨了模式，SDK id 抓取太晚，重试回调不唤醒，barrier 接受裸 failed，结构化提交没有上界，repo_plan 的两个自环事件共用一个 `wait_status`。还有三处比较把 `support_repository_id` 只与关联 UUID 比对，已锁定的 `frontend/sample_service_service` 因此被当成缺失的 `sample_service_service` 报出来。
 
 思考：为什么当时觉得这个比较乐观？
 

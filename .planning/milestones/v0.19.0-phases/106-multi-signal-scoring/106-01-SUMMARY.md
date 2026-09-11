@@ -93,7 +93,7 @@ status: complete
 
 ## Accomplishments
 
-- 六信号新路径落地：`repo_meta is not None` 时走 MaxP（dense 余弦 affine clip，缺失回退 RRF s_hat）+ pivoted-size-normalized 对数饱和 breadth（§2.4 数值复现：study-app breadth 0.083 < onion-learning 0.114）+ 元数据三信号 + 活跃度衰减 + 缺失重归一化。
+- 六信号新路径落地：`repo_meta is not None` 时走 MaxP（dense 余弦 affine clip，缺失回退 RRF s_hat）+ pivoted-size-normalized 对数饱和 breadth（§2.4 数值复现：sample_web breadth 0.083 < sample_service_service 0.114）+ 元数据三信号 + 活跃度衰减 + 缺失重归一化。
 - `DEFAULT_WEIGHT_CONFIG` 成为全 phase 唯一默认配置来源（phase106-v1、五信号权重、14 个常数、四档关键程度锚点、crit_weight_reserved 开关位、t2_disabled_facets/embedding_model_id/calibrated_at 校准元数据位）。
 - 关键程度不进加性和：`ScoredCandidate.criticality` 旁路字段 + 量化桶 tie-break 排序（取舍已写进代码注释）；Σbreakdown == score 恒等式无 criticality 键。
 - 62 条测试全绿（既有 30 + 新增 32），`tests/codegraph` 全量 275 passed / 20 skipped——golden 门禁与 replay 零改动通过，WEIGHT_SET_VERSION 保持 `phase105-v1`。

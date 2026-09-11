@@ -25,7 +25,7 @@
 - 聚合结构：MaxP 主干 + pivoted-size-normalized 对数饱和 breadth，**加性**合成（research §2.3 三步：n_eff 软计数 p=2 → pivoted denom `1-b+b·N_r/N̄` b=0.6 → `log1p` 饱和 n_cap=6；`S_text=(1-λ)·S_top+λ·breadth` λ=0.25）。
 - `N̄` 用全仓能力树节点数**中位数**（抗 monorepo 倾斜）；`N_r` 离线取自 repo_index_nodes 计数（105-02 的 measure command 已有计数逻辑可复用）。N_r/N̄ 快照经 measure command 新增 `--write-snapshot` 写入 SystemSetting，router 走缓存读取（裁决自 106-RESEARCH Open Question 2）。
 - MaxP 主干口径（O-3）：优先用单独 dense 查询取余弦（`using="dense"`，105-MEASUREMENTS 已验证可行）+ affine clip 校准；若实现后延迟/成本不可接受，回退 RRF 分 query-local max 归一，取舍记录进 SUMMARY 与代码注释。
-- 机制级断言：golden set 用例锁机制（`breakdown["study-app"]["breadth"] <= breakdown["onion-learning"]["breadth"]`、跨组样本进 Top-5）而非偶然名次；gk-001（Top-1=onion-learning）翻转后 `GENERATE_GOLDEN=1` 重建 baseline 并核对 Recall@5 不降、误自动选中率 ≤10%。
+- 机制级断言：golden set 用例锁机制（`breakdown["sample_web"]["breadth"] <= breakdown["sample_service_service"]["breadth"]`、跨组样本进 Top-5）而非偶然名次；gk-001（Top-1=sample_service_service）翻转后 `GENERATE_GOLDEN=1` 重建 baseline 并核对 Recall@5 不降、误自动选中率 ≤10%。
 - 所有常数（p/b/n_cap/λ/N̄ 快照值）外置，见权重外置节。
 
 ### 元数据入分（ROUTE-04）

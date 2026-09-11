@@ -402,7 +402,7 @@ query 键取 `bp_status` 而非 `status`，避免与知识库将来可能的通�
 | `pseudocode` | `code.language` + `code.source`；`<pre class="font-mono text-xs leading-6">` + 语言徽标 + 复制按钮；**不引入语法高亮引擎**（伪代码非真实语言，高亮易误导），只做等宽 + 行号 |
 | `mermaid` | `text` 作为 mermaid 源码传给 `MermaidDiagram.vue`（复用：渲染失败自动回退源码 + 放大查看）；mermaid 块**不做字符级划线**，只做整块左侧色条 |
 
-**citation chip**：块底部一行 `BlueprintCitationChip.vue`，形如 `[1] onion-practice/src/x.py:10-42`。
+**citation chip**：块底部一行 `BlueprintCitationChip.vue`，形如 `[1] sample_practice_service/src/x.py:10-42`。
 chip 视觉：`inline-flex items-center gap-1 rounded-md border border-border bg-muted/60 px-1.5 py-0.5 text-[11px] font-mono text-muted-foreground hover:border-primary/40 hover:text-primary`；前缀图标按 `source_type` 取（`knowledge_entity`→`lucide--book-open`、`repo_file`/`rag_chunk`→`lucide--file-code`、`repo_charter`→`lucide--scroll-text`、`blueprint`/`artifact_version`→`lucide--file-text`、`work_item`→`lucide--list-checks`、`feishu_doc`/`url`→`lucide--external-link`）。
 chip 是 `<button>`（外链类型除外，那是 `<a target="_blank" rel="noopener noreferrer">`），`aria-label` = `t('knowledge.blueprints.citation.open', { title })`。
 
@@ -410,7 +410,7 @@ chip 是 `<button>`（外链类型除外，那是 `<a target="_blank" rel="noope
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│ [direct] onion-practice          fitness: suitable   →跳转 │  ← role 徽标 + 仓名 + fitness 徽标 + RouterLink
+│ [direct] sample_practice_service          fitness: suitable   →跳转 │  ← role 徽标 + 仓名 + fitness 徽标 + RouterLink
 │ 职责：<Block[]>                                            │
 │ ▸ 选仓理由（可展开）                                        │  ← Collapsible，展开后 Block[] + citation chips + constraint_refs
 │ ▸ 适配判定（可展开）  verdict / reasons Block[]             │

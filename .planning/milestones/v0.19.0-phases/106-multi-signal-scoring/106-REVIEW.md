@@ -259,7 +259,7 @@ def _s_top_signal(
 
 更糟的是方向：没进 dense top-50 的仓恰恰是 dense 相似度低的仓（典型是靠 sparse 关键词命中挤进 RRF 的仓），它们因此拿到最高的 S_top。这就是把「大而全的仓因命中多被高估」换成了「dense 弱的仓因未被覆盖被高估」，同一类病理。
 
-golden fixture 自身就编码了这个形态：`gk-001` 只给 `onion-learning`(0.62) 与 `study-app`(0.52) 赋了 `dense_cos_max`，`study-course` / `study-user-status` 省略 → 走回退。实测 `study-course` 的 S_top≈0.79（无任何 dense 证据）并以 0.8232 超过 `study-app` 的 0.7454，`test_gk001_cross_group_repos_in_top5` 的通过部分依赖这个回退抬升，而非「广度偏置被消除」这个被断言的机制。
+golden fixture 自身就编码了这个形态：`gk-001` 只给 `sample_service_service`(0.62) 与 `sample_web`(0.52) 赋了 `dense_cos_max`，`sample_course_service` / `sample_user_service` 省略 → 走回退。实测 `sample_course_service` 的 S_top≈0.79（无任何 dense 证据）并以 0.8232 超过 `sample_web` 的 0.7454，`test_gk001_cross_group_repos_in_top5` 的通过部分依赖这个回退抬升，而非「广度偏置被消除」这个被断言的机制。
 
 106-CONTEXT 的原文是「若实现后延迟/成本不可接受，**回退** RRF 分 query-local max 归一」——这是一个**整链路二选一**的取舍，不是 per-repo 混用。当前实现偏离了该裁决。
 
@@ -451,7 +451,7 @@ server/tests/codegraph/test_repo_router_metadata.py:482,498,511  (测试)
 `server/system/views.py:1573-1631`。`repo_router_weight_config_updated` 的 `category`/`component` 到位，但没有 `duration_ms`（LOGGING-SPEC 要求关键生命周期带耗时）；也没有 started/failed 配对事件（校验失败的 400 无埋点，看不到「谁在反复填错」）。GET 对任意已认证用户开放内部打分权重，虽非凭证但属内部策略，建议要么收到 superuser，要么把「有意放开」写进 docstring。
 
 ### MN-07：golden 门禁区分度饱和，fixture 数值人工设定
-`server/tests/codegraph/fixtures/repo_router_golden/golden_baseline.json`。新 baseline：`recall@5=0.9643`、`mrr@10=1.0`、`top1_correct=14/14`、`false_auto_select_rate=0.0`（105 为 mrr 0.9643 / top1 13）。14 条 case 全部 Top-1 命中意味着门禁只能检出退化、无法验证泛化，而 research §7.2/§7.3 恰恰警告 n=14 上的「完美」多半来自数据构造。`gk-001` 的 `dense_cos_max` 只给了需要区分度的两个仓（`repo_meta` 里 `study-course`/`study-user-status` 省略），facet 匹配分也是内联手写——即 fixture 与期望名次是同一个人同时定的。建议补「新公式应当判错/打平」的负向样本、补 dense 覆盖组合的多样性，并在 case 注释里标明数值来源是人工设定还是实测（沿用 MEASUREMENTS 的数据环境标注纪律）。
+`server/tests/codegraph/fixtures/repo_router_golden/golden_baseline.json`。新 baseline：`recall@5=0.9643`、`mrr@10=1.0`、`top1_correct=14/14`、`false_auto_select_rate=0.0`（105 为 mrr 0.9643 / top1 13）。14 条 case 全部 Top-1 命中意味着门禁只能检出退化、无法验证泛化，而 research §7.2/§7.3 恰恰警告 n=14 上的「完美」多半来自数据构造。`gk-001` 的 `dense_cos_max` 只给了需要区分度的两个仓（`repo_meta` 里 `sample_course_service`/`sample_user_service` 省略），facet 匹配分也是内联手写——即 fixture 与期望名次是同一个人同时定的。建议补「新公式应当判错/打平」的负向样本、补 dense 覆盖组合的多样性，并在 case 注释里标明数值来源是人工设定还是实测（沿用 MEASUREMENTS 的数据环境标注纪律）。
 
 ### MN-08：T1 单字符 canonical 的误报面
 `server/codegraph/services/repo_router_metadata.py:143-155` 与 `:112`。`_contains_token` 对 ASCII token 加 `[a-z0-9]` 词边界，但 `DEFAULT_ALIAS_DICT` 里存在单字符 canonical `"C"`：任何含独立 `c` token 的需求文本（`"c 端"`、`"C 轮"`、路径片段等）都会让「技术栈=C」的仓拿到 T1 满分。同理 `"Go"` 会命中英文动词 `go`。stack 权重只有 0.08，影响有限，但 T1 是「确定性层，误报比漏报代价高」（本文件注释自述）。建议给长度 ≤2 的 ASCII canonical 要求更强上下文（`C 语言` / `C/C++`）或只允许经别名命中。
@@ -504,17 +504,17 @@ BL-01 修完后 gk-001 的 dense 覆盖不全（4 个候选仓只有 2 个有 `d
 
 | repo | score | breadth 分项 | 变化 |
 |------|-------|-------------|------|
-| onion-learning | 0.8813 | 0.0697 | 不变（其 S_top 在两种口径下都是 1.0——余弦 0.62 超 c_hi 被 clip，RRF 下又是 rank-1） |
-| study-course | 0.8232 | 0.0952 | 不变（原本就走回退） |
-| study-user-status | 0.7409 | 0.0803 | 不变（原本就走回退） |
-| study-app | 0.7102 | 0.0462 | 0.7453 → 0.7102（原先按校准余弦 0.52→S_top 0.90，现按 RRF 0.8232） |
+| sample_service_service | 0.8813 | 0.0697 | 不变（其 S_top 在两种口径下都是 1.0——余弦 0.62 超 c_hi 被 clip，RRF 下又是 rank-1） |
+| sample_course_service | 0.8232 | 0.0952 | 不变（原本就走回退） |
+| sample_user_service | 0.7409 | 0.0803 | 不变（原本就走回退） |
+| sample_web | 0.7102 | 0.0462 | 0.7453 → 0.7102（原先按校准余弦 0.52→S_top 0.90，现按 RRF 0.8232） |
 
 三条机制断言全部继续成立：
-- **翻转**（`test_gk001_mechanism_rank_flipped`）：`onion-learning` 位次 0 < `study-app` 位次 3——修正标尺后 study-app 从第 3 掉到第 4，翻转幅度反而更大。
-- **breadth 不偏袒巨仓**（`test_gk001_mechanism_breadth_not_favor_monolith`）：study-app 0.0462 ≤ onion-learning 0.0697，与 dense 口径无关（breadth 只吃 n_eff 与 pivoted denom）。
-- **跨组两仓进 Top-5**：`study-course`（第 2）、`study-user-status`（第 3）。
+- **翻转**（`test_gk001_mechanism_rank_flipped`）：`sample_service_service` 位次 0 < `sample_web` 位次 3——修正标尺后 sample_web 从第 3 掉到第 4，翻转幅度反而更大。
+- **breadth 不偏袒巨仓**（`test_gk001_mechanism_breadth_not_favor_monolith`）：sample_web 0.0462 ≤ sample_service_service 0.0697，与 dense 口径无关（breadth 只吃 n_eff 与 pivoted denom）。
+- **跨组两仓进 Top-5**：`sample_course_service`（第 2）、`sample_user_service`（第 3）。
 
-REVIEW 提出的疑虑（「`test_gk001_cross_group_repos_in_top5` 的通过部分依赖回退抬升」）本次得到澄清：受回退抬升影响的确实是 `study-course` 的 S_top，但它在修正后的**统一** RRF 口径下依然是 0.7927（其命中分 0.013 相对 rrf_max 0.0164），排名不靠「缺失红利」而靠真实命中强度；被高估的其实是原实现里 `study-app` 的对照口径。**没有调整任何权重或 fixture 数值**——baseline 唯一 diff 是 gk-001 `ranked_repo_ids` 的 3/4 位互换，汇总指标（Recall@5 0.9642857 / MRR@10 1.0 / Top-1 14/14 / 误自动选中率 0.0）逐字段不变。
+REVIEW 提出的疑虑（「`test_gk001_cross_group_repos_in_top5` 的通过部分依赖回退抬升」）本次得到澄清：受回退抬升影响的确实是 `sample_course_service` 的 S_top，但它在修正后的**统一** RRF 口径下依然是 0.7927（其命中分 0.013 相对 rrf_max 0.0164），排名不靠「缺失红利」而靠真实命中强度；被高估的其实是原实现里 `sample_web` 的对照口径。**没有调整任何权重或 fixture 数值**——baseline 唯一 diff 是 gk-001 `ranked_repo_ids` 的 3/4 位互换，汇总指标（Recall@5 0.9642857 / MRR@10 1.0 / Top-1 14/14 / 误自动选中率 0.0）逐字段不变。
 
 ### 回归
 

@@ -267,9 +267,9 @@ async def transition(self, session, event, *, stage_state=None,
 | # | 文件 | 位置 | 需补 intent 的条目 |
 |---|------|------|--------------------|
 | 1 | `server/tests/helpers/blueprint_samples.py` | `:48-61` | `fp_01`（后端接口 → `greenfield`）、`fp_02`（前端入口 → `greenfield`） |
-| 2 | `server/tests/fixtures/blueprint_golden/assessment_boost.json` | `:34-...` | `fp_01`（描述自称 brownfield，`:42`）、`fp_02`（描述自称 greenfield 净新增，`:55`）、`fp_03`（`:62-69`，onion-practice 专项练习） |
+| 2 | `server/tests/fixtures/blueprint_golden/sample_exam_boost.json` | `:34-...` | `fp_01`（描述自称 brownfield，`:42`）、`fp_02`（描述自称 greenfield 净新增，`:55`）、`fp_03`（`:62-69`，sample_practice_service 专项练习） |
 
-fixture 的三条 description 已在正文自述 brownfield/greenfield（`assessment_boost.json:42`、`:55`）→ `intent` 取值有现成依据，且正好覆盖 `greenfield`/`brownfield` 两种枚举；`fp_03` 建议 `greenfield`（新增组卷能力）。高阶提效 case 是本相位验收靶子（`112-CONTEXT.md:91`），三值分布对 route 加权断言有直接价值。
+fixture 的三条 description 已在正文自述 brownfield/greenfield（`sample_exam_boost.json:42`、`:55`）→ `intent` 取值有现成依据，且正好覆盖 `greenfield`/`brownfield` 两种枚举；`fp_03` 建议 `greenfield`（新增组卷能力）。示例功能 case 是本相位验收靶子（`112-CONTEXT.md:91`），三值分布对 route 加权断言有直接价值。
 
 **只消费工厂/fixture，工厂改完即自动通过（无需改动，但需回归验证）——共 6 个测试文件：**
 
@@ -280,7 +280,7 @@ fixture 的三条 description 已在正文自述 brownfield/greenfield（`assess
 | `server/tests/services/test_blueprint_quality.py` | `make_blueprint` × 6 处（`:19`） |
 | `server/tests/delivery/test_blueprint_artifact_wiring.py` | `make_blueprint` × 3 处（`:17`） |
 | `server/tests/delivery/test_evaluate_blueprint_golden.py` | `make_blueprint` + `_write_case`（`:18`、`:58,69,85`）；`:40-44` 跑默认目录（读真 fixture） |
-| `server/tests/delivery/test_blueprint_integration.py` | 直读 `assessment_boost.json`（`:46`，注释称「单一事实源不再手造第二份大样例」） |
+| `server/tests/delivery/test_blueprint_integration.py` | 直读 `sample_exam_boost.json`（`:46`，注释称「单一事实源不再手造第二份大样例」） |
 
 **逐条核查过的断言，确认加字段后**不**破**（无一处做 feature_points 全等比较）：
 - `test_blueprint_schema.py:283` — 断言 `"requirement_spec.feature_points[fp_01].description" in paths`（`iter_blocks` 路径集合，`in` 判定，不受新字段影响）。
@@ -305,7 +305,7 @@ fixture 的三条 description 已在正文自述 brownfield/greenfield（`assess
    },
    ```
 2. `blueprint_samples.py:48-61` 两条 fp 各补 `"intent": "greenfield"`（与 description 语义一致；如需覆盖 brownfield 分支可把 `fp_02` 设 `brownfield` 并同步 `test_blueprint_quality.py` 无关断言——已核查无断言依赖）。
-3. `assessment_boost.json` 三条 fp 补 `intent`：`fp_01="brownfield"`（`:42` 自述改造）、`fp_02="greenfield"`（`:55` 自述净新增）、`fp_03="greenfield"`。
+3. `sample_exam_boost.json` 三条 fp 补 `intent`：`fp_01="brownfield"`（`:42` 自述改造）、`fp_02="greenfield"`（`:55` 自述净新增）、`fp_03="greenfield"`。
 4. **新增一条负向测试**锁住必填性（否则「required」演进无回归保护）：在 `test_blueprint_schema.py` 加 `content["requirement_spec"]["feature_points"][0].pop("intent")` → `validate_blueprint` 返回 `(False, ...)`；再加一条非法枚举值（如 `"refactor"`）被拒。
 5. 同步 `blueprint_schema.py` 模块 docstring / `blueprint_samples.py:3-12` docstring 中的字段说明（两处都逐字列了样例形状）。
 
@@ -424,7 +424,7 @@ Async 版（**无缓存，每次 `afirst()` 打 DB**，`:96-121`）：`aget_sett
 ### Wave 0 Gaps
 - [ ] `server/tests/services/test_blueprint_process_graph.py` — 主题 1/2（含 `_TECHNICAL_PLAN_STAGES` 冻结快照断言）
 - [ ] `server/tests/services/test_blueprint_schema.py` 扩充 — 主题 3 两条负向断言
-- [ ] `server/tests/helpers/blueprint_samples.py` + `server/tests/fixtures/blueprint_golden/assessment_boost.json` — 主题 3 数据同步
+- [ ] `server/tests/helpers/blueprint_samples.py` + `server/tests/fixtures/blueprint_golden/sample_exam_boost.json` — 主题 3 数据同步
 - [ ] `blueprint.spec_gate.*` 设置读取测试（含 `_isolate` 清缓存 fixture，照 `test_log_runtime_config.py:47-66`）
 
 ## Security Domain
@@ -450,7 +450,7 @@ Async 版（**无缓存，每次 `afirst()` 打 DB**，`:96-121`）：`aget_sett
 |---|-------|---------|---------------|
 | A1 | 建议的 `technical_blueprint` transitions 表（1.5）是从锁定骨架 + 机制事实推导的**建议**，非代码既有事实 | 主题 1.5 | planner 可自行调整 event 命名；机制约束（exhausted 不落 failed、self-loop 表 pause）为硬事实 |
 | A2 | 新键命名空间 `blueprint.spec_gate.*` 是按点分惯例的建议 | 主题 4.2 | 仅命名偏好，改名无机制影响 |
-| A3 | `assessment_boost.json` 三条 fp 的 `intent` 取值（brownfield/greenfield/greenfield）依据 description 自述文本推断 | 主题 3.4 | 取值影响 route 加权断言的期望，planner 应与验收靶子（`112-CONTEXT.md:91`）对齐后确认 |
+| A3 | `sample_exam_boost.json` 三条 fp 的 `intent` 取值（brownfield/greenfield/greenfield）依据 description 自述文本推断 | 主题 3.4 | 取值影响 route 加权断言的期望，planner 应与验收靶子（`112-CONTEXT.md:91`）对齐后确认 |
 | A4 | `server/pyproject.toml` 的 pytest 配置节名与 `uv run pytest` 调用形未在本次逐字读取（沿用仓内惯例） | Validation Architecture | 命令前缀可能需微调，不影响测试映射 |
 
 ## Open Questions
@@ -478,7 +478,7 @@ Async 版（**无缓存，每次 `afirst()` 打 DB**，`:96-121`）：`aget_sett
 - `server/delivery/services/convergence_session_service.py:126-259` — transition / CAS / fail 特判
 - `server/delivery/models/convergence_session.py:30-38` — 状态枚举
 - `server/services/process_runtime/blueprint_schema.py:166-223, 786-947` — feature_points schema / 后置检查 / iter_blocks
-- `server/tests/helpers/blueprint_samples.py`、`server/tests/fixtures/blueprint_golden/assessment_boost.json`
+- `server/tests/helpers/blueprint_samples.py`、`server/tests/fixtures/blueprint_golden/sample_exam_boost.json`
 - `server/system/models.py:13-163`、`server/system/settings_service.py`
 - `server/tests/test_log_runtime_config.py:37-90` — 设置类测试范式
 - rg 全量引用核查：`feature_points` / `make_blueprint` / `requirement_spec` / `SettingKeys\.` / `validate_blueprint`

@@ -136,7 +136,7 @@ completed: 2026-08-25
 
 - 计划要求的实现、测试与 fixture 文件存在。
 - 五个任务/TDD 提交均存在。
-- 未添加、提交或删除 `.planning/quick/260811-sample-route-5rounds/route-5rounds-results.json`。
+- 未添加、提交或删除 `.planning/quick/260811-sample_service-route-5rounds/route-5rounds-results.json`。
 
 ---
 *Phase: 140-threshold-policy*

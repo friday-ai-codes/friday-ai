@@ -17,7 +17,7 @@ provides:
   - stage_sandbox hard_scope 守卫
 affects:
   - 131 GATE/REFL placements 消费
-  - 132 高阶提效回归
+  - 132 示例功能回归
 
 tech-stack:
   added: []

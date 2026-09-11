@@ -44,7 +44,7 @@ completed: 2026-07-30
 
 # Phase 112-1 Plan 03: blueprint_route 双面路由 Summary
 
-**一行结论**：`RepoRouterV2` 原样输出作 `router_base` 单一不可拆分量，adapter 层加 `charter_match`（owned 含 planned 加分 / boundaries 判负 / evolution 降权，clamp `[-1,1]`）与 `history_match`（delivery knowledge 单次召回取 top_score），按 feature_point 主导 intent 取权重向量加权，组装出 `total == sum(三项)` 的可拆解 breakdown；示例功能专项 case 的机制解落地——`onion-learning` 凭章程 `owned_domains(status=planned)` 以 `router_base == 0.0` / `charter_match > 0` 补入候选，排序差异可完全归因章程分量；禁区候选只降权不淘汰但必须带 `boundary_override_reason`（router `reasoning` → 单次 sanity-check LLM → 否则打 `unjustified_boundary_hit`，三情形各有断言）；`repo_router_v2.py` 与全部冻结面逐字未动。
+**一行结论**：`RepoRouterV2` 原样输出作 `router_base` 单一不可拆分量，adapter 层加 `charter_match`（owned 含 planned 加分 / boundaries 判负 / evolution 降权，clamp `[-1,1]`）与 `history_match`（delivery knowledge 单次召回取 top_score），按 feature_point 主导 intent 取权重向量加权，组装出 `total == sum(三项)` 的可拆解 breakdown；示例功能专项 case 的机制解落地——`sample_service_service` 凭章程 `owned_domains(status=planned)` 以 `router_base == 0.0` / `charter_match > 0` 补入候选，排序差异可完全归因章程分量；禁区候选只降权不淘汰但必须带 `boundary_override_reason`（router `reasoning` → 单次 sanity-check LLM → 否则打 `unjustified_boundary_hit`，三情形各有断言）；`repo_router_v2.py` 与全部冻结面逐字未动。
 
 ## `stage_state["routing"]` 契约（112-04 与 112-05 的唯一读取面）
 
@@ -114,11 +114,11 @@ completed: 2026-07-30
 
 ### 示例功能专项机制断言（可证伪，全绿）
 
-`test_charter_planned_owner_enters_candidates_as_supplement`：建 `onion-learning` + 章程
+`test_charter_planned_owner_enters_candidates_as_supplement`：建 `sample_service_service` + 章程
 `owned_domains=[{"domain": "功能/流程优化", "status": "planned"}]`；mock router **不返回**该仓
 （模拟能力树无进阶节点）→ 对 greenfield 功能点跑 `route`，断言
 
-- `onion-learning` **在 candidates 里**（`assert ... in by_id` 带失败信息）
+- `sample_service_service` **在 candidates 里**（`assert ... in by_id` 带失败信息）
 - `breakdown["router_base"] == 0.0` 且 `breakdown["charter_match"] > 0`
 - `evidence["matched_domains"]` 含该 planned 领域、`charter_supplement_count == 1`、`confidence == "low"`
 
@@ -192,7 +192,7 @@ completed: 2026-07-30
 
 - 文件存在：6 个 `key-files.created` 全部命中（3 源 + 3 测试）
 - commit 存在：`d7181a8f` / `7e2a5de5` / `6b33054d` / `cd31c8f7` 均在 `git log`
-- artifacts contains 断言：`def score_charter_match` ∈ blueprint_charter_match.py ✓；`entity_kinds` ∈ blueprint_route_history.py ✓；`build_score_breakdown` ∈ blueprint_route.py ✓；`onion-learning` ×7 ∈ test_blueprint_route_stage.py ✓；`boundary_override_reason` ∈ test_blueprint_route_stage.py ✓
+- artifacts contains 断言：`def score_charter_match` ∈ blueprint_charter_match.py ✓；`entity_kinds` ∈ blueprint_route_history.py ✓；`build_score_breakdown` ∈ blueprint_route.py ✓；`sample_service_service` ×7 ∈ test_blueprint_route_stage.py ✓；`boundary_override_reason` ∈ test_blueprint_route_stage.py ✓
 - key_links 断言：`RepoRouterV2` 只在 `_resolve_router` 内 lazy import 调用（零改动）；`BLUEPRINT_ROUTE_WEIGHTS` ∈ blueprint_route.py ✓；`search_similar` ∈ blueprint_route_history.py ✓
 - 硬验收：`sum(` ✓ / `resolve_boundary_override` ✓ / `unjustified_boundary_hit` ×12 ✓ / `use_call_source(CallSource.BLUEPRINT_REROUTE)` ✓ / `role_suggestion` ✓ / adapter `.objects.(create|acreate|update|aupdate)` 零命中 ✓ / `repo_router_v2.py` diff 空 ✓
 

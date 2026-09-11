@@ -6,7 +6,7 @@ status: in-progress
 
 # 项目选仓接入「章程 + 历史」三分量融合
 
-来源：Cursor「Warehouse routing preferences」会话产出的未提交改动，本会话整理提交 + 复跑评测 + 诊断 study-course 召回。
+来源：Cursor「Warehouse routing preferences」会话产出的未提交改动，本会话整理提交 + 复跑评测 + 诊断 sample_course_service 召回。
 
 ## 任务
 
@@ -15,7 +15,7 @@ status: in-progress
    - `server/services/process_runtime/blueprint_route_history.py` — `ascore_history_match` 增 `acting_user` 参数（fail-closed）
    - `server/tests/initiatives/test_repo_association_service.py` — 新增融合用例 + 留痕 `signal_fusion=charter+history`
 2. 复跑仓库路由评测（示例功能专项，4 目标仓）
-3. 诊断 study-course 为何进不了候选（Stage 0 召回天花板 vs GitLab master 实际内容）
+3. 诊断 sample_course_service 为何进不了候选（Stage 0 召回天花板 vs GitLab master 实际内容）
 
 ## 验证
 

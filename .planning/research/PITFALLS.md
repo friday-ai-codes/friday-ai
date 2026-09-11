@@ -341,7 +341,7 @@ P1 工具面（server+npm）。P2 skill 文案。容器写入若做，放 P2 末
 - `server/knowledge/llm_grader.py`：无 `use_call_source`；词表 related/duplicate
 - `server/agents/call_source.py`：`aux_knowledge_grader` / `ide_hook_distill` 已存在
 - `.planning/PROJECT.md` v0.25.0 决策：仓为主挂钩、三层分离、禁止 Ledger 反哺、价值≠路由 confidence
-- `.planning/debug/orchestration-friday-agent-e2e.md`：`main` 假命中无关项目
+- `.planning/debug/workflow_suite-friday-agent-e2e.md`：`main` 假命中无关项目
 - v0.17 Out of Scope：Ledger 反哺检索；INV-6 `aschedule_ingestion` 单一摄取入口
 
 ---

@@ -93,7 +93,7 @@
 <specifics>
 ## Specific Ideas
 
-- 示例功能专项 case 是本相位的验收靶子：greenfield 功能点上 `onion-learning` 必须能凭章程 owned(planned) 进入候选（而非因能力树无进阶节点被淘汰）；`study-plan`/`study-practice` 命中章程禁区须被降权
+- 示例功能专项 case 是本相位的验收靶子：greenfield 功能点上 `sample_service_service` 必须能凭章程 owned(planned) 进入候选（而非因能力树无进阶节点被淘汰）；`study-plan`/`study-practice` 命中章程禁区须被降权
 - 断言写机制级（章程分量对候选排序产生可拆解影响）而非结果级名次，与 v0.19.0 golden set 方法论一致
 - 111 的 `evaluate_blueprint_golden` command 与 `blueprint_quality` 指标（目标仓命中率）在本相位首次有真实数据可评
 

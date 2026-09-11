@@ -112,7 +112,7 @@ completed: 2026-08-28
 | `test_stage_runner_tools.py::test_route_blueprint_repos_dry_run` | `router_version` 期望 `v2` 实为 `clarify` | 未提交 process_runtime/blueprint 改动 |
 | `test_blueprint_clarification_tools.py::test_response_assembly_splats_the_extras_so_the_off_state_is_byte_identical` | 源码含 `"blueprint_status":` | 未提交 `technical_plan_service.py` |
 
-保留未提交：`server/tests/mcp_tools/test_skills_snapshot_guard.py`、skills、`.planning/debug/orchestration-friday-agent-e2e.md` 及其他蓝图/调研脏文件。
+保留未提交：`server/tests/mcp_tools/test_skills_snapshot_guard.py`、skills、`.planning/debug/workflow_suite-friday-agent-e2e.md` 及其他蓝图/调研脏文件。
 
 ## Known Stubs
 

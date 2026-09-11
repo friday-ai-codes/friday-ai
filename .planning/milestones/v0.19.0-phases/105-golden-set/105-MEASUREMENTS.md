@@ -84,7 +84,7 @@ cd server && uv run python manage.py measure_repo_index_stats --json --top 20 --
 
 | 仓库 | N_r |
 |------|-----|
-| 待生产实例执行补录（预期 `study-app` 类 monorepo 居首） | — |
+| 待生产实例执行补录（预期 `sample_web` 类 monorepo 居首） | — |
 
 ### 命令本身的结构性验证（已完成）
 

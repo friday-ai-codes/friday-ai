@@ -82,8 +82,8 @@
 ## Specific Ideas
 
 - 全部设计决策以 `.planning/research/ROUTING-RANKING.md`（2026-07-28 调研）为准——该文档给出了公式、常数初值、文献依据与置信度标注；实现时遇到取舍冲突以其 §0 结论速览为准。
-- 生产事故锚点：会话 `sess-example-01`（friday.example.com）——Stage 1 降级 → confidence 恒 low → `auto_selected` 恒 false → 编排卡死；`study-app`（62 子应用 monorepo）碾压 `onion-learning` 的误选机制。golden set 首条真实用例即「示例功能专项」。
-- 机制级断言示例（research §7.4）：`assert breakdown["study-app"]["breadth"] <= breakdown["onion-learning"]["breadth"]`，不要 `assert result[0].repo == "onion-learning"`。
+- 生产事故锚点：会话 `sess-example-01`（friday.example.com）——Stage 1 降级 → confidence 恒 low → `auto_selected` 恒 false → 编排卡死；`sample_web`（62 子应用 monorepo）碾压 `sample_service_service` 的误选机制。golden set 首条真实用例即「示例功能专项」。
+- 机制级断言示例（research §7.4）：`assert breakdown["sample_web"]["breadth"] <= breakdown["sample_service_service"]["breadth"]`，不要 `assert result[0].repo == "sample_service_service"`。
 
 </specifics>
 

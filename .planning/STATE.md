@@ -73,7 +73,7 @@ Last activity: 2026-09-09 - Completed quick task 260909-gpx: 示例功能专项 
 | 129 | 短名单 + 历史先验 + 章程角色图 | LIST-01~04, ROLE-01~03 | ✅ Complete (4/4 plans, verified passed) |
 | 130 | 放置单元 + 主路径接线 | UNIT-01~03, INT-01 | ✅ Complete (3/3 plans, verified passed) |
 | 131 | 门禁系统 + 反思环 | GATE-01~03, REFL-01~03 | ✅ Complete (3/3 plans, verified passed) |
-| 132 | 集成验收与高阶提效回归 | INT-02, INT-03 | ✅ Complete (3/3 plans, verified passed) |
+| 132 | 集成验收与示例功能回归 | INT-02, INT-03 | ✅ Complete (3/3 plans, verified passed) |
 
 **Execution order:** 128 → 129 → 130 → 131 → 132（线性漏斗）。需求见 [milestones/v0.23.0-REQUIREMENTS.md](./milestones/v0.23.0-REQUIREMENTS.md)；阶段详情见 [milestones/v0.23.0-ROADMAP.md](./milestones/v0.23.0-ROADMAP.md)；审计见 [milestones/v0.23.0-MILESTONE-AUDIT.md](./milestones/v0.23.0-MILESTONE-AUDIT.md)；相位产物见 [milestones/v0.23.0-phases/](./milestones/v0.23.0-phases/)。
 
@@ -161,8 +161,8 @@ Last activity: 2026-09-09 - Completed quick task 260909-gpx: 示例功能专项 
 
 **关键约束 / 设计底座（plan-phase 必读）:**
 
-- **路由方案五原则**：召回优先于精排（Space 硬过滤曾把 `study-user-status` 挡在门外）、确定性优先于智能、分数必须可拆解、降级必须可见、幂等（temperature=0 + `(score, repo_id)` 稳定排序 + 输入输出落 `ConvergenceSessionEvent` 可回放）。
-- **验收有客观标尺**：golden set 首条即本次真实用例——「示例功能专项」路由结果须包含前端 `onion-learning`（而非 `study-app`）、后端 `study-course` + `study-user-status`（而非 `study-practice`）。断言写机制级（广度加成对比）而非结果级名次（research §7.4）。
+- **路由方案五原则**：召回优先于精排（Space 硬过滤曾把 `sample_user_service` 挡在门外）、确定性优先于智能、分数必须可拆解、降级必须可见、幂等（temperature=0 + `(score, repo_id)` 稳定排序 + 输入输出落 `ConvergenceSessionEvent` 可回放）。
+- **验收有客观标尺**：golden set 首条即本次真实用例——「示例功能专项」路由结果须包含前端 `sample_service_service`（而非 `sample_web`）、后端 `sample_course_service` + `sample_user_service`（而非 `study-practice`）。断言写机制级（广度加成对比）而非结果级名次（research §7.4）。
 - **不删 `create_coding_plan`**：实证它是 SPA 唯一的编码执行入口，MCP 执行链路反过来还要创建 chat `CodingPlan` 做桥接；本里程碑拆分创作/执行两半而非删除。migration `0031` 曾刻意删除 `canonical_plan_id` 软链，本次是按新语义重新接上而非恢复旧设计。
 - **方案结构提示词全是硬编码 Python 字符串**（`process_runtime/*.py`），不在 Prompt Center，改结构必须改代码、运行时调不了；是否搬进 Prompt Center 另议（本里程碑 Out of Scope）。
 - **融合与排序选型已定版**（research §1/§2）：信号融合层用归一化线性加权和（否决 LTR——10–50 条样本必然过拟合）；RRF 只留在 Stage 0 的 dense+sparse 合并（k=60）；多命中聚合用 MaxP 主干 + pivoted-size-normalized 对数饱和 breadth 加成（加性、上限 λ=0.25），绝不用乘性加成；多值 facet 取 max 绝不取 sum；缺失信号走权重重归一化而非补 0。
@@ -1057,7 +1057,9 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 260909-gpx | onion-learning Agent 应用与 study-app 跳转迁移到独立 V2 路径并合入 develop | 2026-09-09 | 83b0e56d2 / 8d99c27c3e | [260909-gpx-onion-learning-agent-learn-rapid-score-b](./quick/260909-gpx-onion-learning-agent-learn-rapid-score-b/) |
+| 260909-qv4 | 交付小队角色名册与三份指令能力介绍改写 | 2026-09-09 | 未提交 | [260909-qv4-workflow_suite-squad-role-intro](./quick/260909-qv4-workflow_suite-squad-role-intro/) |
+| 260909-nc9 | 交付小队人类可读输出合同，标题、简介与回执分两层写 | 2026-09-09 | 未提交 | [260909-nc9-human-writing-agent-loop](./quick/260909-nc9-human-writing-agent-loop/) |
+| 260909-gpx | sample_service_service Agent 应用与 sample_web 跳转迁移到独立 V2 路径并合入 develop | 2026-09-09 | 83b0e56d2 / 8d99c27c3e | [260909-gpx-sample_service_service-agent-learn-rapid-score-b](./quick/260909-gpx-sample_service_service-agent-learn-rapid-score-b/) |
 | 260610-oug | 修复仓库 URL 提示文案为仅支持 HTTPS，并将所有英文校验/错误提示汉化 | 2026-06-10 | c4c60c4f | [260610-oug-url-https](./quick/260610-oug-url-https/) |
 | 260610-shc | OIDC 回调 URL 与登录跳转优先消费「站点 Host」(site_host) 系统设置 | 2026-06-10 | b01dc066 | [260610-shc-site-host-oidc](./quick/260610-shc-site-host-oidc/) |
 | 260610-qmv | 修复 compose 部署下任务容器回调失败（发布 runner callback 端口）并抑制 claude CLI 403 遥测噪音 | 2026-06-10 | 68ddaa4c | [260610-qmv-compose-runner-callback-claude-cli-403](./quick/260610-qmv-compose-runner-callback-claude-cli-403/) |
@@ -1093,7 +1095,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 | 260807-2cu | 仓库关联卡三字段产出侧修复（用户实测：「选仓理由」与「本仓职责」一字不差、「适配判定」展开无内容）：① `_collect_fitness_sync` 聚合与确认门快照 `_build_snapshot_entry` 两处把调研产出的 `fitness.reasons` 丢掉（快照写死空数组）——现全链携带（字符串截断防快照膨胀、block 原样）；② `_project_rationale` 去掉 responsibility/fitness.reasons 兜底，无源 `rationale.text` 留空数组（schema 合法，前端整块不渲染），P-8 citations 并集逐字保留。两个在途脏文件按 hunk 选择性暂存；86 单测全绿 | 2026-08-07 | b2d5098a | [260807-2cu-repo-association-fields](./quick/260807-2cu-repo-association-fields/) |
 | 260807-2fw | 蓝图按仓「调研明细」抽屉（补 v0.21.0 LIVE-01/03 缺口）：新端点 `blueprint/research-detail/` 按仓返回结论 + agent 全过程；容器补 `[task:tool_result]` 输出、停印加密思考签名、入参上界 300→2000；新建 append-only `SubAgentRuntimeLog` 双写（`last_output.logs` 80 条尾窗契约与四个既有消费方零改动）；⛔ 不走被阶段 2 覆写的 `subagent_session` 外键，按会话 id 前缀反查才能收全两阶段。真实数据修掉三处：findings 两种形态只认一种导致全空、`friday-ta\|sk-\|…` 路径被脱敏正则误伤（共享正则加 `\b`，24 条凭证用例仍绿）、加密签名占两成日志额度 | 2026-08-07 | (pending) | [260807-2fw-agent](./quick/260807-2fw-agent/) |
 | 260808-0fm | `/projects` 列表倒序 + 无限滚动按需加载：后端 `_visible_qs` 显式 `order_by("-created_at")`（join+distinct 不依赖模型默认排序），additive 分页——带 `limit`(1..100) 返回 `{results,total,limit,offset}` 分页包、不带保持数组响应（BlueprintsTabPanel 等零改动）；前端 `useInfiniteQuery`（每页 24）+ `useIntersectionObserver` 哨兵（rootMargin 400px 预取）无感加载，未引入 DOM windowing（网格 + window 滚动收益低）。后端 10 / 前端 13 测试全绿 | 2026-08-07 | (pending) | [260808-0fm-projects-list-infinite-scroll](./quick/260808-0fm-projects-list-infinite-scroll/) |
-| 260808-fn3 | 数据运维：归档 260807 批量导入的 532 个历史项目（ricelove: 247 / ricelove-scheme: 284 / release-bitable: 1，全是模型默认「开发中」）并删除其 377 条导入时统一绑 default_branch 的分支绑定（master 对应 ~300 项目，反查失效）；全走 service 层（archive/unbind，审计归因 admin），零错误；终态 developing 仅剩 3 个手工项目、剩余绑定 6 条全属真实项目；⛔ 4 个 `default_branch=feat/coding-agent-base` 仓库按用户确认不动。教训：导入历史数据应显式 `status=archived`、拿不到真实分支不要退绑默认分支 | 2026-08-08 | (pending) | [260808-fn3-archive-imported-projects](./quick/260808-fn3-archive-imported-projects/) |
+| 260808-fn3 | 数据运维：归档 260807 批量导入的 532 个历史项目（sample_project: 247 / sample_project-scheme: 284 / release-bitable: 1，全是模型默认「开发中」）并删除其 377 条导入时统一绑 default_branch 的分支绑定（master 对应 ~300 项目，反查失效）；全走 service 层（archive/unbind，审计归因 admin），零错误；终态 developing 仅剩 3 个手工项目、剩余绑定 6 条全属真实项目；⛔ 4 个 `default_branch=feat/coding-agent-base` 仓库按用户确认不动。教训：导入历史数据应显式 `status=archived`、拿不到真实分支不要退绑默认分支 | 2026-08-08 | (pending) | [260808-fn3-archive-imported-projects](./quick/260808-fn3-archive-imported-projects/) |
 | 260808-fsa | Friday 技术方案能力做成宿主 subagent（skills 子仓 80f4016 / mcp 子仓 9c997b8）：新增 `friday-plan`（技术方案编排专员——发起段原样带回待确认项、续跑段确认+轮询到终态，覆盖 feature 三段链与飞书蓝图澄清链，绝不代答）与 `friday-research`（只读调研专员，带 ID 出处证据摘要）两个 subagent 定义；安装器把它们装进 Cursor/Claude Code 原生 agents 目录（Cursor 变体剥离 Claude 专属 frontmatter 键），Claude 插件形态经 plugin.json `"agents"` 字段自动带上；skills 0.6.0 → 0.7.0。MCP server 代码不动：现有 pending/轮询/作答工具形状已与 MCP Tasks 扩展（2026-07-28 spec）语义对齐，待客户端支持后再做标准映射 | 2026-08-08 | 80f4016 (skills) | [260808-friday-subagents](./quick/260808-friday-subagents/) |
 | 260808-g1c | AI 对话思考过程全量实时展示 + 上游抹思考时显示「正在思考」：先实测定位到首字慢与自家代码无关（SSE 通道 106–132ms 通、服务端本地开销仅 ~150ms，其余全在等网关；prompt 体积与首字无关：28 tok→2.4s / 3268 tok→2.16s / 26290 tok→3.63s），真凶是网关把 thinking 文本整段抹掉只转发 signature（`claude-opus-4-8` 采样 4/4 全 0 字符，`claude-sonnet-5`/`claude-opus-4-5`/`claude-fable-5` 同样；`claude-opus-4-6` 4/4 有 306–464 字符，`claude-opus-5` 该网关不存在）。按用户决定**不切换模型**，保持 `claude-opus-4-8`。前端把 thinking 折叠 Set 语义反转为「记录手动收起的 id」（不能用展开集合——parts 流式增长会让后到的 part 退回收起态）、删 80/90 字符预览截断与 `max-height` 裁切；⛔ 计划里的占位触发条件 `groupedDisplayItems.length === 0` 恒不成立（流式兜底会合成一条 `text=''` 的 text part），必须改用 `hasVisibleContent`（空 text part 不算内容）否则占位是死代码。后端补 `chat_thinking_text_empty` 采样事件（已在真实网关验证触发）。前端 2328 测试全绿 | 2026-08-08 | a77f3470 | [260808-g1c-ai-thinking-claude-opus-4-6](./quick/260808-g1c-ai-thinking-claude-opus-4-6/) |
 | 260811-av8 | 统一仓库路由 service：v1 的 `repo_summaries` BM25+dense+关键词微调内化为 RepoRouterV2 摘要回退通道；LayeredSearch L1 统一走 V2 且禁用 LLM；静态守卫阻止生产代码重引旧入口；126 条回归全绿 | 2026-08-11 | (pending) | [260811-av8-v1-bm25-embedding-v2-service](./quick/260811-av8-v1-bm25-embedding-v2-service/) |
@@ -1153,16 +1155,16 @@ Items acknowledged and deferred at milestone close on 2026-08-14（`gsd-tools qu
 | quick_task | `260806-d9y-blueprint-title-order` | unknown（既有） |
 | quick_task | `260806-fy2-ai-fp-id` | unknown（既有） |
 | quick_task | `260807-release-bitable-import` | unknown（既有） |
-| quick_task | `260807-ricelove-import` | unknown（既有） |
+| quick_task | `260807-sample_project-import` | unknown（既有） |
 | quick_task | `260808-g1c-ai-thinking-claude-opus-4-6` | completed（既有） |
-| quick_task | `260808-sample-repo-routing` | missing（既有） |
+| quick_task | `260808-sample_service-repo-routing` | missing（既有） |
 | quick_task | `260809-3kc-repository-charter-ui` | unknown（既有） |
 | quick_task | `260809-charter-release-link` | unknown（既有） |
 | quick_task | `260809-f3z-rag-ai` | unknown（既有） |
 | quick_task | `260809-regen-scheme-descriptions` | unknown（既有） |
 | quick_task | `260809-repo-route-eval` | unknown（既有） |
 | quick_task | `260810-index-counter-fix` | missing（既有） |
-| quick_task | `260811-sample-route-5rounds` | missing（既有；评测语料已喂入 v0.23 回归） |
+| quick_task | `260811-sample_service-route-5rounds` | missing（既有；评测语料已喂入 v0.23 回归） |
 
 ⚠️ 里程碑级技术债权威清单见 [milestones/v0.23.0-MILESTONE-AUDIT.md](./milestones/v0.23.0-MILESTONE-AUDIT.md) `tech_debt` 段。**未打 tag**（发布轨独立于 GSD 里程碑编号）。
 
@@ -1188,9 +1190,9 @@ Items acknowledged and deferred at milestone close on 2026-08-11（`gsd-tools qu
 | quick_task | `260806-d9y-blueprint-title-order` | unknown（既有） |
 | quick_task | `260806-fy2-ai-fp-id` | unknown（既有） |
 | quick_task | `260807-release-bitable-import` | unknown（既有） |
-| quick_task | `260807-ricelove-import` | unknown（既有） |
+| quick_task | `260807-sample_project-import` | unknown（既有） |
 | quick_task | `260808-g1c-ai-thinking-claude-opus-4-6` | completed（既有；已有交付记录） |
-| quick_task | `260808-sample-repo-routing` | missing（既有） |
+| quick_task | `260808-sample_service-repo-routing` | missing（既有） |
 | quick_task | `260809-3kc-repository-charter-ui` | unknown（既有） |
 | quick_task | `260809-charter-release-link` | unknown（既有） |
 | quick_task | `260809-f3z-rag-ai` | unknown（既有） |

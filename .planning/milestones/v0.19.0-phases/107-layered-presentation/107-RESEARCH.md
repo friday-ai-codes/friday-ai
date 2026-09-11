@@ -972,7 +972,7 @@ def classify_degrade_reason(skipped_reason: str, exc: BaseException | None = Non
 
 ### OQ-1（🔴 阻塞级，planner 必须先裁决）：候选范围过滤 vs 分组呈现
 
-- **我们知道的**：`RepoRouterV2.route(repository_ids=[...])` 把 `repository_ids` 作为 Qdrant `filters`（`_stage0_node_search:387-389`）——是**硬过滤**。编排入口（`repo_router_adapter._resolve_repository_ids`）与 chat 入口（`repository_relevance.py:196`）都会传项目/空间内仓。ROUTING-RANKING §8 第 7 步把「分层召回与分组呈现」的收益明确写成「修复 Space 硬过滤漏召回」，且 §7.1 记录 `study-user-status` 曾被 Space 硬过滤完全挡在门外。
+- **我们知道的**：`RepoRouterV2.route(repository_ids=[...])` 把 `repository_ids` 作为 Qdrant `filters`（`_stage0_node_search:387-389`）——是**硬过滤**。编排入口（`repo_router_adapter._resolve_repository_ids`）与 chat 入口（`repository_relevance.py:196`）都会传项目/空间内仓。ROUTING-RANKING §8 第 7 步把「分层召回与分组呈现」的收益明确写成「修复 Space 硬过滤漏召回」，且 §7.1 记录 `sample_user_service` 曾被 Space 硬过滤完全挡在门外。
 - **不清楚的**：CONTEXT 只锁了「归属判定 + 分组呈现 + delta 置顶」，**没有明确授权放开候选范围过滤**。而不放开的话，global 组恒空、ROUTE-01/02 上线即无效果（Pitfall 2）。
 - **推荐**：把项目关联仓从「过滤条件」改为「分组依据」，`route()` 新增独立参数（如 `project_repo_ids: list[str] | None`）与 `repository_ids` 正交；编排/chat 两个入口改为传 `project_repo_ids=项目仓` + `repository_ids=None`。**这是本 phase 唯一有实际回归风险的改动**（候选构成变化会影响 8 个消费方的实际返回内容），必须：(a) 在 PLAN 里作为独立 task 并写明；(b) 只改 #1/#2 两个入口，#3–#8 行为逐字不变；(c) 用既有 `tests/services/test_repo_router_adapter.py` / `tests/agents/test_repository_relevance_tool.py` 做回归基线。若用户/planner 判断风险过高，退路是「保留过滤 + 分组仅标注 trust」，但需在 VERIFICATION 里如实记录 ROUTE-01 的 global 组在当前范围语义下为空。
 - **RESOLVED：见 CONTEXT D-1** —— 采纳推荐方案：新增 `grouping_repository_ids` 承接项目关联仓、`repository_ids` 硬过滤语义保留；只改编排与 chat 两个入口，配回归守护（落地于 107-03 Task 2 + 107-07）。

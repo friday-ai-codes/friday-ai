@@ -98,7 +98,7 @@ feature_list / requirement_spec
 - shortlist / 历史先验 / 章程角色图 → 129
 - 放置单元全量接线 → 130
 - 发布门 / 反思 → 131
-- 高阶提效回归 → 132
+- 示例功能回归 → 132
 - `team_adjacent` 证据校验实现 → 129（本相位仅留接口/枚举）
 
 ## Package Legitimacy

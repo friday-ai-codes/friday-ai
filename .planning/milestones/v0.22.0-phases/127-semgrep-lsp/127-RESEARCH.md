@@ -34,7 +34,7 @@
 
 #### Area 4: 基准报告方法 + 默认翻转门禁 + IMPACT-03 回访范围
 
-- **D-15 — 基准报告方法（开启前后对比）**：在代表性仓库上（至少 **1× Vue/TS** + **1× Go**；可用既有 study-course / 集成夹具仓）产出 before/after 报告，指标至少包括：
+- **D-15 — 基准报告方法（开启前后对比）**：在代表性仓库上（至少 **1× Vue/TS** + **1× Go**；可用既有 sample_course_service / 集成夹具仓）产出 before/after 报告，指标至少包括：
   1. 抽取质量：Symbol / Endpoint / CallEdge（及与跨仓相关的 ApiWrapper/ApiCallSite/CrossRepoApiCall 若可得）计数与关键字段差分；
   2. 已知方言：记录 gopls vs tree-sitter 已知差异（如 gin 路由 endpoint 路径，`test_go_extractor` 已提示）；
   3. 耗时：索引墙钟（冷/热）、LSP 冷启动、相对 tree-sitter 增量；
@@ -466,7 +466,7 @@ logger.info("lsp_process_reaped", category="sampling", component="codegraph.lsp"
 | A1 | 任务墙钟 180s 对精选 pack + `--include` 足够 | Discretion | 大 MR 频繁 stub → 调高或收窄 pack |
 | A2 | 首版仅 description、不写 MR comment 满足 TAINT-02「描述/评论」 | Discretion | 产品坚持评论时需二期加平台 adapter |
 | A3 | Pro token 注入 env 即可启用跨函数能力，无需额外 `--pro` 旗标组合 | Pro opt-in | 需在实现时用官方 CLI help 再核一次；失败则 CE disclaimer 仍成立 |
-| A4 | study-course / 既有夹具仓足以做 Vue+Go 基准 | D-15 | 需另选真实内仓 |
+| A4 | sample_course_service / 既有夹具仓足以做 Vue+Go 基准 | D-15 | 需另选真实内仓 |
 
 **A3 note:** Pro 能力激活路径以实现期 `semgrep scan --help` + 官方 Pro docs 为准；文案侧即使 Pro 启用也不得夸大未实测的跨文件覆盖率（D-08）。
 

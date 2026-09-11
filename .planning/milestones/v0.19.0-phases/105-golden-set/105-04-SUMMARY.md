@@ -33,7 +33,7 @@ key-files:
   modified: []
 
 key-decisions:
-  - "gk-001 构造为 medium confidence（margin 0.076 < θ_margin 0.08）：事故机制（study-app 6 命中广度碾压）被 fixture 编码且 Top-1 仍是 study-app（预期基线），但不落入 high 档——护栏指标误自动选中率保持 0.0，门禁三规则同时可满足"
+  - "gk-001 构造为 medium confidence（margin 0.076 < θ_margin 0.08）：事故机制（sample_web 6 命中广度碾压）被 fixture 编码且 Top-1 仍是 sample_web（预期基线），但不落入 high 档——护栏指标误自动选中率保持 0.0，门禁三规则同时可满足"
   - "diff 判定用指标三元组 (recall@5, mrr@10, top1_correct) 逐元素比较：任一下降即 regressed（附 baseline/current 首位与 breakdown 对照），全不降且有上升为 improved"
   - "bootstrap CI 分位数用线性插值（纯 stdlib），固定 seed=42 幂等；报告同时含 recall@5 与 mrr@10 两组 CI"
 
@@ -53,7 +53,7 @@ coverage:
         status: pass
     human_judgment: false
   - id: D2
-    description: "golden set 建成：主集 14 条（gk-001 真实事故用例 study-app 命中数 6 > onion-learning 1；2 条 cross_group 且 expected 与 project_scope 无交集；human 9 / weak 5）+ hold-out 6 条独立封存（30%，opened_count=0）"
+    description: "golden set 建成：主集 14 条（gk-001 真实事故用例 sample_web 命中数 6 > sample_service_service 1；2 条 cross_group 且 expected 与 project_scope 无交集；human 9 / weak 5）+ hold-out 6 条独立封存（30%，opened_count=0）"
     requirement: ROUTE-08
     verification:
       - kind: unit
@@ -90,10 +90,10 @@ status: complete
 ## Accomplishments
 
 - **评估 harness（纯函数三件套）**：`evaluate_cases` 逐 case 调 105-01 的 `aggregate_and_score` + `derive_confidence`（与 router / 未来 replay 同一代码路径），产出 Recall@5 / MRR@10 / Top-1 正确数 / 误自动选中率（分母 0 → 0.0）并按 human/weak 分组统计；`bootstrap_ci` 纯 stdlib（B=1000、seed=42 幂等，禁 numpy/scipy）；`diff_reports` 输出 improved/regressed 清单，变坏用例附「baseline 首位 vs 当前首位 + 两版 breakdown 对照」
-- **golden set 本体**：主集 14 条覆盖单仓高 margin / 多仓歧义低 margin / 疑似废弃仓参与 / facets 缺失重归一化 / monorepo 子应用 / 部分召回等形态；首条 `gk-001-sample-tifen` 按 ROUTING-RANKING §2.4 数值示意编码事故机制（study-app 6 个中等命中 vs onion-learning 1 个 top 命中，RRF ~0.016 量级），Phase 105 baseline 下 Top-1 仍为 study-app（预期基线，`_notice` 注明由 Phase 106 翻转）
+- **golden set 本体**：主集 14 条覆盖单仓高 margin / 多仓歧义低 margin / 疑似废弃仓参与 / facets 缺失重归一化 / monorepo 子应用 / 部分召回等形态；首条 `gk-001-sample_service-tifen` 按 ROUTING-RANKING §2.4 数值示意编码事故机制（sample_web 6 个中等命中 vs sample_service_service 1 个 top 命中，RRF ~0.016 量级），Phase 105 baseline 下 Top-1 仍为 sample_web（预期基线，`_notice` 注明由 Phase 106 翻转）
 - **hold-out 封存**：6 条（30%）独立文件，顶层 `opened_count=0 + opened_log + _notice`；门禁测试文件对 hold-out 文件名零引用（`rg -c` 可静态验证 Pitfall 6 纪律）
 - **门禁进默认 suite**：三规则原文实现 + 任一失败输出逐例 diff 全文；baseline 绑定 `weight_set_version`（不匹配即失败并提示重建流程）；`GENERATE_GOLDEN=1` 重生成沿用既有 golden idiom；全量评估 `time.monotonic` 硬断言 <10s（实测 <0.1s，远优于 5s 目标）
-- **机制级断言只锁本 phase 已成立性质**：INV-R1/R3 对全部 golden 候选成立、gk-001 的 study-course/study-user-status 进候选集合（召回性质）、同输入评估两遍逐字段相等（确定性）；显式注释**不断言** onion-learning 高于 study-app（Phase 106 SC-1 范围）
+- **机制级断言只锁本 phase 已成立性质**：INV-R1/R3 对全部 golden 候选成立、gk-001 的 sample_course_service/sample_user_service 进候选集合（召回性质）、同输入评估两遍逐字段相等（确定性）；显式注释**不断言** sample_service_service 高于 sample_web（Phase 106 SC-1 范围）
 - **退化可检出实证**：人为把 baseline `recall_at_5` 改大 0.2 → 门禁失败且失败消息含「Recall@5 退化 + 逐例 diff」（验证后还原）；另有测试内自测用例锁定 diff 输出含 regressed case id 与 breakdown 字样
 
 ## Baseline 指标（golden_baseline.json，weight_set_version=phase105-v1）
@@ -148,7 +148,7 @@ None - no external service configuration required.
 
 ## Next Phase Readiness
 
-- Phase 106（公式重构）每一次权重/公式改动都会被本门禁自动判定：改动后跑默认 suite，若 gk-001 翻转（onion-learning 升 Top-1）属预期改进——GENERATE_GOLDEN=1 重建 baseline 并把「breadth 偏置消除」机制断言补进测试（其 SC-1）
+- Phase 106（公式重构）每一次权重/公式改动都会被本门禁自动判定：改动后跑默认 suite，若 gk-001 翻转（sample_service_service 升 Top-1）属预期改进——GENERATE_GOLDEN=1 重建 baseline 并把「breadth 偏置消除」机制断言补进测试（其 SC-1）
 - 105-07（快照回放）可直接复用 evaluate_cases 的 case 形状（node_hits 即快照最小字段集）做回放一致性对比
 - Phase 107 跨组校准可消费 2 条 cross_group 样本的 project_scope 字段与 hold-out 中的 gk-h03
 

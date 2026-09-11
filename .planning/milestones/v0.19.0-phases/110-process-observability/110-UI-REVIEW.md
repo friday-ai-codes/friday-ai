@@ -27,7 +27,7 @@ findings:
 **Audited:** 2026-07-31
 **Baseline:** `110-UI-SPEC.md`（重点 §A 阶段时间线、§B 失败呈现、§C 容器日志、§E.2/E.3 直播态与中断态）
 **Diff base:** `f3292256..HEAD`（`git diff f3292256 HEAD -- web/`，17 文件 / +4150 −26）
-**Screenshots:** 未捕获（3000 / 10240 / 8080 无服务；5173 是另一个无关项目 `onion-practice`）⇒ 纯代码级审计
+**Screenshots:** 未捕获（3000 / 10240 / 8080 无服务；5173 是另一个无关项目 `sample_practice_service`）⇒ 纯代码级审计
 **Scope:** `OrchestrationStageTimeline.vue`（新建）、`PlanResearchLogGroup.vue`（新建）、`SubStepTimeline.vue`（泛化）、`useOrchestrationTimeline.ts`（新建）、`ChatMessageBubble.vue`、`stores/chat.ts`
 **测试基线:** 6 个 spec 文件 / 223 用例全绿（`vitest run`，本次实跑）
 **行为核验:** 用 `tsx` 直接跑 `buildOrchestrationTimeline` 三个场景（直播前半程 / 单条不可识别事件 / 快照到达），下文 HI-01 与 MN-01 的结论是**实测输出**，不是代码推读

@@ -13,7 +13,7 @@
 2. **shortlist 内细落点**：每个放置单元产出 `primary_repo` + `supporting_repos[]` + confidence + evidence + open_questions；细排可调用 `RepoRouterV2`，但候选硬限制在 shortlist（∪ 复用宿主）。
 3. **主路径接线（INT-01）**：蓝图路由 / 项目选仓主路径走决策漏斗（或等价编排）；三分量加权作为漏斗内信号，不再作为唯一决策。
 
-**不实现**：统一门禁 pass|clarify|block 与反思环（131）、高阶提效四基线回归门槛（132）。**禁止重写** `RepoRouterV2`——仅作 shortlist∪reuse-host 范围内的细排信号工具。
+**不实现**：统一门禁 pass|clarify|block 与反思环（131）、示例功能四基线回归门槛（132）。**禁止重写** `RepoRouterV2`——仅作 shortlist∪reuse-host 范围内的细排信号工具。
 
 </domain>
 
@@ -57,7 +57,7 @@
 <specifics>
 ## Specific Ideas
 
-- 验收锚点「高阶提效」四基线仓属 Phase 132；本相位用合成 modules/features + mock shortlist/role_map 证明聚合与 hard_scope 即可。
+- 验收锚点「示例功能」四基线仓属 Phase 132；本相位用合成 modules/features + mock shortlist/role_map 证明聚合与 hard_scope 即可。
 - Feature list 语料形态已存在：`modules[]` + `features_flat[]`（`module`/`name`/`description`）；「复用端内做题组件」「复用通用知识点播放器」等出现在高阶 demo 正文。
 - Phase 129 已导出 `placement_defaults` 与四角色图——本相位是消费者，不重做角色枚举。
 - 现状痛点：`RepoAssociationService` / Adapter 仍可能对整篇 requirement 做一次 V2（`corpus_kind=requirement` 切块全探）；本相位用放置单元替代「逐点/整篇唯一 primary」心智。
@@ -112,7 +112,7 @@
 ## Deferred Ideas
 
 - 门禁 pass|clarify|block + 发布确认门（GATE）与反思环（REFL）→ Phase 131
-- 高阶提效四基线 primary + out_of_team=0 回归门槛 → Phase 132 / D2
+- 示例功能四基线 primary + out_of_team=0 回归门槛 → Phase 132 / D2
 - 路由控制台大前端 / 章程自动生效 → 本里程碑不做
 - 近 90d commit 混合活跃度 → 不做
 - 推倒重写 RepoRouterV2 → 禁止

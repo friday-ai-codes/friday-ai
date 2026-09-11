@@ -76,6 +76,6 @@
 - shortlist / 历史先验 / 章程角色图 → Phase 129
 - 放置单元与主路径全量接线 → Phase 130
 - 发布门 / 反思环 → Phase 131
-- 高阶提效回归门槛 → Phase 132 / D2
+- 示例功能回归门槛 → Phase 132 / D2
 
 </deferred>

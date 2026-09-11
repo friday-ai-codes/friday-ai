@@ -285,7 +285,7 @@ conftest 已有 `fake_chat_model_factory`（注入 `agents.llm_factory.build_cha
 ### Anti-Patterns to Avoid
 
 - **在 `_emit_event` 之外写 ConvergenceSessionEvent**：违反 INV-6（写入单一入口），且守护测试会拦裸字符串事件名。
-- **golden 断言锁具体名次**：用机制级断言（`breakdown["study-app"]["breadth"] <= breakdown["onion-learning"]["breadth"]`），CONTEXT 明确要求。
+- **golden 断言锁具体名次**：用机制级断言（`breakdown["sample_web"]["breadth"] <= breakdown["sample_service_service"]["breadth"]`），CONTEXT 明确要求。
 - **把 confidence 推导散落在调用方**：`repository_relevance.py` 已有一份「confidence→selected」的映射逻辑，不要再增第二份 margin 实现——推导只在 scoring 模块一处。
 - **快照存全量 node payload**：50 个 hit 每个带 summary/keywords 会让 payload 膨胀；存重算所需最小字段集（score/node_id/repository_id/facets 活跃度/node_path）。
 - **测试里真连 Qdrant**：默认 `--disable-socket`；需要真检索行为时用 `QdrantClient(":memory:")` + monkeypatch `QdrantService.get_client`（先例 `test_milestone_e2e_learning_case.py:104-105`）。
@@ -454,7 +454,7 @@ django_cache.set(cache_key, permutation, timeout=STAGE1_CACHE_TTL)  # TTL 绑定
 3. **golden set 首批规模与跨组样本从哪来？**
    - What we know: CONTEXT 要求首条真实用例 + ≥2–3 条跨组样本；弱标签扩样明确 deferred。
    - Recommendation: 首批 10–20 条人工构造（真实事故用例 + 典型仓群），plan 里排一个「样本征集/确认」checkpoint。
-   - **RESOLVED:** 采纳 recommendation 的规模与构造策略——`105-04-PLAN.md` Task 2 人工构造 20 条（golden_main.json 14 条 + golden_holdout.json 6 条封存），首条为真实事故用例 `gk-001-sample-tifen`（按 ROUTING-RANKING §2.4 数值示意构造），含 ≥2 条 cross_group=true 样本。偏差说明：不排 checkpoint 任务（autonomous 模式），改为在 105-04 SUMMARY 中标注「真实生产样本（会话 sess-example-01 原文）待人工补充替换合成版本」。
+   - **RESOLVED:** 采纳 recommendation 的规模与构造策略——`105-04-PLAN.md` Task 2 人工构造 20 条（golden_main.json 14 条 + golden_holdout.json 6 条封存），首条为真实事故用例 `gk-001-sample_service-tifen`（按 ROUTING-RANKING §2.4 数值示意构造），含 ≥2 条 cross_group=true 样本。偏差说明：不排 checkpoint 任务（autonomous 模式），改为在 105-04 SUMMARY 中标注「真实生产样本（会话 sess-example-01 原文）待人工补充替换合成版本」。
 
 ## Environment Availability
 

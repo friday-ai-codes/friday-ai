@@ -126,7 +126,7 @@ Phase 111 是纯后端数据与服务底座：三个 `services/process_runtime/`
 | 16 | `server/agents/call_source.py`（修改，只追加枚举成员） | `CallSource` 追加 7 值：`BLUEPRINT_DECOMPOSE = "blueprint_decompose"` / `BLUEPRINT_SPEC_GATE = "blueprint_spec_gate"` / `BLUEPRINT_REPO_RESEARCH = "blueprint_repo_research"` / `BLUEPRINT_REROUTE = "blueprint_reroute"` / `BLUEPRINT_REPO_PLAN = "blueprint_repo_plan"` / `BLUEPRINT_MERGE = "blueprint_merge"` / `BLUEPRINT_AI_REVIEW = "blueprint_ai_review"`，每值带注释（沿用既有成员的「phase 来源 + 用途」注释风格 L66-107）；类 docstring 的「36 值」计数同步改 43。无枚举计数守护测试（已验证 `tests/test_model_usage_call_source.py` 无 len 断言），normalize 自动兼容新值 |
 | 17 | `.planning/observability/LOGGING-SPEC.md`（修改） | §4.1 call_source 表追加同 7 行（表在 L62-66 起始区域）；§5/§10 视需要登记 blueprint_* structlog 事件名 |
 | 18 | `server/delivery/management/commands/evaluate_blueprint_golden.py`（新建，含 `management/__init__.py` + `management/commands/__init__.py`） | delivery app 当前**无** management/ 目录（全仓 43 个 command 分布在其他 app，见测试策略）。command 职责：遍历 `server/tests/fixtures/blueprint_golden/*.json`，每个 case 含蓝图样例 + 期望（expected_direct_repos / 关键 feature_points / 引用覆盖率下限）；对每 case 跑 `validate_blueprint` + `derive_execution_plan` + `blueprint_quality` 指标，输出逐例结果与汇总；断言机制级（如「引用覆盖率 ≥ 基线」「direct 集合命中 ≥ 期望」），失败以非零码退出（CommandError）；同输入重复运行结果一致（全程纯函数，无 LLM、无网络——离线可跑）。放 delivery（蓝图 artifact 属地）而非 repositories，discretion 可改 |
-| 19 | `server/tests/fixtures/blueprint_golden/first_case_assessment_boost.json`（新建，命名 discretion） | 首条 golden case：示例功能专项——完整 blueprint/v1 样例 content（六段齐全、citations 完备、repo_associations 含期望 direct 仓集合如 onion-learning/study-course 等）+ expected 块（direct 仓集合 + 关键 feature_points + 指标下限）。fixtures 目录已有 `layered_search_golden/`、`hybrid_graph_capable_golden/` 先例（.txt），本目录用 .json（CONTEXT 锁定）；与 v0.19.0 路由 golden set（在另一 worktree，本 worktree 无该目录）零交集 |
+| 19 | `server/tests/fixtures/blueprint_golden/first_case_sample_exam_boost.json`（新建，命名 discretion） | 首条 golden case：示例功能专项——完整 blueprint/v1 样例 content（六段齐全、citations 完备、repo_associations 含期望 direct 仓集合如 sample_service_service/sample_course_service 等）+ expected 块（direct 仓集合 + 关键 feature_points + 指标下限）。fixtures 目录已有 `layered_search_golden/`、`hybrid_graph_capable_golden/` 先例（.txt），本目录用 .json（CONTEXT 锁定）；与 v0.19.0 路由 golden set（在另一 worktree，本 worktree 无该目录）零交集 |
 
 ### E. 测试（新建，组织见 §测试策略）
 
@@ -398,8 +398,8 @@ blueprint items 没有 `branch_strategy`/`repository_name`/顶层 `title/summary
    - Recommendation：`blueprint.status.transitioned`（payload: from/to/artifact_id）为 111 唯一实际 emit 的事件；`blueprint.stage.started/completed/failed` 常量可同批定义供 112+ 使用（放 BLUEPRINT_EVENTS 集合，不进 ALL_EVENTS）。命名归 planner 定夺，落定后 112–116 消费同一常量。
 
 3. **golden case 的「示例功能专项」期望 direct 仓集合具体取值**
-   - What we know：DESIGN §5.7 实证提到 onion-learning / study-course / onion-practice / study-app / study-plan / study-practice 等仓名；期望 4 仓稳定集合的准确清单在路由试验记录里。
-   - Recommendation：fixture 的 expected_direct_repos 以 DESIGN §5.7 表格提及的目标仓为准（onion-learning、study-course 必在）；断言机制级（命中率阈值）而非逐仓全等，避免对试验记录的过度耦合。
+   - What we know：DESIGN §5.7 实证提到 sample_service_service / sample_course_service / sample_practice_service / sample_web / study-plan / study-practice 等仓名；期望 4 仓稳定集合的准确清单在路由试验记录里。
+   - Recommendation：fixture 的 expected_direct_repos 以 DESIGN §5.7 表格提及的目标仓为准（sample_service_service、sample_course_service 必在）；断言机制级（命中率阈值）而非逐仓全等，避免对试验记录的过度耦合。
 
 ## Sources
 

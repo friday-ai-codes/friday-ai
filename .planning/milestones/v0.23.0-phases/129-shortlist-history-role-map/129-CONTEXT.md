@@ -13,7 +13,7 @@
 2. **历史先验拆分**：需求史（`tech_plan`）与上线史（`document` / `code_change`）与 `team_core` 求交后可 force-include。
 3. **章程角色图**：对 shortlist 逐仓映射固定小枚举角色（主/辅/禁），触碰 `boundaries` 则降级/剔除（除非显式 override）；角色图作为后续放置默认约束导出。
 
-**不实现**：放置单元细落点与主路径全量接线（130）、门禁/反思（131）、高阶提效回归门槛（132）。**禁止重写** `RepoRouterV2`——仅可作 shortlist 范围内的粗排/信号工具。
+**不实现**：放置单元细落点与主路径全量接线（130）、门禁/反思（131）、示例功能回归门槛（132）。**禁止重写** `RepoRouterV2`——仅可作 shortlist 范围内的粗排/信号工具。
 
 </domain>
 
@@ -54,7 +54,7 @@
 <specifics>
 ## Specific Ideas
 
-- 验收锚点「高阶提效」四基线仓属 Phase 132；本相位用合成 team_core + mock 章程/历史证明 force-include 与角色图即可。
+- 验收锚点「示例功能」四基线仓属 Phase 132；本相位用合成 team_core + mock 章程/历史证明 force-include 与角色图即可。
 - 演进而非旁路：`acollect_charter_candidates`（planned 补入）、`ascore_history_match`（kinds 已含 tech_plan/document/code_change）、`resolve_boundary_override` 是直接演进面。
 - Phase 128 已提供 `InitiativeProfile`、`resolve_team_core` / `apply_team_gate`、漏斗 clarify 载荷形状——本相位不得回退为静默全库。
 
@@ -106,7 +106,7 @@
 
 - 放置单元聚合与 shortlist 内细 primary → Phase 130
 - 统一门禁 pass|clarify|block 与反思环 → Phase 131
-- 高阶提效四基线回归门槛 → Phase 132 / D2
+- 示例功能四基线回归门槛 → Phase 132 / D2
 - 路由控制台大前端 / 章程自动生效 → 本里程碑不做
 - 活跃度 v2「近 90 天 commit 数」混合项 → ROUTING-RANKING 标明本次不做
 

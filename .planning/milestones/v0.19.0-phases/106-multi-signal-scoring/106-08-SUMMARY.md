@@ -50,18 +50,18 @@ requirements-completed: [ROUTE-03, ROUTE-04, ROUTE-05]
 
 coverage:
   - id: D1
-    description: "gk-001「示例功能专项」在六信号公式下完成翻转：Top-1 = onion-learning（105 baseline 为 study-app），且机制层面 study-app 的 breadth 贡献 0.0462 <= onion-learning 0.0697——尺寸偏置被 pivoted normalization 消除"
+    description: "gk-001「示例功能专项」在六信号公式下完成翻转：Top-1 = sample_service_service（105 baseline 为 sample_web），且机制层面 sample_web 的 breadth 贡献 0.0462 <= sample_service_service 0.0697——尺寸偏置被 pivoted normalization 消除"
     requirement: ROUTE-03
     verification:
       - kind: unit
         ref: "server/tests/codegraph/test_repo_router_golden.py#test_gk001_mechanism_breadth_not_favor_monolith + test_gk001_mechanism_rank_flipped"
         status: pass
       - kind: unit
-        ref: "server/tests/codegraph/fixtures/repo_router_golden/golden_baseline.json#per_case[gk-001-sample-tifen].top1_repo_id == onion-learning（GENERATE_GOLDEN=1 生成，非手写）"
+        ref: "server/tests/codegraph/fixtures/repo_router_golden/golden_baseline.json#per_case[gk-001-sample_service-tifen].top1_repo_id == sample_service_service（GENERATE_GOLDEN=1 生成，非手写）"
         status: pass
     human_judgment: false
   - id: D2
-    description: "跨组两仓 study-course / study-user-status 进入 gk-001 Top-5（新信号未把跨组正确仓压出窗口）——SC-1 后半句，既有「进候选集合」断言升级为进 Top-5"
+    description: "跨组两仓 sample_course_service / sample_user_service 进入 gk-001 Top-5（新信号未把跨组正确仓压出窗口）——SC-1 后半句，既有「进候选集合」断言升级为进 Top-5"
     requirement: ROUTE-03
     verification:
       - kind: unit
@@ -105,7 +105,7 @@ status: complete
 
 # Phase 106 Plan 08: golden 版本 bump 与 gk-001 翻转 Summary
 
-**golden set 切换到六信号离线评估口径：fixture 内联 repo_meta/facets/scored_at 后 gk-001 事故用例由公式自然翻转（Top-1 study-app → onion-learning），WEIGHT_SET_VERSION bump 至 phase106-v1 与 baseline 重建同提交落地，机制断言三件套锁住「尺寸偏置已消除」的因果性质**
+**golden set 切换到六信号离线评估口径：fixture 内联 repo_meta/facets/scored_at 后 gk-001 事故用例由公式自然翻转（Top-1 sample_web → sample_service_service），WEIGHT_SET_VERSION bump 至 phase106-v1 与 baseline 重建同提交落地，机制断言三件套锁住「尺寸偏置已消除」的因果性质**
 
 ## Performance
 
@@ -117,7 +117,7 @@ status: complete
 
 ## Accomplishments
 
-- **SC-1 兑现（gk-001 翻转由公式产生）**：fixture 按 ROUTING-RANKING §2.4 把事故编码成数据（N_r(study-app)=620 / N_r(onion-learning)=30 / n_bar=60，dense_cos_max 0.52 vs 0.62 表达「6 个中等命中 vs 1 个 top 命中」），六信号打分下 Top-1 = onion-learning，breadth 分项 study-app 0.0462 <= onion-learning 0.0697——翻转来自 pivoted normalization，不是标签硬指定。
+- **SC-1 兑现（gk-001 翻转由公式产生）**：fixture 按 ROUTING-RANKING §2.4 把事故编码成数据（N_r(sample_web)=620 / N_r(sample_service_service)=30 / n_bar=60，dense_cos_max 0.52 vs 0.62 表达「6 个中等命中 vs 1 个 top 命中」），六信号打分下 Top-1 = sample_service_service，breadth 分项 sample_web 0.0462 <= sample_service_service 0.0697——翻转来自 pivoted normalization，不是标签硬指定。
 - **机制断言三件套进默认 pytest 门禁**（ROUTING-RANKING §7.4）：`test_gk001_mechanism_breadth_not_favor_monolith`（breadth 不偏袒巨仓）、`test_gk001_mechanism_rank_flipped`（相对名次翻转）、`test_gk001_cross_group_repos_in_top5`（跨组两仓进 Top-5）。断言锁因果性质而非绝对名次，抗权重微调；辅助函数 `_rank_of` 在候选缺失时直接失败（召回缺失也算退化）。
 - **版本纪律双保险（Pitfall 8）**：`WEIGHT_SET_VERSION` 改为取自 `DEFAULT_WEIGHT_CONFIG`（单一来源，删除 105 的「bump 归 106-08」过渡注释）+ 门禁字面绑定断言；bump 与 `GENERATE_GOLDEN=1` 重建 baseline 落在同一提交 `50f17c3d`，无中间态红灯窗口。
 - **phase106-v1 baseline 生成并逐例 review**：Recall@5 0.9642857（与 105 持平，唯一 0.5 的 gk-013 部分召回未变）、MRR@10 0.9643 → 1.0、Top-1 13/14 → **14/14**、误自动选中率 0.0、全量评估 0.18s。
@@ -125,11 +125,11 @@ status: complete
 
 ## baseline 逐例 diff review（GENERATE_GOLDEN=1 重建后）
 
-`diff_reports` 结论：**improved = [gk-001-sample-tifen]，regressed = 无，unchanged = 13 条**——与 plan 预期（唯一显著变化为 gk-001 翻转）完全一致。
+`diff_reports` 结论：**improved = [gk-001-sample_service-tifen]，regressed = 无，unchanged = 13 条**——与 plan 预期（唯一显著变化为 gk-001 翻转）完全一致。
 
 | case | 变化 | 说明 |
 |------|------|------|
-| gk-001-sample-tifen | **improved** | top1 `study-app` → `onion-learning`；mrr@10 0.5 → 1.0；top1_correct false → true；breakdown 由 `{text .576, breadth .200, activity .090}` 变为 `{text .458, breadth .070, activity .133, domain .167, stack .053}`——breadth 由 0.200 降到 0.070 是尺寸偏置被消除的直接证据 |
+| gk-001-sample_service-tifen | **improved** | top1 `sample_web` → `sample_service_service`；mrr@10 0.5 → 1.0；top1_correct false → true；breakdown 由 `{text .576, breadth .200, activity .090}` 变为 `{text .458, breadth .070, activity .133, domain .167, stack .053}`——breadth 由 0.200 降到 0.070 是尺寸偏置被消除的直接证据 |
 | gk-005-deprecated-competitor | 指标不变 | confidence medium → high（六信号下正确仓与竞争仓分差拉开）；top1/recall/mrr 全部不变 |
 | gk-011-ticket-ambiguous | 指标不变 | confidence medium → high（同上）；歧义 case 的 Top-1 仍正确 |
 | 其余 11 条 | unchanged | top1/recall@5/mrr@10 逐字段不变；breakdown 形状变化（新增 domain/stack 分项、权重重归一化后 text 由 0.7 降至 0.503、activity 由枚举档位变连续衰减值） |
@@ -153,7 +153,7 @@ status: complete
 ## Decisions Made
 
 - **版本单一来源 + 字面断言并存**：`WEIGHT_SET_VERSION` 取自 `DEFAULT_WEIGHT_CONFIG` 消除「两处字面量不同步」，但单一来源防不住「改了配置忘了重建 baseline」——因此门禁保留一条 `assert WEIGHT_SET_VERSION == "phase106-v1"`，与 baseline 比对断言共同构成 Pitfall 8 闸门。
-- **翻转不写成结果断言**：三条机制断言均不写 `ranked[0] == "onion-learning"`（§7.4 的脆弱反例），改为 breadth 分项对比 + 相对名次 + Top-5 窗口；权重后续微调时红灯能直接指向失效的机制。
+- **翻转不写成结果断言**：三条机制断言均不写 `ranked[0] == "sample_service_service"`（§7.4 的脆弱反例），改为 breadth 分项对比 + 相对名次 + Top-5 窗口；权重后续微调时红灯能直接指向失效的机制。
 - **不动 gk-013 的部分召回**：其 recall@5=0.5 是 fixture 既有语义（候选集只召回 2 个 expected 中的 1 个），六信号未改变该结论；Recall@5 因此与 105 持平而非上升，符合「不允许下降」门禁而无需美化。
 
 ## Deviations from Plan

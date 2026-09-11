@@ -49,7 +49,7 @@ API 契约「归属仓库」、受影响功能「涉及仓库」。
 
 **真实数据实测** —— 蓝图 `5b650e1a-2939-4aa9-90a1-1297c0aaead9`（v10，四个仓）渲染导出
 markdown，含仓库 UUID 的行数 **39 → 0**；四个 `### 仓库 <UUID>` 标题变成
-`### 仓库 frontend/onion-learning` 等。
+`### 仓库 frontend/sample_service_service` 等。
 
 **用例** —— `test_blueprint_render.py` 39 passed（新增 4 条）：
 

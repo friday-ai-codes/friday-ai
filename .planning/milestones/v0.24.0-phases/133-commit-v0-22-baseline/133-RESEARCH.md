@@ -31,7 +31,7 @@
 - 评测模式只读，不写生产索引；冷/热延迟区分首次（冷）与重复（热）运行。
 
 ### Claude's Discretion
-- harness 的具体模块布局、gold 数据 schema 细节、报告渲染格式由 Claude 依据现有 `repo_router_eval.py` / `repo_route_recall_eval.py` / `sample_eval.py` 评测模式决定，保持与既有 eval harness 同构。
+- harness 的具体模块布局、gold 数据 schema 细节、报告渲染格式由 Claude 依据现有 `repo_router_eval.py` / `repo_route_recall_eval.py` / `sample_service_eval.py` 评测模式决定，保持与既有 eval harness 同构。
 
 ### Deferred Ideas (OUT OF SCOPE)
 - 阈值锁定与同条件对比 → Phase 140（BENCH-06/07）。
@@ -427,7 +427,7 @@ warm_ms = (time.perf_counter() - t0) * 1000
 
 ### 观测埋点（生命周期 caller + 逐 case sampling）
 ```python
-# Source: 复刻 evaluate_repo_route_recall._LOG_KV 与 sample_eval 的 sampling 模式
+# Source: 复刻 evaluate_repo_route_recall._LOG_KV 与 sample_service_eval 的 sampling 模式
 logger.info("graph_bench_run_completed", category="caller", component="codegraph",
             initiated_by_user_id="system", repository=repo, branch=branch,
             commit_sha=sha, gold_version=gv, total_cases=n, duration_ms=ms)
@@ -566,7 +566,7 @@ logger.info("graph_bench_case_scored", category="sampling", component="codegraph
 - `server/codegraph/services/repo_route_recall_eval.py` — 纯函数指标模块范式（macro 聚合理由、`_recall`、分层归因、`compare_to_baseline`/tolerance 语义）
 - `server/codegraph/management/commands/evaluate_repo_route_recall.py` — 薄 command 范式（fixtures 加载、串行真跑、structlog `_LOG_KV`、baseline 写/比对、不打默认套件）
 - `server/codegraph/services/repo_router_eval.py` — golden gate + per-case diff + baseline JSON 形态
-- `server/services/process_runtime/sample_eval.py` — sampling 埋点 + alias 归一 + 门槛评分范式
+- `server/services/process_runtime/sample_service_eval.py` — sampling 埋点 + alias 归一 + 门槛评分范式
 - `server/services/code_graph/{cache,impact,trace,symbol_resolve,process_trace}.py` — 被测能力入口签名、权限 fail-closed、冷/热控制、`_resolve_built_at_sha` branch 缺口
 - `server/services/retrieval/{hybrid_search,rag_search}.py` — 检索 lane 入口
 - `server/codegraph/models.py` / `server/repositories/models.py` — `built_at_sha`/`last_indexed_commit_sha`/`head_sha`/`Symbol`/`Endpoint`/`CallEdge`/`ProcessTrace` 字段（水位与分桶维度核验）

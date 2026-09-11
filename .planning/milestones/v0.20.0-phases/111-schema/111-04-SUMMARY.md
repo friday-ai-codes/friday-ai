@@ -5,7 +5,7 @@ requirements: [GATE-02]
 provides:
   - "blueprint_quality：citation_coverage / target_repo_hit_rate 纯函数 + ai_rejection_rate / human_edit_volume / clarification_rounds DB 统计占位（112–116 每相位回归复用）"
   - "evaluate_blueprint_golden management command：golden set 离线评估入口（validate→derive→确定性双跑→覆盖率/命中率/必备功能点门槛，任一 FAIL 非零退出）"
-  - "tests/fixtures/blueprint_golden/assessment_boost.json：示例功能专项首条 golden case（DESIGN §5.7 实证语料，独立目录不混 0.19 路由 golden）"
+  - "tests/fixtures/blueprint_golden/sample_exam_boost.json：示例功能专项首条 golden case（DESIGN §5.7 实证语料，独立目录不混 0.19 路由 golden）"
   - "test_blueprint_integration.py：schema→落库→11 态→派生全链路冒烟（wave-1 三 plan 接缝的回归锚）"
 affects:
   - "Phase 112–116 每相位产出退化（schema 拒绝/派生漂移/覆盖率跌破/命中率跌破）可由 `manage.py evaluate_blueprint_golden` 非零退出检出"
@@ -14,7 +14,7 @@ key-files:
   created:
     - server/services/process_runtime/blueprint_quality.py
     - server/tests/services/test_blueprint_quality.py
-    - server/tests/fixtures/blueprint_golden/assessment_boost.json
+    - server/tests/fixtures/blueprint_golden/sample_exam_boost.json
     - server/delivery/management/__init__.py
     - server/delivery/management/commands/__init__.py
     - server/delivery/management/commands/evaluate_blueprint_golden.py
@@ -26,12 +26,12 @@ completed: 2026-07-29
 
 # Phase 111 Plan 04: 蓝图质量基线 + golden 评估 command + 全链路冒烟 Summary
 
-**一行结论**：GATE-02 质量标尺全部就位——引用覆盖率/目标仓命中率纯函数（+三个 DB 统计接口占位）、示例功能专项首条 golden case（§5.7 实证语料：onion-learning 进阶课占位入口 brownfield / study-course 专项学习页 greenfield / onion-practice 专项练习三 direct 仓 + study-plan 章程边界 indirect）、evaluate_blueprint_golden 离线评估 command（确定性双跑内建门槛、未过门槛 CommandError 非零退出），并以 golden fixture 驱动 schema→落库→11 态状态机→execution_plan 派生的全链路集成冒烟，三个 wave-1 底座接缝无断裂。
+**一行结论**：GATE-02 质量标尺全部就位——引用覆盖率/目标仓命中率纯函数（+三个 DB 统计接口占位）、示例功能专项首条 golden case（§5.7 实证语料：sample_service_service 进阶课占位入口 brownfield / sample_course_service 专项学习页 greenfield / sample_practice_service 专项练习三 direct 仓 + study-plan 章程边界 indirect）、evaluate_blueprint_golden 离线评估 command（确定性双跑内建门槛、未过门槛 CommandError 非零退出），并以 golden fixture 驱动 schema→落库→11 态状态机→execution_plan 派生的全链路集成冒烟，三个 wave-1 底座接缝无断裂。
 
 ## Accomplishments
 
 - **指标纯函数（GATE-02 可用标尺）**：`citation_coverage` 三类关键结论条目（findings / rationale 级 repo_associations / affected_features）非空 citations 占比，分母为 0 按约定回 1.0；`target_repo_hit_rate` direct 仓名集合对期望集合命中率，expected 空回 1.0；半可信输入逐字段 `.get` 防御绝不抛。占位接口 `ai_rejection_rate`/`human_edit_volume`/`clarification_rounds` 签名 + 口径 docstring 锁定，返回 None，顶层零 ORM import（rg 验收零命中）。
-- **首条 golden case（Q3 口径）**：`assessment_boost.json` 完整 blueprint/v1（3 feature_points、4 repo_associations、4 仓 findings、3 implementation items 覆盖 modify/create、api_contracts provided+consumed、interaction_flows 3 步、citations 池 6 条 repo_file/knowledge_entity/repo_charter 混合）；onion-learning finding 引用「进阶课（即将上线）占位入口 learn-textbook-sync」实证、study-plan rationale 注明「权益鉴权归 study-course 场景鉴权模块」的不选 direct 理由；expected 断言机制级阈值（min_citation_coverage 0.9 / min_repo_hit_rate 1.0 / required fp_01+fp_02），非逐仓全等。
+- **首条 golden case（Q3 口径）**：`sample_exam_boost.json` 完整 blueprint/v1（3 feature_points、4 repo_associations、4 仓 findings、3 implementation items 覆盖 modify/create、api_contracts provided+consumed、interaction_flows 3 步、citations 池 6 条 repo_file/knowledge_entity/repo_charter 混合）；sample_service_service finding 引用「进阶课（即将上线）占位入口 learn-textbook-sync」实证、study-plan rationale 注明「权益鉴权归 sample_course_service 场景鉴权模块」的不选 direct 理由；expected 断言机制级阈值（min_citation_coverage 0.9 / min_repo_hit_rate 1.0 / required fp_01+fp_02），非逐仓全等。
 - **离线评估 command（T-111-11 防静默放水）**：镜像 measure_extractor_precision 分层（add_arguments / 逐 case 行 + 汇总 JSON report / 非零退出）；六道门槛（validate→derive→确定性双跑逐字节→覆盖率→命中率→必备功能点）；坏 JSON 容错为单 case 失败不 crash 全局，目录缺失/为空是硬 CommandError（golden 基线缺失不做 advisory 跳过）；指标算法零内联；无 LLM/网络/DB 写，天然过 `--disable-socket`；structlog `blueprint_golden_evaluated`（category=caller、component=process_runtime、initiated_by_user_id=system、duration_ms）。
 - **全链路集成冒烟（wave-1 接缝验收）**：golden fixture 单一事实源驱动五段——①落库 + 缺 must_haves 被 `ArtifactContentInvalid` 拒；②主干 `""→researching→drafting→ai_reviewing→pending_review`，open+blocking repo_confirmation 线程阻塞 confirm，resolved 后放行且 acting_user 入 BlueprintReviewer（DB 重读 first_action=final_approve）；③confirmed 后派生 execution_plan 仓集合 == expected.direct_repos 三仓且双跑一致；④add_version 改一个 finding text → diff modified 恰命中该 block_id；⑤真实 ConvergenceSession 落 `blueprint.status.transitioned` 事件行（既有事件类型零改动共存证明）。
 
@@ -40,14 +40,14 @@ completed: 2026-07-29
 | Task | Commit | 内容 |
 | ---- | ------ | ---- |
 | 1 | `d553b14f` | blueprint_quality 两指标纯函数 + 三 DB 统计占位 + 单测 11 例 |
-| 2 | `18bad349` | assessment_boost golden fixture + evaluate_blueprint_golden command + delivery management 包 + command 测试 8 例 |
+| 2 | `18bad349` | sample_exam_boost golden fixture + evaluate_blueprint_golden command + delivery management 包 + command 测试 8 例 |
 | 3 | `fa3d6853` | 全链路集成冒烟 5 例 + 相位门（三目录全量/migration/冻结面）验收 |
 
 ## Files
 
 - `server/services/process_runtime/blueprint_quality.py`（新建：纯函数节 + DB 统计占位节，stdlib only，顶层零 ORM/Django import）
 - `server/delivery/management/commands/evaluate_blueprint_golden.py`（新建：delivery 首个 management command；`--fixtures-dir` 默认 server/tests/fixtures/blueprint_golden、`--output-json` 可选）+ management 两枚 `__init__.py`
-- `server/tests/fixtures/blueprint_golden/assessment_boost.json`（新建：独立目录，只此一个 json，不混 hybrid_graph_capable_golden / layered_search_golden 等 0.19 golden）
+- `server/tests/fixtures/blueprint_golden/sample_exam_boost.json`（新建：独立目录，只此一个 json，不混 hybrid_graph_capable_golden / layered_search_golden 等 0.19 golden）
 - 测试三件：`test_blueprint_quality.py`（11）/ `test_evaluate_blueprint_golden.py`（8）/ `test_blueprint_integration.py`（5）
 
 ## Decisions
@@ -89,9 +89,9 @@ completed: 2026-07-29
 - `tests/services/test_blueprint_quality.py`：11 passed
 - `tests/delivery/test_evaluate_blueprint_golden.py`：8 passed
 - `tests/delivery/test_blueprint_integration.py`：5 passed
-- `uv run python manage.py evaluate_blueprint_golden`：exit 0，stdout 含 `assessment_boost … → PASS` + report JSON
+- `uv run python manage.py evaluate_blueprint_golden`：exit 0，stdout 含 `sample_exam_boost … → PASS` + report JSON
 - **相位门**：`tests/delivery/ tests/repositories/ tests/services/` 全量 **1745 passed, 1 skipped**；`makemigrations --check --dry-run` No changes detected（本 plan migration 零新增）；冻结面终检 `git diff --name-only $(merge-base)..HEAD -- server/ | rg "repo_router_v2|六冻结文件|convergence_session_event"` 零命中（rg exit 1）
-- fixture 验收：validate_blueprint (True, None)；rg -c onion-learning=22、study-course=24；golden 目录 `grep -vc json` = 0
+- fixture 验收：validate_blueprint (True, None)；rg -c sample_service_service=22、sample_course_service=24；golden 目录 `grep -vc json` = 0
 - 观测面自检：command 记 caller 事件（component/initiated_by_user_id=system/duration_ms 齐）；纯函数模块按「高频循环禁 INFO」不加日志；无凭证/上游响应触点无需脱敏
 - 环境备注：Task 2 期间两次 plain `python -c` 出现 `workflows.schemas` 瞬态 ModuleNotFoundError 后自愈（疑 uv 环境同步/pycache 竞态），pytest/manage.py 全程不受影响
 

@@ -36,7 +36,7 @@
 - 评测模式只读，不写生产索引；冷/热延迟区分首次（冷）与重复（热）运行。
 
 ### Claude's Discretion
-- harness 的具体模块布局、gold 数据 schema 细节、报告渲染格式由 Claude 依据现有 `repo_router_eval.py` / `repo_route_recall_eval.py` / `sample_eval.py` 评测模式决定，保持与既有 eval harness 同构。
+- harness 的具体模块布局、gold 数据 schema 细节、报告渲染格式由 Claude 依据现有 `repo_router_eval.py` / `repo_route_recall_eval.py` / `sample_service_eval.py` 评测模式决定，保持与既有 eval harness 同构。
 
 </decisions>
 
@@ -45,7 +45,7 @@
 
 ### Reusable Assets
 - `server/codegraph/services/repo_router_eval.py`、`repo_route_recall_eval.py`、`repo_router_replay.py` — 既有评测/replay harness 模式（逐 case、逐桶、可复现命令）。
-- `server/services/process_runtime/sample_eval.py` — 最近的评测脚本样例。
+- `server/services/process_runtime/sample_service_eval.py` — 最近的评测脚本样例。
 - `server/services/code_graph/`（impact、trace、community、process_trace、symbol_resolve）与 `server/codegraph/resolver/`（base、python_import、frontend_import、symbol_resolver）— v0.22 被测能力。
 - `server/services/retrieval/hybrid_search.py`、`rag_search.py` — Symbol/检索 lane。
 

@@ -107,7 +107,7 @@ score = max_score * (1 + 0.1 * min(hits - 1, 5))    # 现状
 
 三个独立缺陷：
 
-1. **加成是乘性的且上限 1.5×。** 一个含 62 子应用的 monorepo 拿满 1.5×，一个小而精的仓拿 1.0×。后者要赢必须 max_score 高出 50%——而 RRF 分数的动态范围本来就窄（rank 1 到 rank 10 只差 15%），**结构上不可能**。这就是 `study-app` 碾压 `onion-learning` 的确切机制。
+1. **加成是乘性的且上限 1.5×。** 一个含 62 子应用的 monorepo 拿满 1.5×，一个小而精的仓拿 1.0×。后者要赢必须 max_score 高出 50%——而 RRF 分数的动态范围本来就窄（rank 1 到 rank 10 只差 15%），**结构上不可能**。这就是 `sample_web` 碾压 `sample_service_service` 的确切机制。
 2. **hits 是原始计数，不含任何尺寸归一。** 大仓命中多是几乎确定的先验事实，不是相关性证据。
 3. **`score = min(c["score"], 1.0)` 的截断**（见 `repo_router_v2.py:252`）会让多个高分仓并列在 1.0，销毁排序信息且让 tie-breaking 随机化。
 
@@ -180,17 +180,17 @@ S_text = (1 - lam) * S_top + lam * breadth                       # lam = 0.25
 
 **为什么加性不乘性：** 乘性加成的效果依赖 `S_top` 的大小（S_top=0.9 时 1.5× 加成 = +0.45 绝对分，S_top=0.3 时只 = +0.15），这让"广度贡献了多少分"依赖于另一个信号——不可拆解。加性形式下 breadth 的贡献恒为 `lam·breadth`，可以直接在 UI 上写"广度 +0.11"。
 
-### 2.4 用真实 case 验证公式（`study-app` vs `onion-learning`）
+### 2.4 用真实 case 验证公式（`sample_web` vs `sample_service_service`）
 
-设（示意值，落地时用真实节点数）：`study-app` 有 62 子应用 → N_r ≈ 620 节点，命中 6 个；`onion-learning` → N_r ≈ 30 节点，命中 1 个；全仓节点数中位数 N̄ ≈ 60。
+设（示意值，落地时用真实节点数）：`sample_web` 有 62 子应用 → N_r ≈ 620 节点，命中 6 个；`sample_service_service` → N_r ≈ 30 节点，命中 1 个；全仓节点数中位数 N̄ ≈ 60。
 
 | | 现行公式 | 新公式（b=0.6, n_cap=6, λ=0.25） |
 |---|---|---|
-| `study-app` 加成 | `1 + 0.1×5 = 1.50×` | denom = 0.4 + 0.6×(620/60) = 6.6；n_eff ≈ 6 → n_norm = 0.91；breadth = ln(1.91)/ln(7) = **0.33** |
-| `onion-learning` 加成 | `1 + 0 = 1.00×` | denom = 0.4 + 0.6×(30/60) = 0.7；n_eff = 1 → n_norm = 1.43；breadth = ln(2.43)/ln(7) = **0.46** |
-| 净效果 | onion-learning 需 max_score 高出 **50%** 才能赢 | breadth 项**反向倾斜 0.13**，乘 λ=0.25 → 折算 **+0.03** 给 onion-learning |
+| `sample_web` 加成 | `1 + 0.1×5 = 1.50×` | denom = 0.4 + 0.6×(620/60) = 6.6；n_eff ≈ 6 → n_norm = 0.91；breadth = ln(1.91)/ln(7) = **0.33** |
+| `sample_service_service` 加成 | `1 + 0 = 1.00×` | denom = 0.4 + 0.6×(30/60) = 0.7；n_eff = 1 → n_norm = 1.43；breadth = ln(2.43)/ln(7) = **0.46** |
+| 净效果 | sample_service_service 需 max_score 高出 **50%** 才能赢 | breadth 项**反向倾斜 0.13**，乘 λ=0.25 → 折算 **+0.03** 给 sample_service_service |
 
-即：偏置从 "+50% 给大仓" 翻转为 "+0.03 给小仓"。翻转的幅度小且有界，这是刻意的——不能矫枉过正把大仓一律打死（`study-app` 有时确实是对的）。
+即：偏置从 "+50% 给大仓" 翻转为 "+0.03 给小仓"。翻转的幅度小且有界，这是刻意的——不能矫枉过正把大仓一律打死（`sample_web` 有时确实是对的）。
 
 置信度：MEDIUM（数值示意；N_r 的真实分布未实测，落地第一步应先打印全仓 N_r 直方图确认 N̄ 与 b 的合理性）。
 
@@ -413,7 +413,7 @@ LLM listwise 重排存在强位置偏置（Found in the Middle, NAACL 2024）。
 
 | 指标 | 用不用 | 理由 |
 |------|-------|------|
-| **Recall@5** | ✅ **主指标** | 每条需求只有 1–3 个正确仓，二元相关性。Recall@k 直接回答"正确仓有没有进候选"——这正是本次事故的失败点（`study-user-status` 曾被 Space 硬过滤完全挡在门外），也与「召回优先于精排」原则对齐 |
+| **Recall@5** | ✅ **主指标** | 每条需求只有 1–3 个正确仓，二元相关性。Recall@k 直接回答"正确仓有没有进候选"——这正是本次事故的失败点（`sample_user_service` 曾被 Space 硬过滤完全挡在门外），也与「召回优先于精排」原则对齐 |
 | **MRR@10** | ✅ 次指标 | 首位质量。单正确答案时 MRR 就是 1/rank，解释直观 |
 | **Top-1 Accuracy** | ✅ 决策指标 | 因为 high confidence → `auto_selected` → 直接进编码，Top-1 错误的代价远高于 Top-5 错误 |
 | **误自动选中率** | ✅ **护栏指标** | `count(conf==high AND top1 错误) / count(conf==high)`。这是唯一直接量化"编排被错误自动推进"的指标，**必须设硬上限（建议 ≤ 10%）** |
@@ -461,12 +461,12 @@ LLM listwise 重排存在强位置偏置（Found in the Middle, NAACL 2024）。
 
 ```python
 # ❌ 脆弱：任何权重微调都可能让它红/绿，且红了不知道为什么
-assert result[0].repo == "onion-learning"
+assert result[0].repo == "sample_service_service"
 
 # ✅ 稳健：锁定的是机制，不是结果
-assert breakdown["study-app"]["breadth"] <= breakdown["onion-learning"]["breadth"]
-assert rank("onion-learning") < rank("study-app")
-assert "study-course" in top_k(5) and "study-user-status" in top_k(5)
+assert breakdown["sample_web"]["breadth"] <= breakdown["sample_service_service"]["breadth"]
+assert rank("sample_service_service") < rank("sample_web")
+assert "sample_course_service" in top_k(5) and "sample_user_service" in top_k(5)
 ```
 机制级断言抗过拟合，因为它锁定的是"尺寸偏置已被消除"这个因果性质，而不是某组权重下的偶然名次。
 

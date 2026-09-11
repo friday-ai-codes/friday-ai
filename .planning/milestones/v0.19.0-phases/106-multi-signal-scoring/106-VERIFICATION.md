@@ -102,21 +102,21 @@ audit_acknowledged:
 
 用 `aggregate_and_score` 直接重算 gk-001（`n_bar=60`, `scored_at=2026-07-29`）：
 
-| 变体 | s_top 口径 | Top-1 | onion-learning | study-app | 翻转成立？ |
+| 变体 | s_top 口径 | Top-1 | sample_service_service | sample_web | 翻转成立？ |
 |------|-----------|-------|----------------|-----------|-----------|
-| A 原样 fixture | `rrf_s_hat` | onion-learning | 0.8813 | 0.7102（第 4） | ✓ |
-| B 剥掉**全部** facet_scores | `rrf_s_hat` | onion-learning | 0.8884 | 0.7480（第 3） | ✓ |
-| C 再剥掉 `dense_cos_max` | `rrf_s_hat` | onion-learning | 0.8884 | 0.7480 | ✓（与 B 逐字段相同） |
-| D 给全部仓补齐 `dense_cos_max`（强制 dense 口径） | `dense_cosine` | onion-learning | 0.8813 | 0.7454 | ✓ |
-| E 去掉全部 `n_r`（关闭 pivoted 归一） | `rrf_s_hat` | onion-learning | 0.8661 | 0.8083 | ✓（但 breadth 反转，见下） |
-| F Phase 105 legacy 公式（`repo_meta=None`） | — | **study-app** | 0.7900 | **0.8662** | ✗（复现原事故） |
+| A 原样 fixture | `rrf_s_hat` | sample_service_service | 0.8813 | 0.7102（第 4） | ✓ |
+| B 剥掉**全部** facet_scores | `rrf_s_hat` | sample_service_service | 0.8884 | 0.7480（第 3） | ✓ |
+| C 再剥掉 `dense_cos_max` | `rrf_s_hat` | sample_service_service | 0.8884 | 0.7480 | ✓（与 B 逐字段相同） |
+| D 给全部仓补齐 `dense_cos_max`（强制 dense 口径） | `dense_cosine` | sample_service_service | 0.8813 | 0.7454 | ✓ |
+| E 去掉全部 `n_r`（关闭 pivoted 归一） | `rrf_s_hat` | sample_service_service | 0.8661 | 0.8083 | ✓（但 breadth 反转，见下） |
+| F Phase 105 legacy 公式（`repo_meta=None`） | — | **sample_web** | 0.7900 | **0.8662** | ✗（复现原事故） |
 
 关键读数：
 
 1. **B/C 逐字段相同** —— gk-001 现在整条查询走 RRF 口径（4 个候选仓只有 2 个有余弦），fixture 里那两个 `dense_cos_max` 对结果**完全无影响**。REVIEW BL-01 提出的「翻转部分依赖 dense 回退抬升」这一隐患确认已消除，且是因为标尺被统一、不是因为改了数。
-2. **B/C 证明翻转不依赖元数据信号** —— 把 domain/stack 匹配分全部抹掉，onion-learning 仍以 0.8884 : 0.7480 领先。翻转的根因是公式结构：105 的 `breadth = min(hits-1,5)/5` 独占权重 0.20（study-app 拿满 +0.20、onion-learning 拿 0），106 把广度压进 `w_text·λ` 一项（上限 0.1375）并做 pivoted 归一。
-3. **E 是机制断言的反证** —— 关掉 pivoted 归一后 `breadth(study-app)=0.1444 > breadth(onion-learning)=0.0544`，`test_gk001_mechanism_breadth_not_favor_monolith` 会失败。这正说明该断言锁的是 pivoted normalization 这个机制本身，而不是偶然名次。
-4. **F 复现原事故** —— legacy 路径下 study-app 0.8662 > onion-learning 0.7900，与 105 baseline 的 Top-1 一致，说明「翻转」是同一输入下换公式的结果。
+2. **B/C 证明翻转不依赖元数据信号** —— 把 domain/stack 匹配分全部抹掉，sample_service_service 仍以 0.8884 : 0.7480 领先。翻转的根因是公式结构：105 的 `breadth = min(hits-1,5)/5` 独占权重 0.20（sample_web 拿满 +0.20、sample_service_service 拿 0），106 把广度压进 `w_text·λ` 一项（上限 0.1375）并做 pivoted 归一。
+3. **E 是机制断言的反证** —— 关掉 pivoted 归一后 `breadth(sample_web)=0.1444 > breadth(sample_service_service)=0.0544`，`test_gk001_mechanism_breadth_not_favor_monolith` 会失败。这正说明该断言锁的是 pivoted normalization 这个机制本身，而不是偶然名次。
+4. **F 复现原事故** —— legacy 路径下 sample_web 0.8662 > sample_service_service 0.7900，与 105 baseline 的 Top-1 一致，说明「翻转」是同一输入下换公式的结果。
 
 **结论：SC-1 的翻转由公式驱动，独立复核通过。** 残留的诚实说明：`repo_meta` 里的 `n_r`(620/30/45/25)、`n_bar`(60)、facet 匹配分仍是人工按 ROUTING-RANKING §2.4 设定的（MN-07 已 deferred 挂账），但由变体 B/C/E 可知翻转不建立在这些数值的具体取值上。
 
@@ -128,7 +128,7 @@ audit_acknowledged:
 
 | # | Truth | 状态 | 证据 |
 |---|-------|------|------|
-| 1 | 命中多但 N_r 大的仓 breadth 贡献不高于命中少但 N_r 小的仓 | ✓ | `_breadth_signal`（`repo_router_scoring.py:326-360`）三步与 §2.3 一致；探针 A：study-app(6 命中/N_r=620) breadth 0.0462 ≤ onion-learning(1 命中/N_r=30) 0.0697；变体 E 反证机制归因 |
+| 1 | 命中多但 N_r 大的仓 breadth 贡献不高于命中少但 N_r 小的仓 | ✓ | `_breadth_signal`（`repo_router_scoring.py:326-360`）三步与 §2.3 一致；探针 A：sample_web(6 命中/N_r=620) breadth 0.0462 ≤ sample_service_service(1 命中/N_r=30) 0.0697；变体 E 反证机制归因 |
 | 2 | facet 有值 → 键出现且 Σ==score；缺失 → 键不出现并重归一化，不被系统性压低 | ✓ | 见 SC-2 探针（缺失 0.8698 > 不匹配 0.7126） |
 | 3 | 30/180/365/730 天活跃度严格递减；废弃封顶落在 activity 一项内 | ✓ | 见 SC-3 探针 |
 | 4 | `repo_meta=None` 时与 Phase 105 逐字段一致（legacy 零破坏） | ✓ | `_score_legacy` 与 105 同构；探针 F 复算出的四仓分数与 105 公式手算一致；`test_legacy_snapshot_replays_without_error_and_flags` 断言旧快照回放 `score/breakdown/confidence` 逐字段等值；golden 全绿 |
@@ -198,7 +198,7 @@ BL-02 修复独立复核：`test_snapshot_carries_meta_for_all_bucket_repos`（�
 
 | # | Truth | 状态 | 证据 |
 |---|-------|------|------|
-| 1 | gk-001 Top-1 == onion-learning；断言锁机制（breadth 对比 + 相对名次 + 跨组两仓进 Top-5） | ✓ | 三条机制断言全绿；§2 反事实复核 |
+| 1 | gk-001 Top-1 == sample_service_service；断言锁机制（breadth 对比 + 相对名次 + 跨组两仓进 Top-5） | ✓ | 三条机制断言全绿；§2 反事实复核 |
 | 2 | 新 baseline：`phase106-v2` + Recall@5 ≥ 0.9643 + Top-1 14/14 + 误自动选中率 ≤10% | ✓ | baseline 实读：0.9642857 / 14 / 0.0；版本双守护（`test_golden_gate_vs_baseline` 首个 assert + `test_baseline_carries_version_and_ci_fields` 字面绑定 `"phase106-v2"`） |
 | 3 | 默认 pytest suite 全绿、全量评估 < 10s 零网络（T2 不参与离线评估） | ✓ | 9 passed in **0.11s**；`test_full_eval_within_time_budget`；fixture 内联 facet 匹配分，`--disable-socket` 全局隔离 |
 | 4 | hold-out 6 条仅同形字段扩展，`opened_count` 保持 0，门禁文件零引用 | ✓ | 实读：`opened_count=0`、`opened_log=[]`、6 条 case；逐 case diff 确认 `query`/`expected_repos`/`node_hits` score 与 rid **全部未变**，仅新增 `repo_meta`/`constants`/`scored_at` 与 facets 四维；`rg holdout test_repo_router_golden.py` → 无引用 |

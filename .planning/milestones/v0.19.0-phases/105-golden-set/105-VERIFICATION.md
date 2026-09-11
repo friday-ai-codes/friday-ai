@@ -74,7 +74,7 @@ audit_acknowledged:
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 20 | golden set 建成：gk-001 真实事故用例 + >=2 条 cross_group、标签来源齐备 | ✓ VERIFIED | Python 断言实跑：主集 14 条、gk-001 存在且命中分布 study-app 6 / onion-learning 1 / study-course 2 / study-user-status 1（事故机制编码正确）、cross_group 2 条且 expected_repos 与 project_scope 无交集、label_source 全部 ∈ {human, weak} |
+| 20 | golden set 建成：gk-001 真实事故用例 + >=2 条 cross_group、标签来源齐备 | ✓ VERIFIED | Python 断言实跑：主集 14 条、gk-001 存在且命中分布 sample_web 6 / sample_service_service 1 / sample_course_service 2 / sample_user_service 1（事故机制编码正确）、cross_group 2 条且 expected_repos 与 project_scope 无交集、label_source 全部 ∈ {human, weak} |
 | 21 | hold-out 30% 独立封存（opened_count 字段），门禁不加载 | ✓ VERIFIED | golden_holdout.json：opened_count=0、6 条（30%）；`rg golden_holdout test_repo_router_golden.py` 零命中 |
 | 22 | 门禁三规则 + 逐例 diff + weight_set_version 守护，随默认 pytest suite | ✓ VERIFIED | `test_repo_router_golden.py` 7 用例无特殊 marker（默认 suite 即门禁）；baseline 含 weight_set_version=phase105-v1 / bootstrap_ci / recall_at_5 / top1_correct_count / false_auto_select_rate / by_label_source；GENERATE_GOLDEN ×7 处 |
 | 23 | 全量评估离线纯函数零网络、<5s | ✓ VERIFIED | 实跑：**7 passed in 0.08s**（wall 3s 含解释器启动，远低于 5s 目标）；eval 模块零 django/numpy/scipy import 确认 |

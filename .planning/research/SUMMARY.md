@@ -189,7 +189,7 @@ Phases with standard patterns (skip research-phase):
 ### Secondary (MEDIUM confidence)
 - Cursor 论坛注入请求（证明官方尚未交付 per-prompt 注入）
 - 社区 Claude Code 插件（Stop 增量、fail-open exit 0）
-- `.planning/debug/orchestration-friday-agent-e2e.md` — `main` 假命中无关项目
+- `.planning/debug/workflow_suite-friday-agent-e2e.md` — `main` 假命中无关项目
 
 ### Tertiary (LOW confidence)
 - Cursor 本机 Memory MCP 教程 — 个人 JSON，不能替代团队知识库

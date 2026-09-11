@@ -49,7 +49,7 @@ audit_acknowledged:
 | # | Truth | 判定 | 证据 |
 |---|-------|------|------|
 | 1 | **SC-1** 歧义超阈值停在「需要澄清」并抛带候选选项+证据的问题；作答后规格锁定且同一问题不再重复问；每个 feature_point 带 greenfield/brownfield/fix | ✓ VERIFIED | `blueprint_spec_gate.py` 五步闭环：打分→开线程→挂起→作答→锁定；提问前经 `_acollect_prior`（:485）汇总 answered/resolved 线程与既有 `decision_log`，以 `prior_context` 回灌打分 prompt（:189）；锁定一次性落 `requirement_spec`+`ambiguity_report.resolved_thread_ids`+`decision_log`（:322-345）。`test_blueprint_spec_gate.py` 13 passed，`test_blueprint_ambiguity_score.py` 33 passed |
-| 2 | **SC-2** 候选带 `charter_match` 分量且分数可拆解；greenfield 上 owned(planned) 仓能进候选（onion-learning case）；brownfield 命中禁区降权且 LLM 保留须给显式理由 | ✓ VERIFIED | `test_blueprint_route_stage.py` 20 例全绿，逐条机制级：`test_charter_planned_owner_enters_candidates_as_supplement`（:222，router_base=0.0 补入）/ `test_charter_component_fully_explains_ranking_difference`（:268，排序差异可归因章程分量）/ `test_boundary_hit_candidate_is_penalized_not_dropped`（:296）/ `test_boundary_candidates_always_carry_reason_or_flag`（:424，`boundary_override_reason` 与 `unjustified_boundary_hit` 恰有其一） |
+| 2 | **SC-2** 候选带 `charter_match` 分量且分数可拆解；greenfield 上 owned(planned) 仓能进候选（sample_service_service case）；brownfield 命中禁区降权且 LLM 保留须给显式理由 | ✓ VERIFIED | `test_blueprint_route_stage.py` 20 例全绿，逐条机制级：`test_charter_planned_owner_enters_candidates_as_supplement`（:222，router_base=0.0 补入）/ `test_charter_component_fully_explains_ranking_difference`（:268，排序差异可归因章程分量）/ `test_boundary_hit_candidate_is_penalized_not_dropped`（:296）/ `test_boundary_candidates_always_carry_reason_or_flag`（:424，`boundary_override_reason` 与 `unjustified_boundary_hit` 恰有其一） |
 | 3 | **SC-3** 每候选仓独立容器调研（PLAN 链接通任务 token 与知识 MCP），回传 fitness+role+职责+带 citations 的 findings；**unsuitable 触发重路由 ≤2 轮**，仍不收敛升确认门 | ⚠️ **PARTIAL** | 容器链、token/env、fitness 落盘、上界与升门**全部为真**（见下）；**「排除 unsuitable + 补候选重调研」无实现** —— `excluded` 只写不读，reroute 轮为空转。详见 Gaps #1 |
 | 4 | **SC-4** 确认门展示清单/role/职责/fitness/现状/证据；移除/加仓/改判 role/改职责驱动对应重调研；确认后锁定 | ✓ VERIFIED | **经真实 REST 入口、不桩续驱**的端到端证伪线：`test_blueprint_gate_api.py:753-893` 六例（add_repo→stage 落 `repo_research` 且只为新仓起 1 个容器、已完成仓 task/PartialPlan 行数逐一不变；reclassify indirect→direct 触发、direct→indirect 不触发；remove_repo 不触发；upgrade-research 只为该仓起深容器；confirm 驱到 DONE 且 `confirmed_at_gate` 全真；续驱炸掉时标记仍持久化） |
 | 5 | **SC-5** 确认/改判→owned_domains 草案、移除→boundaries 草案，人工 confirm 才生效；rejected 候选可一键沉淀禁区候选 | ✓ VERIFIED | `charter_draft_writeback.asubmit_charter_draft` 三分支落库；`test_charter_draft_writeback.py` 8 例含 `test_human_confirmed_charter_only_receives_draft_content`（:89）与 `test_human_confirmed_draft_content_merges_by_key`（:120）；一键沉淀端点 `BlueprintRejectedToBoundaryView`（views:330）已注册 URL |
@@ -78,7 +78,7 @@ audit_acknowledged:
 | `system/models.py` | 693 | `blueprint.spec_gate.config` ✓ | ✓ VERIFIED |
 | `system/settings_service.py` | 153 | `async def aget_json_setting` ✓ | ✓ VERIFIED |
 | `delivery/services/event_taxonomy.py` | 198 | `blueprint.route.scored` ✓ | ✓ VERIFIED |
-| `tests/fixtures/blueprint_golden/assessment_boost.json` | 637 | `"intent"` ×3 ✓ | ✓ VERIFIED |
+| `tests/fixtures/blueprint_golden/sample_exam_boost.json` | 637 | `"intent"` ×3 ✓ | ✓ VERIFIED |
 | `delivery/services/blueprint_lifecycle_service.py` | 1150 | `async def open_thread` ✓ | ✓ VERIFIED（+820/-0 纯追加） |
 | `services/process_runtime/blueprint_ambiguity_score.py` | 458 | `BLUEPRINT_SPEC_GATE` ×3 ✓ | ✓ VERIFIED |
 | `services/process_runtime/blueprint_intent_classify.py` | 211 | `_VALID_INTENT` ×3 ✓ | ✓ VERIFIED |
@@ -86,7 +86,7 @@ audit_acknowledged:
 | `services/process_runtime/blueprint_charter_match.py` | 388 | `def score_charter_match` ✓ | ✓ VERIFIED |
 | `services/process_runtime/blueprint_route_history.py` | 215 | `entity_kinds` ✓ | ✓ VERIFIED |
 | `services/process_runtime/blueprint_route.py` | 887 | `build_score_breakdown` ×3 ✓ | ✓ VERIFIED |
-| `tests/.../test_blueprint_route_breakdown.py` | 326 | `onion-learning` **✗ 0 命中** | ⚠️ 位置偏差（见 Anti-Patterns #2） |
+| `tests/.../test_blueprint_route_breakdown.py` | 326 | `sample_service_service` **✗ 0 命中** | ⚠️ 位置偏差（见 Anti-Patterns #2） |
 | `tests/.../test_blueprint_route_stage.py` | 590 | `boundary_override_reason` ×5 ✓ | ✓ VERIFIED |
 | `services/process_runtime/blueprint_research_adapter.py` | 1113 | `env_FRIDAY_TASK_USER_TOKEN` ×3 ✓ | ✓ VERIFIED |
 | `subagent/api/callbacks.py` | 2246 | `_is_blueprint_research` ×5 ✓ | ✓ VERIFIED（+301/-0） |
@@ -175,7 +175,7 @@ audit_acknowledged:
 | # | 文件 | 类型 | 严重度 | 说明 |
 |---|------|------|--------|------|
 | 1 | `test_blueprint_reroute.py` | 断言盲区 | ⚠️ WARNING | 只断言轮次计数与 escalate 出边，不断言 reroute 轮真的派发了新仓 —— 这正是 Gaps #1 能通过测试的原因 |
-| 2 | `test_blueprint_route_breakdown.py` | artifact 位置偏差 | ℹ️ INFO | PLAN 声明该文件 `contains: "onion-learning"`，实际 0 命中；高阶提效 case 的三条机制断言落在 `test_blueprint_route_stage.py:222/268/478`。**能力存在、位置漂移**，不构成 gap |
+| 2 | `test_blueprint_route_breakdown.py` | artifact 位置偏差 | ℹ️ INFO | PLAN 声明该文件 `contains: "sample_service_service"`，实际 0 命中；示例功能 case 的三条机制断言落在 `test_blueprint_route_stage.py:222/268/478`。**能力存在、位置漂移**，不构成 gap |
 | 3 | `system/models.py`(11 行) / `artifact_serializers.py`(6 行) / `test_artifact_injection.py`(6 行) / `test_wave_progression.py`(6 行) | formatter 回流 | ℹ️ INFO | 删除行经逐行核对**全部**为 `ruff format` 换行重排（`LOG_RETENTION_SIZE`、`ALERT_*` 常量、`JSONField(...)` 参数换行等），零语义变更。与 112-01 prohibition「既有键一个不改」的字面口径有摩擦，但键名/键值/行为均未变；且 112-04 对 `callbacks.py` 已按同一问题手工回滚（其 SUMMARY 偏差 #4）—— 建议后续 plan 统一「只对新增段跑 format」 |
 | 4 | `test_charter_service.py` INV-6 守护 | 守护放宽 | ℹ️ INFO 可接受 | writer 从单值改 `_ALLOWED_WRITERS` 两值 frozenset。**强度保留**：仍是显式枚举白名单，正则/目录豁免均未引入；放宽有 112-05 PLAN(W2)「回灌写入必须放新文件」的明令依据 |
 | 5 | `test_event_taxonomy_alignment.py` 守护 | 守护放宽 | ℹ️ INFO 可接受 | `referenced <= ALL_EVENTS \| BLUEPRINT_EVENTS`。未把蓝图事件塞进 `ALL_EVENTS`（那会改既有 taxonomy 语义），强度不变 |
@@ -232,7 +232,7 @@ audit_acknowledged:
 
 ## Gaps Summary
 
-相位目标基本达成：**规格门 fail-closed 闭环、双面路由三分量可拆解（含高阶提效 case 的机制级复现）、逐仓容器调研（token/env/章程 prompt/fitness 落盘）、硬确认门八端点 + 五动作真实 REST 驱动重调研、章程回灌 ai_draft + 人工 confirm** 全部在生产路径上成立。上两轮 BLOCKER 的病灶（孤儿续驱函数、`charter_service.py` 被改）已彻底闭合：续驱有六个生产调用方、九个冻结文件 `git diff` 为空、11 个新模块无一孤儿。
+相位目标基本达成：**规格门 fail-closed 闭环、双面路由三分量可拆解（含示例功能 case 的机制级复现）、逐仓容器调研（token/env/章程 prompt/fitness 落盘）、硬确认门八端点 + 五动作真实 REST 驱动重调研、章程回灌 ai_draft + 人工 confirm** 全部在生产路径上成立。上两轮 BLOCKER 的病灶（孤儿续驱函数、`charter_service.py` 被改）已彻底闭合：续驱有六个生产调用方、九个冻结文件 `git diff` 为空、11 个新模块无一孤儿。
 
 唯一缺口是重路由的「补候选」这一步：轮次记账与升门都对，但轮内不真的重调研任何新仓——`excluded` 是本次扫描唯一的「写了没人读」的键。它不威胁安全性（有界 + 必然升人裁决门），但让 SC-3 的「重路由」在语义上只剩空转，且现有 reroute 测试的断言口径正好绕过了它。建议在 Phase 113 开工前以最小方案（候选集剔除 + 一条派发计数断言）补齐，避免这条空转被后续相位当成既有语义继承。
 
