@@ -26,6 +26,14 @@ import ProviderHealthBadge from './ProviderHealthBadge.vue'
 
 interface Props {
   credentials: ProviderCredentialDto[]
+  /**
+   * Claude Code 编码容器当前选中的凭证 id（来自 claude_code_config 指针）。
+   *
+   * 这是一个**独立于 is_default 的指针**：改凭证记录不会改指针，改指针也不看默认星标。
+   * 不把它标出来的代价是真实踩过的坑——用户把新 key 填进 A 凭证、以为编码容器换了钥匙，
+   * 实际容器还在用指针指着的 B 凭证，连着两轮容器用旧账号失败且界面上毫无线索。
+   */
+  claudeCodeCredentialId?: string
 }
 
 defineProps<Props>()
@@ -133,6 +141,14 @@ function onDefaultModelChange(c: ProviderCredentialDto, modelId: unknown) {
               >
                 <span class="icon-[lucide--star] h-2.5 w-2.5" aria-hidden="true" />
                 默认
+              </span>
+              <span
+                v-if="claudeCodeCredentialId && c.id === claudeCodeCredentialId"
+                class="inline-flex shrink-0 items-center gap-0.5 rounded-md bg-violet-400/15 px-1.5 py-0.5 text-[10px] font-medium text-violet-600"
+                title="Claude Code 编码容器当前使用这条凭证"
+              >
+                <span class="icon-[lucide--terminal] h-2.5 w-2.5" aria-hidden="true" />
+                Claude Code 使用中
               </span>
             </div>
             <span v-if="c.api_key_last4" class="font-mono text-xs text-muted-foreground">

@@ -22,6 +22,7 @@ import type {
  * 严格遵守 UI-SPEC 2-weight 契约（font-normal + font-semibold）。
  */
 import { computed, onMounted, ref } from 'vue'
+import { providerCredentialsApi } from '~/api/providerCredentials'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -99,6 +100,30 @@ const deleteConfirmOpen = ref(false)
 
 const cancelConfirmOpen = ref(false)
 
+/**
+ * Claude Code 编码容器当前指向的凭证 id（``claude_code_config.credential_id``）。
+ *
+ * 单独拉一次而不是从列表字段读：这个指针是系统设置，与凭证记录本身无关——改凭证不动指针。
+ * 用户踩过的坑正是这个错位：把新 key 填进 A 凭证，编码容器却还在用指针指着的 B 凭证，
+ * 连着两轮容器用旧账号失败，界面上没有任何线索能看出「你改的不是它在用的那把钥匙」。
+ * 取不到就当没有（空串）：这只是提示，绝不阻断凭证管理本身。
+ */
+const claudeCodeCredentialId = ref('')
+
+/** 正在编辑的这条凭证是否**不是** Claude Code 在用的那条（此时才需要提示）。 */
+const editingOtherThanClaudeCode = computed(
+  () =>
+    formMode.value === 'edit'
+    && !!claudeCodeCredentialId.value
+    && formInitial.value?.id !== claudeCodeCredentialId.value,
+)
+
+const claudeCodeCredentialName = computed(
+  () =>
+    store.credentials.find(c => c.id === claudeCodeCredentialId.value)?.name
+    ?? claudeCodeCredentialId.value,
+)
+
 // ==== 弹窗标题区品牌识别（edit 模式按 provider 品牌色 + 图标，create 用统一 primary）====
 const PROVIDER_ICON: Record<string, string> = {
   anthropic: 'icon-[simple-icons--anthropic]',
@@ -125,6 +150,14 @@ onMounted(() => {
   void store
     .fetchCredentials({ scope: props.scope, spaceId: props.spaceId })
     .catch(e => handleError(e, '加载凭证列表'))
+  // 「Claude Code 使用中」徽标的数据源。失败静默：拿不到指针只是少一个提示，
+  // 不该让凭证管理页因为一个附属信息报错。
+  void providerCredentialsApi
+    .getClaudeCodeConfig()
+    .then((cfg) => {
+      claudeCodeCredentialId.value = cfg.credential_id ?? ''
+    })
+    .catch(() => {})
 })
 
 // ==== Handlers ====
@@ -319,6 +352,7 @@ defineExpose({ openCreate })
     <ProviderCredentialListTable
       v-else
       :credentials="store.credentials"
+      :claude-code-credential-id="claudeCodeCredentialId"
       @edit="onEdit"
       @delete="onDelete"
       @toggle-active="onToggleActive"
@@ -352,6 +386,17 @@ defineExpose({ openCreate })
             </DialogDescription>
           </div>
         </DialogHeader>
+        <p
+          v-if="editingOtherThanClaudeCode"
+          class="flex items-start gap-2 border-b border-border/50 bg-amber-400/10 px-6 py-3 text-xs text-amber-700 dark:text-amber-400"
+        >
+          <span class="icon-[lucide--info] mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            Claude Code 编码容器当前使用的是
+            <strong>{{ claudeCodeCredentialName }}</strong>
+            ，不是这条凭证。改这里不会影响编码容器；要让容器换用新 Key，请到「Claude Code 编码配置」重新选择凭证。
+          </span>
+        </p>
         <ProviderCredentialForm
           :mode="formMode"
           :initial="formInitial"
