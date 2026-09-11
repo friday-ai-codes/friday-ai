@@ -2608,12 +2608,23 @@ _MAX_CALLBACK_ERROR_CHARS = 500
 async def _handle_blueprint_research_failure(
     session: SubAgentSession, p: dict[str, Any], log: BoundLogger
 ) -> None:
-    """蓝图调研容器失败 → mark_failed(container_failed) + emit failed + barrier（失败也是终态）。"""
+    """蓝图调研容器失败 → mark_failed + emit failed + barrier（失败也是终态）。
+
+    ⭐ **基础设施故障不烧重试预算**：``attempt`` 在派发那一刻已经 +1，而额度耗尽 / key 失效 /
+    runner 掉线这类失败与需求无关、容器压根没跑起来。归因命中就把这一格退回去（判据见
+    ``failure_classification``），否则五个仓一起秒败两轮就能把整个会话的预算烧光、会话报废
+    ——2026-09-04 连废三个会话正是这条。回退 best-effort，失败只 warning，绝不反噬终态与
+    barrier（不落终态会让 fan-out barrier 永远等不齐，比多烧一格预算严重得多）。
+    """
     if not _is_blueprint_research(session):
         return
 
     from delivery.services import ConvergenceSessionService, ResearchService
     from delivery.services.event_taxonomy import EVENT_BLUEPRINT_REPO_RESEARCH_FAILED
+    from services.process_runtime.failure_classification import (
+        INFRASTRUCTURE_FAILURE_REASON,
+        is_infrastructure_failure,
+    )
 
     task, blueprint_session = await _aload_blueprint_research_task(session)
     if task is None:
@@ -2624,7 +2635,19 @@ async def _handle_blueprint_research_failure(
     error_detail = redact_secrets_in_text(str(p.get("error", "Unknown error")))[
         :_MAX_CALLBACK_ERROR_CHARS
     ]
-    await ResearchService().mark_failed(task, {"reason": "container_failed", "error": error_detail})
+    research_service = ResearchService()
+    infrastructure = is_infrastructure_failure(error_detail)
+    reason = INFRASTRUCTURE_FAILURE_REASON if infrastructure else "container_failed"
+    await research_service.mark_failed(task, {"reason": reason, "error": error_detail})
+    if infrastructure:
+        try:
+            await research_service.refund_attempt(task)
+        except Exception as exc:  # noqa: BLE001 — 记账 best-effort，绝不反噬终态与 barrier
+            log.warning(
+                "blueprint_research_attempt_refund_failed",
+                task_id=str(task.id),
+                error=redact_secrets_in_text(str(exc)),
+            )
     if blueprint_session is not None:
         lo = session.last_output if isinstance(session.last_output, dict) else {}
         await ConvergenceSessionService().aemit_event(
@@ -2635,12 +2658,17 @@ async def _handle_blueprint_research_failure(
                 "attempt": getattr(task, "attempt", None),
                 "repository_id": str(task.repository_id),
                 "task_id": str(task.id),
-                "error_kind": "container_failed",
+                "error_kind": reason,
                 "error_detail": error_detail,
             },
         )
     await _trigger_blueprint_research_barrier(blueprint_session)
-    log.info("blueprint_research_failure_handled", task_id=str(task.id))
+    log.info(
+        "blueprint_research_failure_handled",
+        task_id=str(task.id),
+        error_kind=reason,
+        attempt=getattr(task, "attempt", None),
+    )
 
 
 # === blueprint_repo_plan 容器回调 → repo_plan 段落 PartialPlan.content（Phase 113-03，FLOW-05） ===
@@ -2683,7 +2711,7 @@ def _parse_blueprint_repo_plan(
     required，而容器侧提交工具（``task/core/agent_submit_mcp.py``）刻意**不要求**容器填它
     （注释写明「由服务端权威写入」）。两处口径相反 ⇒ 容器按契约不填就必然被判非法，重试
     只是让同一个 prompt 再赌一次「模型这次记不记得多写一个键」，输了就落 degraded 空壳 +
-    开阻塞澄清线程。2026-09-04 实测 study-course / onion-learning / study-app 三仓各中招
+    开阻塞澄清线程。2026-09-04 实测 sample_course_service / sample_service_service / sample_web 三仓各中招
     3-4 次。服务端本就权威覆写该字段，先写再验与先验再写语义完全一致。
 
     Args:

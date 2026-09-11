@@ -10,6 +10,8 @@
   **绝不触碰其他 task / session.status**。
 - ``bump_attempt``：纯派发计数自增（不改 status、不绑 stage 名），供自实现重试上界的
   调用方（蓝图链 ``repo_research``）记账。
+- ``refund_attempt`` / ``reset_attempts``：基础设施故障不该烧掉重试预算——前者由回调按
+  失败归因逐次回退，后者是运维口（环境修好后一把清零，不必新建会话）。
 - ``invalidate_for_repo``（RESEARCH-03）：仓库重索引时把关联 valid PartialPlan 置失效 +
   对应 RepoResearchTask→stale，可重入幂等。
 
@@ -193,6 +195,69 @@ class ResearchService:
         )
         task.attempt = int(attempt or 0)
         return task.attempt
+
+    async def refund_attempt(self, task: RepoResearchTask) -> int:
+        """派发计数回退一格（下界 0），返回回退后的 ``attempt``（更新失败返 -1）。
+
+        ⭐ 存在理由是**基础设施故障不该烧掉重试预算**：``attempt`` 在派发那一刻就 +1，而
+        「模型额度耗尽 / key 失效 / runner 掉线」这类失败与需求本身无关，容器压根没跑。
+        2026-09-04 因此连废三个蓝图会话——用户换好 key 时预算已经烧光，只能新建会话重来。
+        归因判据见 ``services.process_runtime.failure_classification``。
+
+        ⛔ 只回退计数，**不改 status**：失败仍是失败、仍要走既有终态与 barrier；这里只是
+        把「这次不算数」记回账上，重派与否由调用方的既有规则决定。
+        """
+        return await self._refund_attempt_sync(task)
+
+    @sync_to_async
+    def _refund_attempt_sync(self, task: RepoResearchTask) -> int:
+        # 不看 update 的返回行数：attempt 已是 0 时匹配 0 行，但那也是「预算没被烧」这个
+        # 期望结果，按失败上报会让调用方误以为回退没生效（幂等下界，不是错误）。
+        RepoResearchTask.objects.filter(id=task.id, attempt__gt=0).update(
+            attempt=F("attempt") - 1, updated_at=timezone.now()
+        )
+        attempt = (
+            RepoResearchTask.objects.filter(id=task.id).values_list("attempt", flat=True).first()
+        )
+        if attempt is None:
+            return -1
+        task.attempt = int(attempt or 0)
+        return task.attempt
+
+    async def reset_attempts(
+        self, session_id: Any, *, revive_failed: bool = True
+    ) -> dict[str, int]:
+        """把一个蓝图会话下的派发计数清零（运维口，基础设施故障恢复后用）。
+
+        ``revive_failed=True`` 时同时把 ``failed`` 任务放回 ``pending`` —— 光清零不复位没用：
+        派发的增量白名单只认 ``pending`` / ``stale``，failed 任务永远不会被再派一次。
+
+        Returns:
+            ``{"reset": n, "revived": n}``——``reset`` = attempt 被清零的任务数，
+            ``revived`` = 从 failed 放回 pending 的任务数。
+        """
+        return await self._reset_attempts_sync(session_id, revive_failed)
+
+    @sync_to_async
+    def _reset_attempts_sync(self, session_id: Any, revive_failed: bool) -> dict[str, int]:
+        now = timezone.now()
+        revived = 0
+        if revive_failed:
+            revived = RepoResearchTask.objects.filter(
+                session_id=session_id, status=RepoResearchTaskStatus.FAILED
+            ).update(status=RepoResearchTaskStatus.PENDING, updated_at=now)
+        reset = RepoResearchTask.objects.filter(session_id=session_id, attempt__gt=0).update(
+            attempt=0, updated_at=now
+        )
+        logger.info(
+            "repo_research_attempts_reset",
+            category="caller",
+            component="research_service",
+            session_id=str(session_id),
+            reset=reset,
+            revived=revived,
+        )
+        return {"reset": int(reset), "revived": int(revived)}
 
     async def mark_stale(self, task_ids: list) -> int:
         """澄清回答后置指定 RepoResearchTask → stale + 其 valid PartialPlan 失效（CLARIFY-01）。

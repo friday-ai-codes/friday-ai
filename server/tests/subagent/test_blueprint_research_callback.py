@@ -296,11 +296,11 @@ def test_age64_six_in_six_out_research_verdict_shape() -> None:
     from subagent.api.callbacks import _parse_blueprint_fitness
 
     included = {
-        "frontend/study-app": "src/pages/study/index.vue",
-        "frontend/onion-learning": "src/modules/learning/index.ts",
-        "frontend/onion-practice": "src/modules/practice/index.ts",
-        "backend/study-user-status": "apps/status/models.py",
-        "backend/study-course": "apps/course/api.py",
+        "frontend/sample_web": "src/pages/study/index.vue",
+        "frontend/sample_service_service": "src/modules/learning/index.ts",
+        "frontend/sample_practice_service": "src/modules/practice/index.ts",
+        "backend/sample_user_service": "apps/status/models.py",
+        "backend/sample_course_service": "apps/course/api.py",
         "backend/backend-config": "apps/config/models.py",
     }
     excluded = {
@@ -417,6 +417,66 @@ async def test_failure_callback_marks_container_failed_and_emits() -> None:
     failed_payload = emitted[0][1]
     assert failed_payload.get("repository_name") == repo.name
     assert failed_payload.get("attempt") == 2
+
+
+async def test_infrastructure_failure_does_not_burn_the_retry_budget() -> None:
+    """⭐ 额度不足这类环境故障 ⇒ attempt 退回一格（容器压根没跑，不该烧掉重试预算）。
+
+    2026-09-04 的事故：五个仓的容器因 403 额度不足秒败，两轮就把 attempt 烧到上界，
+    整个会话报废、只能新建。
+    """
+    from subagent.api.callbacks import _handle_failed
+
+    _s, repo, task, sub = await _setup()
+    sub.last_output = {**(sub.last_output or {}), "repository_name": repo.name}
+    await sub.asave(update_fields=["last_output", "updated_at"])
+    task.attempt = 1
+    await task.asave(update_fields=["attempt", "updated_at"])
+    emitted: list[tuple] = []
+
+    async def _spy(self, event, session, payload):  # noqa: ANN001
+        emitted.append((event, payload))
+
+    with (
+        patch("subagent.api.callbacks._update_coding_session_on_fail", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._send_failure_notification", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._schedule_workflow_resume"),
+        patch("subagent.api.callbacks._schedule_agent_session_resume"),
+        patch(
+            "delivery.services.convergence_session_service.ConvergenceSessionService._emit_event",
+            new=_spy,
+        ),
+    ):
+        resp = await _handle_failed(sub, {"error": "API error 403: 用户额度不足"}, _log())
+
+    assert resp.status_code == 200
+    await task.arefresh_from_db()
+    assert task.attempt == 0, "基础设施故障烧掉了重试预算"
+    # 失败仍是失败：终态与 barrier 不受归因影响，只有计数不算数。
+    assert task.status == RepoResearchTaskStatus.FAILED
+    assert task.error.get("reason") == "infrastructure_failed"
+    assert emitted[0][1].get("error_kind") == "infrastructure_failed"
+
+
+async def test_product_failure_still_burns_the_retry_budget() -> None:
+    """⛔ 非恒真对照：产物侧失败照旧计数，否则重试上界形同虚设。"""
+    from subagent.api.callbacks import _handle_failed
+
+    _s, _repo, task, sub = await _setup()
+    task.attempt = 1
+    await task.asave(update_fields=["attempt", "updated_at"])
+
+    with (
+        patch("subagent.api.callbacks._update_coding_session_on_fail", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._send_failure_notification", new_callable=AsyncMock),
+        patch("subagent.api.callbacks._schedule_workflow_resume"),
+        patch("subagent.api.callbacks._schedule_agent_session_resume"),
+    ):
+        await _handle_failed(sub, {"error": "agent exited with unusable output"}, _log())
+
+    await task.arefresh_from_db()
+    assert task.attempt == 1
+    assert task.error.get("reason") == "container_failed"
 
 
 async def test_completion_emits_repository_name_and_fitness_verdict() -> None:
