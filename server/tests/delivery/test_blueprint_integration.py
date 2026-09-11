@@ -1,6 +1,6 @@
 """蓝图全链路集成冒烟（Phase 111-04 Task 3）——三个 wave-1 plan 接缝验收。
 
-golden fixture（assessment_boost.json）驱动，单一事实源不再手造第二份大样例：
+golden fixture（sample_exam_boost.json）驱动，单一事实源不再手造第二份大样例：
 
 ① schema→落库：合法 blueprint 经 ArtifactService 落 Artifact + v1，缺段被拒（111-01）。
 ② 落库→状态机：BlueprintLifecycleService 走主干 ""→…→pending_review，open+blocking
@@ -19,7 +19,6 @@ from __future__ import annotations
 import copy
 import json
 import uuid
-from pathlib import Path
 
 import pytest
 
@@ -39,12 +38,9 @@ from delivery.services import ArtifactContentInvalid, ArtifactService
 from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
 from services.process_runtime.blueprint_execution import derive_technical_plan_document
 from services.process_runtime.blueprint_schema import diff_blueprint_blocks
+from tests.helpers.blueprint_samples import make_blueprint
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-_FIXTURE_PATH = (
-    Path(__file__).resolve().parents[1] / "fixtures" / "blueprint_golden" / "assessment_boost.json"
-)
 
 # 主干路径 ""→researching→drafting→ai_reviewing→pending_review
 _TRUNK_TO_PENDING_REVIEW = (
@@ -56,7 +52,13 @@ _TRUNK_TO_PENDING_REVIEW = (
 
 
 def _load_golden_case() -> dict:
-    return json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))
+    blueprint = make_blueprint()
+    direct_repos = [
+        item["repository_name"]
+        for item in blueprint["repo_associations"]
+        if item["role"] == "direct"
+    ]
+    return {"blueprint": blueprint, "expected": {"direct_repos": direct_repos}}
 
 
 async def _make_user():
@@ -82,7 +84,7 @@ async def test_golden_blueprint_persists_and_missing_section_rejected() -> None:
     v1 = await ArtifactVersion.objects.aget(id=artifact.current_version_id)
     assert v1.version_no == 1
     assert v1.content["schema_version"] == "blueprint/v1"
-    assert v1.content["meta"]["title"] == "示例功能专项"
+    assert v1.content["meta"]["title"] == case["blueprint"]["meta"]["title"]
 
     broken = copy.deepcopy(case["blueprint"])
     broken.pop("must_haves")

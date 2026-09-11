@@ -47,10 +47,10 @@ class TestGoExtractorRegistration:
     reason=f"Go gin sample repo not present at {GO_SAMPLE_REPO}",
 )
 class TestStudyCourseExtraction:
-    """真实 Go gin 仓库 study-course 端到端抽取测试。"""
+    """真实 Go gin 仓库 sample_course_service 端到端抽取测试。"""
 
     def test_handlers_directory_yields_symbols_imports_calls(self, go_parser):
-        """遍历 study-course handlers/ 全部 .go 文件，断言三维抽取计数均 > 0。"""
+        """遍历 sample_course_service handlers/ 全部 .go 文件，断言三维抽取计数均 > 0。"""
         extractor = GraphExtractor()
         total_symbols, total_imports, total_calls = 0, 0, 0
         files_scanned = 0
@@ -65,7 +65,7 @@ class TestStudyCourseExtraction:
             ctx = FileContext(
                 file_path=str(go_file),
                 language="go",
-                repository_id="study-course",
+                repository_id="sample_course_service",
             )
             bundle = extractor.extract_all(tree, source, ctx)
             total_symbols += len(bundle.symbols)

@@ -17,7 +17,7 @@ import pytest
 from codegraph.extractors.base import FileContext
 from codegraph.extractors.registry import get_extractor
 
-HTML_SAMPLE_REPO = Path(os.environ.get("STUDY_APP_REPO", ""))
+HTML_SAMPLE_REPO = Path(os.environ.get("SAMPLE_FRONTEND_REPO", ""))
 
 
 class TestHtmlExtractorRegistration:
@@ -30,8 +30,8 @@ class TestHtmlExtractorRegistration:
 
 
 @pytest.mark.skipif(
-    not os.environ.get("STUDY_APP_REPO") or not HTML_SAMPLE_REPO.exists(),
-    reason="sample repo not configured (STUDY_APP_REPO)",
+    not os.environ.get("SAMPLE_FRONTEND_REPO") or not HTML_SAMPLE_REPO.exists(),
+    reason="sample repo not configured (SAMPLE_FRONTEND_REPO)",
 )
 class TestStudyAppHtmlExtraction:
     """example-app 真实 HTML 端到端 —— 仓库存在时验证抽取行为。"""

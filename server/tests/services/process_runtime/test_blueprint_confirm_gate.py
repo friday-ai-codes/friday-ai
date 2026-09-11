@@ -742,7 +742,7 @@ async def test_build_locked_associations_marks_human_decision_and_drops_removed(
     snapshot = [
         {
             "repository_id": "repo-keep",
-            "repository_name": "onion-practice",
+            "repository_name": "sample_practice_service",
             "role_suggestion": "direct",
             "responsibility": "提供生成接口",
             "fitness": {"verdict": "suitable", "reasons": ["已有题库模型"], "citations": ["nope"]},
@@ -923,14 +923,14 @@ def test_unsuitable_auto_remove_emits_sampling_event(monkeypatch) -> None:
 def test_human_edited_repo_is_not_auto_removed_by_late_unsuitable_verdict(action: str) -> None:
     """⭐ 静默丢仓回归：人**编辑过**的仓，refresh 不得因 unsuitable 把它自动移除。
 
-    实测链路（2026-09-04 onion-practice）：门开时该仓未移除，人改了它的角色/职责就点确认，
+    实测链路（2026-09-04 sample_practice_service）：门开时该仓未移除，人改了它的角色/职责就点确认，
     确认前的快照 refresh 恰好带回 ``unsuitable`` ⇒ 自动移除 ⇒ 锁定集少一个仓，界面无提示、
     门关后无补仓入口。只认 ``add_repo`` 的豁免判据漏掉了这两个动作。
     """
     existing = [
         {
             "repository_id": "r1",
-            "repository_name": "onion-practice",
+            "repository_name": "sample_practice_service",
             "role_suggestion": "direct",
             "responsibility": "人写的职责",
             "removed": False,

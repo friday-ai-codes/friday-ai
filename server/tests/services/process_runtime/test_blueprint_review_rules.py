@@ -478,7 +478,7 @@ def test_consumed_needs_support_with_unique_basename_alias_is_clean():
 def test_consumed_needs_support_with_absent_alias_is_blocker():
     blueprint = _blueprint()
     blueprint["repo_associations"] = [
-        _assoc(_REPO_ID, repository_name="frontend/onion-learning"),
+        _assoc(_REPO_ID, repository_name="frontend/sample_service_service"),
     ]
     blueprint["api_contracts"][0]["direction"] = "consumed"
     blueprint["api_contracts"][0]["data_source"] = {

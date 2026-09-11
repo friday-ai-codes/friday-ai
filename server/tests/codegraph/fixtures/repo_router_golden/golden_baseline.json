@@ -36,21 +36,21 @@
   },
   "per_case": [
     {
-      "case_id": "gk-001-sample-tifen",
+      "case_id": "gk-001-sample_service-tifen",
       "label_source": "human",
       "cross_group": false,
       "expected_repos": [
-        "onion-learning",
-        "study-course",
-        "study-user-status"
+        "sample_service_service",
+        "sample_course_service",
+        "sample_user_service"
       ],
       "ranked_repo_ids": [
-        "onion-learning",
-        "study-course",
-        "study-user-status",
-        "study-app"
+        "sample_service_service",
+        "sample_course_service",
+        "sample_user_service",
+        "sample_web"
       ],
-      "top1_repo_id": "onion-learning",
+      "top1_repo_id": "sample_service_service",
       "top1_breakdown": {
         "text": 0.45833333333333337,
         "breadth": 0.06966416738880311,

@@ -1,7 +1,7 @@
 """blueprint_repo_alias —— 仓库别名 → 关联 UUID 的确定性解析（纯函数）。
 
-RepoPlan / 融合起草可能写出 ``support_repository_id`` 的短名或全路径（``onion-learning``、
-``frontend/onion-learning``），而 ``repo_associations`` 权威键是 ``repository_id``（UUID）。
+RepoPlan / 融合起草可能写出 ``support_repository_id`` 的短名或全路径（``sample_service_service``、
+``frontend/sample_service_service``），而 ``repo_associations`` 权威键是 ``repository_id``（UUID）。
 ``reconcile_cross_repo_apis``、``check_api_closure`` 与 merge 落库前的 canonicalize **必须**
 共享本模块口径，否则会出现「仓已在关联清单里却被判缺协作仓」的假阳性。
 

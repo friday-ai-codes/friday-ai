@@ -1,8 +1,8 @@
-"""implementation 集成测试：真实 gopls 抽 study-course Go 仓库验证 SymbolData / ImportData。
+"""implementation 集成测试：真实 gopls 抽 sample_course_service Go 仓库验证 SymbolData / ImportData。
 
-@pytest.mark.integration + 三重 skipif：gopls binary / study-course 路径 / go.mod 存在。
+@pytest.mark.integration + 三重 skipif：gopls binary / sample_course_service 路径 / go.mod 存在。
 
-启用：研发本地装 gopls + study-course 路径存在时跑：
+启用：研发本地装 gopls + sample_course_service 路径存在时跑：
     pytest -m integration codegraph/lsp/tests/test_gopls_real_extract.py
 """
 
@@ -17,8 +17,8 @@ import pytest
 pytestmark = pytest.mark.integration
 
 _GOPLS_BIN: str | None = shutil.which("gopls")
-_STUDY_COURSE: Path = Path(os.environ.get("GOPLS_TEST_REPO", ""))
-_STUDY_COURSE_GOMOD: Path = _STUDY_COURSE / "go.mod"
+_SAMPLE_COURSE_SERVICE: Path = Path(os.environ.get("GOPLS_TEST_REPO", ""))
+_SAMPLE_COURSE_SERVICE_GOMOD: Path = _SAMPLE_COURSE_SERVICE / "go.mod"
 
 
 @pytest.mark.skipif(
@@ -26,19 +26,19 @@ _STUDY_COURSE_GOMOD: Path = _STUDY_COURSE / "go.mod"
     reason="gopls 未在 PATH（需 go install golang.org/x/tools/gopls@latest）",
 )
 @pytest.mark.skipif(
-    not _STUDY_COURSE_GOMOD.exists(),
-    reason="study-course go.mod 不在期望路径",
+    not _SAMPLE_COURSE_SERVICE_GOMOD.exists(),
+    reason="sample_course_service go.mod 不在期望路径",
 )
 class TestGoplsRealExtract:
-    """真实 gopls 抽取 study-course Go 仓库。"""
+    """真实 gopls 抽取 sample_course_service Go 仓库。"""
 
-    def test_discover_go_workspace_finds_study_course(self) -> None:
-        """discover_go_workspace 真实跑 study-course 找 go.mod。"""
+    def test_discover_go_workspace_finds_sample_course_service(self) -> None:
+        """discover_go_workspace 真实跑 sample_course_service 找 go.mod。"""
         from codegraph.lsp.go_workspace import discover_go_workspace
 
-        workspace = discover_go_workspace(_STUDY_COURSE)
-        assert workspace is not None, "study-course go.mod 未被发现"
-        assert workspace.go_mod_root == _STUDY_COURSE.resolve()
+        workspace = discover_go_workspace(_SAMPLE_COURSE_SERVICE)
+        assert workspace is not None, "sample_course_service go.mod 未被发现"
+        assert workspace.go_mod_root == _SAMPLE_COURSE_SERVICE.resolve()
         assert workspace.module_path is not None
         assert workspace.go_version is not None
 
@@ -60,11 +60,11 @@ class TestGoplsRealExtract:
         from codegraph.lsp.gopls_backend import _GoplsLazyBackend, make_gopls_backend
         from codegraph.lsp.supervisor import LspSupervisor
 
-        workspace = discover_go_workspace(_STUDY_COURSE)
+        workspace = discover_go_workspace(_SAMPLE_COURSE_SERVICE)
         assert workspace is not None
 
         supervisor = LspSupervisor(
-            name="gopls-study-course-test",
+            name="gopls-sample_course_service-test",
             command=list(_GoplsLazyBackend.command),
             workspace_root=workspace.go_mod_root,
             language_ids=list(_GoplsLazyBackend.language_ids),
@@ -72,9 +72,9 @@ class TestGoplsRealExtract:
             max_restart_attempts=1,
         )
 
-        go_files = list(_STUDY_COURSE.glob("*.go")) or list(_STUDY_COURSE.glob("**/*.go"))
+        go_files = list(_SAMPLE_COURSE_SERVICE.glob("*.go")) or list(_SAMPLE_COURSE_SERVICE.glob("**/*.go"))
         if not go_files:
-            pytest.skip("study-course 未找到任何 .go 文件")
+            pytest.skip("sample_course_service 未找到任何 .go 文件")
         target_file = go_files[0]
         source = target_file.read_text(encoding="utf-8")
         ctx = FileContext(file_path=str(target_file), language="go", repository_id="1")
@@ -116,11 +116,11 @@ class TestGoplsRealExtract:
         from codegraph.lsp.gopls_backend import _GoplsLazyBackend, make_gopls_backend
         from codegraph.lsp.supervisor import LspSupervisor
 
-        workspace = discover_go_workspace(_STUDY_COURSE)
+        workspace = discover_go_workspace(_SAMPLE_COURSE_SERVICE)
         assert workspace is not None
 
         supervisor = LspSupervisor(
-            name="gopls-study-course-import-test",
+            name="gopls-sample_course_service-import-test",
             command=list(_GoplsLazyBackend.command),
             workspace_root=workspace.go_mod_root,
             language_ids=list(_GoplsLazyBackend.language_ids),
@@ -128,9 +128,9 @@ class TestGoplsRealExtract:
             max_restart_attempts=1,
         )
 
-        go_files = [f for f in _STUDY_COURSE.glob("**/*.go") if "_test" not in f.name]
+        go_files = [f for f in _SAMPLE_COURSE_SERVICE.glob("**/*.go") if "_test" not in f.name]
         if not go_files:
-            pytest.skip("study-course 未找到非测试 .go 文件")
+            pytest.skip("sample_course_service 未找到非测试 .go 文件")
         target_file = go_files[0]
         source = target_file.read_text(encoding="utf-8")
         ctx = FileContext(file_path=str(target_file), language="go", repository_id="1")

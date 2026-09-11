@@ -67,7 +67,7 @@ _BASE_BLUEPRINT: dict[str, Any] = {
     "repo_associations": [
         {
             "repository_id": "repo-backend",
-            "repository_name": "onion-practice",
+            "repository_name": "sample_practice_service",
             "role": "direct",
             "rationale": {
                 "text": [
@@ -93,7 +93,7 @@ _BASE_BLUEPRINT: dict[str, Any] = {
         },
         {
             "repository_id": "repo-frontend",
-            "repository_name": "study-app",
+            "repository_name": "sample_web",
             "role": "direct",
             "rationale": {
                 "text": [
@@ -116,7 +116,7 @@ _BASE_BLUEPRINT: dict[str, Any] = {
         },
         {
             "repository_id": "repo-shared",
-            "repository_name": "study-course",
+            "repository_name": "sample_course_service",
             "role": "indirect",
             "rationale": {
                 "text": [_block("blk_ra_shared_rationale", "章节与知识点数据来源。")],
@@ -267,7 +267,7 @@ _BASE_BLUEPRINT: dict[str, Any] = {
             "method": "GET",
             "path": "/api/course/chapters",
             "data_source": {
-                "from_service": "study-course",
+                "from_service": "sample_course_service",
                 "from_api": "GET /api/course/chapters",
                 "fields_needed": ["chapter_id", "knowledge_points"],
                 "availability": "existing",

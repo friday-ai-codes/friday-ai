@@ -707,7 +707,7 @@ async def _agenerate_draft(
 
         repo_node = generate_entity_id(EntityKind.REPOSITORY, "repository", str(repository_id))
         # 不能在边这一步就截 _RECENT_LIMIT：挂仓边里混着需求文档等其他工件，
-        # 先截会把真正的上线记录挤掉（study-app 有上千条边）。
+        # 先截会把真正的上线记录挤掉（sample_web 有上千条边）。
         candidate_ids = list(
             KnowledgeEdge.objects.filter(
                 target_entity_id=repo_node,

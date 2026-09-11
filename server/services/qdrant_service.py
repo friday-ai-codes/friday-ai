@@ -101,7 +101,7 @@ class QdrantService:
     #
     # 背景（2026-08 实测）：`commit_index` 把提交摘要以 `kind=commit` 写进**代码
     # 的同一个 collection**。提交摘要是自然语言，与中文自然语言查询的向量相似度
-    # 天然高于源码，于是系统性挤占召回窗口：onion-practice 里这类产物只占 3% 的
+    # 天然高于源码，于是系统性挤占召回窗口：sample_practice_service 里这类产物只占 3% 的
     # 点数，却占了某代码查询 top-20 的 75%（15/20）。它们随后被路径排除规则
     # （`.friday/` 前缀）全部丢弃，最终 `search_rag` 返回 **0 条**——status=ok 却
     # 什么都搜不到，是典型的静默降级。

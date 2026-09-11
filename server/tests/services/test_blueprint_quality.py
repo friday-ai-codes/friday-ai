@@ -68,12 +68,12 @@ def test_citation_coverage_non_dict_input_never_raises() -> None:
 
 
 def test_target_repo_hit_rate_full_hit() -> None:
-    # 工厂样例 direct 仓：onion-practice + study-app
-    assert target_repo_hit_rate(make_blueprint(), ["onion-practice", "study-app"]) == 1.0
+    # 工厂样例 direct 仓：sample_practice_service + sample_web
+    assert target_repo_hit_rate(make_blueprint(), ["sample_practice_service", "sample_web"]) == 1.0
 
 
 def test_target_repo_hit_rate_half_hit() -> None:
-    assert target_repo_hit_rate(make_blueprint(), ["onion-practice", "不存在的仓"]) == 0.5
+    assert target_repo_hit_rate(make_blueprint(), ["sample_practice_service", "不存在的仓"]) == 0.5
 
 
 def test_target_repo_hit_rate_empty_expected_returns_one() -> None:
@@ -84,11 +84,11 @@ def test_target_repo_hit_rate_all_indirect_is_zero() -> None:
     blueprint = make_blueprint()
     for assoc in blueprint["repo_associations"]:
         assoc["role"] = "indirect"
-    assert target_repo_hit_rate(blueprint, ["onion-practice"]) == 0.0
+    assert target_repo_hit_rate(blueprint, ["sample_practice_service"]) == 0.0
 
 
 def test_target_repo_hit_rate_non_dict_blueprint_never_raises() -> None:
-    assert target_repo_hit_rate(None, ["onion-practice"]) == 0.0  # type: ignore[arg-type]
+    assert target_repo_hit_rate(None, ["sample_practice_service"]) == 0.0  # type: ignore[arg-type]
 
 
 # ---- DB 统计接口（114-05 实装；无数据 / 零值 / 有值三态并列） ----

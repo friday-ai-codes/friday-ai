@@ -811,23 +811,23 @@ class TestCriticalityTieBreak:
 class TestSizeBiasMechanism:
     """尺寸偏置消除（ROUTE-03）：§2.4 数值代入的机制级断言。"""
 
-    def test_breadth_reverse_tilt_study_app_vs_onion_learning(self):
-        """§2.4：study-app（N_r=620 命中 6）breadth < onion-learning
+    def test_breadth_reverse_tilt_sample_web_vs_sample_service_service(self):
+        """§2.4：sample_web（N_r=620 命中 6）breadth < sample_service_service
         （N_r=30 命中 1），n_bar=60——106-08 golden 机制断言的纯函数前置。"""
         hits: list[dict[str, Any]] = []
         for i in range(6):
-            hits.append(_make_hit("study-app", _RRF_BASE, f"sa-n{i}"))
-        hits.append(_make_hit("onion-learning", _RRF_BASE, "ol-n0"))
+            hits.append(_make_hit("sample_web", _RRF_BASE, f"sa-n{i}"))
+        hits.append(_make_hit("sample_service_service", _RRF_BASE, "ol-n0"))
         meta = {
-            "study-app": _make_meta(n_r=620),
-            "onion-learning": _make_meta(n_r=30),
+            "sample_web": _make_meta(n_r=620),
+            "sample_service_service": _make_meta(n_r=30),
         }
         by_id = {
             c.repo_id: c
             for c in aggregate_and_score(hits, repo_meta=meta, constants={"n_bar": 60.0})
         }
-        big = by_id["study-app"].breakdown[SIGNAL_BREADTH]
-        small = by_id["onion-learning"].breakdown[SIGNAL_BREADTH]
+        big = by_id["sample_web"].breakdown[SIGNAL_BREADTH]
+        small = by_id["sample_service_service"].breakdown[SIGNAL_BREADTH]
         assert big < small, (big, small)
         # 数值锚定（等分命中 → n_eff=6 / n_eff=1，denom=6.6 / 0.7）
         d = _W6[SIGNAL_TEXT]  # 两仓均只有 text 可用，D 相同可比

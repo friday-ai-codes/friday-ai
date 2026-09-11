@@ -9,8 +9,8 @@
       tests/services/process_runtime/test_funnel_gates.py \\
       tests/services/process_runtime/test_funnel_gates_wiring.py \\
       tests/services/process_runtime/test_reflection.py \\
-      tests/services/process_runtime/test_sample_eval.py \\
-      tests/services/process_runtime/test_sample_funnel_regression.py \\
+      tests/services/process_runtime/test_blueprint_confirm_gate.py \\
+      tests/services/process_runtime/test_blueprint_route_stage.py \\
       tests/services/process_runtime/test_int03_contracts.py \\
       tests/mcp_tools/test_mcp_read_flow.py \\
       -q --tb=line --reuse-db
@@ -32,8 +32,8 @@ INT03_CONTRACT_PATHS: list[str] = [
     "tests/services/process_runtime/test_funnel_gates.py",
     "tests/services/process_runtime/test_funnel_gates_wiring.py",
     "tests/services/process_runtime/test_reflection.py",
-    "tests/services/process_runtime/test_sample_eval.py",
-    "tests/services/process_runtime/test_sample_funnel_regression.py",
+    "tests/services/process_runtime/test_blueprint_confirm_gate.py",
+    "tests/services/process_runtime/test_blueprint_route_stage.py",
     "tests/services/process_runtime/test_int03_contracts.py",
     "tests/mcp_tools/test_mcp_read_flow.py",
 ]
@@ -56,8 +56,8 @@ def test_int03_imports_smoke_key_modules():
         place_units,
         reflection,
     )
-    from services.process_runtime.sample_eval import score_placement_bar  # noqa: F401
+    from services.process_runtime.blueprint_confirm_gate import merge_gate_snapshot  # noqa: F401
 
-    assert callable(score_placement_bar)
+    assert callable(merge_gate_snapshot)
     with pytest.raises(ModuleNotFoundError):
         import services.process_runtime.role_map  # noqa: F401

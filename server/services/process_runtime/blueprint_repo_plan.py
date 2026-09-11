@@ -710,7 +710,7 @@ class BlueprintRepoPlanAdapter:
             # 先吸收形状漂移。两条产出路径共用同一个 schema，归一化只接容器那一条 ⇒ 合成路径
             # 每次都因「Block[] 项缺 block_id」这种**机械可判**的漂移被判非法，白烧
             # MAX_REPO_PLAN_ATTEMPTS+1 轮 LLM，最后落 degraded 空壳 + 开阻塞澄清线程。
-            # 2026-08-19 实测：3 个 indirect 仓（basic-resource / onion-practice /
+            # 2026-08-19 实测：3 个 indirect 仓（basic-resource / sample_practice_service /
             # study-stream）全数因 `$.risks[0]: 'block_id' is a required property` 落空壳。
             # 而 block_id 本是**内部锚点标识**（`coerce` 注释已明确「可安全合成」），
             # ⛔ 绝不该要求 LLM 自己编。

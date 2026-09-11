@@ -3,7 +3,7 @@
 纯函数、零 I/O、零网络（与 ``repo_router_eval`` 同款纪律）。
 
 守的核心契约：**分层归因必须指向最靠前的缺失层**。只报一个 Recall 数字说明不了
-任何问题——「漏了」发生在检索/聚合/LLM 三层的修法完全不同（实测 study-course 是
+任何问题——「漏了」发生在检索/聚合/LLM 三层的修法完全不同（实测 sample_course_service 是
 聚合层丢的，若误判成检索层就会去调索引，方向全错）。
 """
 
@@ -34,7 +34,7 @@ def test_missing_from_retrieval_is_attributed_retrieval() -> None:
 
 
 def test_retrieved_but_not_candidate_is_aggregation() -> None:
-    """study-course 的真实形态：融合节点里有它，却挤不进仓级候选池。"""
+    """sample_course_service 的真实形态：融合节点里有它，却挤不进仓级候选池。"""
     assert attribute_losses(["a"], ["a"], [], []) == {"a": LOST_AT_AGGREGATION}
 
 

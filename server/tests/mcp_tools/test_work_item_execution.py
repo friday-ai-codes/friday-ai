@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -145,7 +143,7 @@ def _second_repo(project) -> Repository:
 
 
 def _attach_unapproved_blueprint(plan: McpWorkItemTechnicalPlan) -> Artifact:
-    """用高阶提效同类跨仓样例模拟尚未通过终审的蓝图交接。"""
+    """用示例功能同类跨仓样例模拟尚未通过终审的蓝图交接。"""
     artifact = async_to_sync(ArtifactService().create)("technical_plan", make_blueprint())
     Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.PENDING_REVIEW)
     artifact.blueprint_status = BlueprintStatus.PENDING_REVIEW
@@ -239,13 +237,19 @@ def test_blueprint_repo_tasks_are_blocked_until_the_same_version_is_confirmed(
     assert rejected.json()["error_code"] == "blueprint_not_approved"
 
 
-def test_approved_handoff_resolves_sample_fixture_repository_aliases_before_coding(
+def test_approved_handoff_resolves_sample_service_fixture_repository_aliases_before_coding(
     mcp_client: tuple[APIClient, str], project
 ) -> None:
-    """高阶 golden 里的稳定别名必须在审批交接时落成可执行 Repository UUID。"""
+    """中性蓝图里的稳定别名必须在审批交接时落成可执行 Repository UUID。"""
     from mcp_tools.technical_plan_service import pin_approved_blueprint_handoff
 
     client, _plaintext = mcp_client
+    content = make_blueprint()
+    direct_names = [
+        item["repository_name"]
+        for item in content["repo_associations"]
+        if item["role"] == "direct"
+    ]
     repositories = [
         Repository.objects.create(
             name=name,
@@ -253,13 +257,9 @@ def test_approved_handoff_resolves_sample_fixture_repository_aliases_before_codi
             default_branch="main",
             index_status=IndexStatus.INDEXED,
         )
-        for name in ("onion-learning", "study-course", "onion-practice")
+        for name in direct_names
     ]
     plan = _technical_plan(project, repositories)
-    fixture_path = (
-        Path(__file__).resolve().parents[1] / "fixtures" / "blueprint_golden" / "assessment_boost.json"
-    )
-    content = json.loads(fixture_path.read_text(encoding="utf-8"))["blueprint"]
     artifact = async_to_sync(ArtifactService().create)("technical_plan", content)
     Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.CONFIRMED)
     artifact.refresh_from_db()
@@ -305,12 +305,7 @@ def test_unmapped_blueprint_alias_fails_closed_before_repository_uuid_lookup(
     plan.repository_tasks = []
     plan.plan_body = {"repository_task_matrix": []}
     plan.save(update_fields=["repository_tasks", "plan_body"])
-    fixture_path = (
-        Path(__file__).resolve().parents[1] / "fixtures" / "blueprint_golden" / "assessment_boost.json"
-    )
-    artifact = async_to_sync(ArtifactService().create)(
-        "technical_plan", json.loads(fixture_path.read_text(encoding="utf-8"))["blueprint"]
-    )
+    artifact = async_to_sync(ArtifactService().create)("technical_plan", make_blueprint())
     Artifact.objects.filter(id=artifact.id).update(blueprint_status=BlueprintStatus.CONFIRMED)
     artifact.refresh_from_db()
     plan.blueprint_artifact_id = str(artifact.id)

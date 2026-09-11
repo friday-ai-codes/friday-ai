@@ -259,7 +259,7 @@ class TestReflectionLoop:
         assert ledger_payloads
         for p in ledger_payloads:
             blob = str(p)
-            assert "高阶提效" not in blob
+            assert "示例功能" not in blob
             assert "requirement_text" not in blob.lower() or not p.get("requirement_text")
 
     def test_missing_run_does_not_raise(self):

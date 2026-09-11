@@ -26,9 +26,9 @@ from tests.helpers.blueprint_samples import make_blueprint
 def test_every_repo_gets_a_proposal_block_with_role() -> None:
     rendered = render_repo_proposals_markdown(make_blueprint())
     assert "## 分仓方案（OpenSpec Proposal）" in rendered
-    assert "### onion-practice（直接改动）" in rendered
-    assert "### study-app（直接改动）" in rendered
-    assert "### study-course（间接依赖）" in rendered
+    assert "### sample_practice_service（直接改动）" in rendered
+    assert "### sample_web（直接改动）" in rendered
+    assert "### sample_course_service（间接依赖）" in rendered
 
 
 def test_all_four_openspec_labels_present_per_repo() -> None:
@@ -121,10 +121,10 @@ def test_empty_associations_return_empty_string() -> None:
 
 def test_single_repo_proposal_contains_only_requested_repository() -> None:
     rendered = render_single_repo_proposal_markdown(make_blueprint(), "repo-backend")
-    assert "### onion-practice（直接改动）" in rendered
+    assert "### sample_practice_service（直接改动）" in rendered
     assert "新增习题生成接口" in rendered
     assert "练习页接入生成入口" not in rendered
-    assert "study-app" not in rendered
+    assert "sample_web" not in rendered
     assert "## 分仓方案（OpenSpec Proposal）" not in rendered
 
 
@@ -138,7 +138,7 @@ def test_main_renderer_embeds_the_repo_proposals_section() -> None:
     """⭐ 分仓方案并入主技术方案文档：主渲染器输出里带本章节。"""
     rendered = render_blueprint_markdown(make_blueprint(), blueprint_status="confirmed")
     assert "## 分仓方案（OpenSpec Proposal）" in rendered
-    assert "### onion-practice（直接改动）" in rendered
+    assert "### sample_practice_service（直接改动）" in rendered
     # 版式：全篇 heading 仍 ≤3 级（新章节没有引入 #### 及以上）。
     for line in rendered.splitlines():
         if line.startswith("#"):

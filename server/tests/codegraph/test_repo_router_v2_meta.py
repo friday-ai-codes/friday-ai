@@ -46,7 +46,7 @@ from system.settings_service import _cache_key
 # （与 test_repo_router_adapter 同理由）。
 pytestmark = pytest.mark.django_db(transaction=True)
 
-QUERY = "学习工具 的 Python 高阶提效需求"
+QUERY = "学习工具 的 Python 示例功能需求"
 
 
 @pytest.fixture(autouse=True)

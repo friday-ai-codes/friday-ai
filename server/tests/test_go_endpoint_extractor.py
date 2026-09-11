@@ -28,8 +28,8 @@ BASIC_FIXTURE = FIXTURES_DIR / "go_gin_endpoint_basic.go"
 OGIN_FIXTURE = FIXTURES_DIR / "go_gin_endpoint_ogin.go"
 KRATOS_FIXTURE = FIXTURES_DIR / "go_kratos_http_pb.go"
 
-STUDY_COURSE_PATH = os.environ.get("GO_SAMPLE_REPO", "")
-STUDY_COURSE_HANDLERS = Path(STUDY_COURSE_PATH) / "handlers" / "handlers.go"
+SAMPLE_COURSE_SERVICE_PATH = os.environ.get("GO_SAMPLE_REPO", "")
+SAMPLE_COURSE_SERVICE_HANDLERS = Path(SAMPLE_COURSE_SERVICE_PATH) / "handlers" / "handlers.go"
 
 
 # =============================================================================
@@ -149,7 +149,7 @@ class TestOginMetadata:
 
     def test_ogin_path_param_extracted(self):
         """GPathRequireString 提取 path_params。"""
-        ep = self.by_path.get("GET:/study-course/course/:topicId/detail")
+        ep = self.by_path.get("GET:/sample_course_service/course/:topicId/detail")
         assert ep is not None
         assert ep.metadata is not None
         assert "path_params" in ep.metadata
@@ -161,7 +161,7 @@ class TestOginMetadata:
 
     def test_ogin_query_param_optional(self):
         """GQueryOptionalString 提取 query_params，required=False。"""
-        ep = self.by_path.get("GET:/study-course/course/:topicId/detail")
+        ep = self.by_path.get("GET:/sample_course_service/course/:topicId/detail")
         assert ep is not None
         query_params = ep.metadata.get("query_params", [])
         assert any(
@@ -170,7 +170,7 @@ class TestOginMetadata:
 
     def test_ogin_header_param_optional(self):
         """GHeaderOptionalString 提取 header_params，required=False。"""
-        ep = self.by_path.get("GET:/study-course/course/:topicId/detail")
+        ep = self.by_path.get("GET:/sample_course_service/course/:topicId/detail")
         assert ep is not None
         header_params = ep.metadata.get("header_params", [])
         header_names = [p["name"] for p in header_params]
@@ -178,7 +178,7 @@ class TestOginMetadata:
 
     def test_ogin_multiple_query_require_int(self):
         """多个 GQueryRequireInt 全部提取。"""
-        ep = self.by_path.get("GET:/study-course/chapter/tree")
+        ep = self.by_path.get("GET:/sample_course_service/chapter/tree")
         assert ep is not None
         query_params = ep.metadata.get("query_params", [])
         names = {p["name"] for p in query_params}
@@ -189,13 +189,13 @@ class TestOginMetadata:
 
     def test_no_ogin_metadata_returns_none(self):
         """无 G* middleware 时 metadata=None。"""
-        ep = self.by_path.get("POST:/study-course/batch/topic/detail")
+        ep = self.by_path.get("POST:/sample_course_service/batch/topic/detail")
         assert ep is not None
         assert ep.metadata is None
 
     def test_ogin_anonymous_handler(self):
         """ogin.Server 的匿名 handler。"""
-        ep = self.by_path.get("GET:/study-course/ping")
+        ep = self.by_path.get("GET:/sample_course_service/ping")
         assert ep is not None
         assert ep.handler_name == "<anonymous>"
 
@@ -306,38 +306,38 @@ def _walk_nodes(node, node_type):
 
 
 # =============================================================================
-# Integration Tests（study-course 真实仓库）
+# Integration Tests（sample_course_service 真实仓库）
 # =============================================================================
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not STUDY_COURSE_PATH or not STUDY_COURSE_HANDLERS.exists(),
+    not SAMPLE_COURSE_SERVICE_PATH or not SAMPLE_COURSE_SERVICE_HANDLERS.exists(),
     reason="样例 Go 仓库未配置（GO_SAMPLE_REPO），跳过 integration test",
 )
 class TestStudyCourseIntegration:
-    """study-course 端到端集成测试（双重保护）。"""
+    """sample_course_service 端到端集成测试（双重保护）。"""
 
     @pytest.fixture(autouse=True)
     def setup(self):
-        self.tree, self.source, self.ctx = _parse_go_fixture(STUDY_COURSE_HANDLERS)
+        self.tree, self.source, self.ctx = _parse_go_fixture(SAMPLE_COURSE_SERVICE_HANDLERS)
         self.endpoints = extract_go_endpoints(self.tree, self.source, self.ctx)
 
-    def test_study_course_endpoint_count(self):
-        """study-course handlers.go 应识别 50+ 个 endpoint。"""
+    def test_sample_course_service_endpoint_count(self):
+        """sample_course_service handlers.go 应识别 50+ 个 endpoint。"""
         assert len(self.endpoints) >= 50, (
             f"期望 ≥ 50 个 endpoint，实际 {len(self.endpoints)}"
         )
 
-    def test_study_course_ogin_metadata_present(self):
-        """study-course 中含 ogin.G* 的路由应有 metadata。"""
+    def test_sample_course_service_ogin_metadata_present(self):
+        """sample_course_service 中含 ogin.G* 的路由应有 metadata。"""
         endpoints_with_metadata = [ep for ep in self.endpoints if ep.metadata]
         assert len(endpoints_with_metadata) >= 1, (
             "期望至少 1 个带 metadata 的 endpoint（含 ogin.G*）"
         )
 
-    def test_study_course_no_use_endpoints(self):
-        """study-course Use() 路由不应出现在 endpoint 列表。"""
+    def test_sample_course_service_no_use_endpoints(self):
+        """sample_course_service Use() 路由不应出现在 endpoint 列表。"""
         # Use() 注册的 middleware 不应有 url_path
         # 验证 endpoint 列表中无空 url
         for ep in self.endpoints:
@@ -345,12 +345,12 @@ class TestStudyCourseIntegration:
                 f"endpoint handler={ep.handler_name} url_path 为空"
             )
 
-    def test_study_course_known_route_present(self):
-        """验证已知路由 /study-course/chapter 被识别。"""
+    def test_sample_course_service_known_route_present(self):
+        """验证已知路由 /sample_course_service/chapter 被识别。"""
         url_paths = {ep.url_path for ep in self.endpoints}
         known_routes = [
-            "/study-course/chapter",
-            "/study-course/chapter/tree",
+            "/sample_course_service/chapter",
+            "/sample_course_service/chapter/tree",
         ]
         for route in known_routes:
             assert route in url_paths, (

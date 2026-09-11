@@ -42,21 +42,21 @@
     },
     {
       "id": "gk-h03-cross-group-learning",
-      "query": "在学习工具矩阵项目里排期：学习专项的前端交互改版实际落在学习产品仓",
+      "query": "在学习工具矩阵项目里排期：示例专项的前端交互改版实际落在学习产品仓",
       "label_source": "human",
       "cross_group": true,
-      "project_scope": ["study-app"],
-      "expected_repos": ["onion-learning"],
+      "project_scope": ["sample_web"],
+      "expected_repos": ["sample_service_service"],
       "node_hits": [
-        {"score": 0.0170, "payload": {"node_id": "n-h03-ol-1", "repository_id": "onion-learning", "repo_name": "onion-learning", "node_path": "学习产品/专项训练/交互流程", "facets": {"业务线/产品线": "学习产品", "技术栈": "Vue / TypeScript", "团队归属": "学习产品团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
-        {"score": 0.0145, "payload": {"node_id": "n-h03-ol-2", "repository_id": "onion-learning", "repo_name": "onion-learning", "node_path": "学习产品/组件库/训练卡片", "facets": {"业务线/产品线": "学习产品", "技术栈": "Vue / TypeScript", "团队归属": "学习产品团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
-        {"score": 0.0140, "payload": {"node_id": "n-h03-sa-1", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/study-home/学习首页", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
-        {"score": 0.0130, "payload": {"node_id": "n-h03-sa-2", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/study-plan/学习计划", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
-        {"score": 0.0125, "payload": {"node_id": "n-h03-sa-3", "repository_id": "study-app", "repo_name": "study-app", "node_path": "apps/exam-center/考试中心", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}}
+        {"score": 0.0170, "payload": {"node_id": "n-h03-ol-1", "repository_id": "sample_service_service", "repo_name": "sample_service_service", "node_path": "学习产品/专项训练/交互流程", "facets": {"业务线/产品线": "学习产品", "技术栈": "Vue / TypeScript", "团队归属": "学习产品团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0145, "payload": {"node_id": "n-h03-ol-2", "repository_id": "sample_service_service", "repo_name": "sample_service_service", "node_path": "学习产品/组件库/训练卡片", "facets": {"业务线/产品线": "学习产品", "技术栈": "Vue / TypeScript", "团队归属": "学习产品团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0140, "payload": {"node_id": "n-h03-sa-1", "repository_id": "sample_web", "repo_name": "sample_web", "node_path": "apps/study-home/学习首页", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0130, "payload": {"node_id": "n-h03-sa-2", "repository_id": "sample_web", "repo_name": "sample_web", "node_path": "apps/study-plan/学习计划", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
+        {"score": 0.0125, "payload": {"node_id": "n-h03-sa-3", "repository_id": "sample_web", "repo_name": "sample_web", "node_path": "apps/exam-center/考试中心", "facets": {"业务线/产品线": "学习工具矩阵", "技术栈": "Vue / TypeScript", "团队归属": "学习工具团队", "关键程度": "核心", "活跃度": "活跃开发"}}}
       ],
       "repo_meta": {
-        "onion-learning": {"n_r": 30, "last_commit_at": "2026-07-26T00:00:00+00:00", "dense_cos_max": 0.6, "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}, "stack": {"score": 0.6, "layer": "t1"}}, "criticality_value": "核心"},
-        "study-app": {"n_r": 620, "last_commit_at": "2026-07-27T00:00:00+00:00", "dense_cos_max": 0.5, "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}, "stack": {"score": 0.6, "layer": "t1"}}, "criticality_value": "核心"}
+        "sample_service_service": {"n_r": 30, "last_commit_at": "2026-07-26T00:00:00+00:00", "dense_cos_max": 0.6, "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}, "stack": {"score": 0.6, "layer": "t1"}}, "criticality_value": "核心"},
+        "sample_web": {"n_r": 620, "last_commit_at": "2026-07-27T00:00:00+00:00", "dense_cos_max": 0.5, "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}, "stack": {"score": 0.6, "layer": "t1"}}, "criticality_value": "核心"}
       },
       "scored_at": "2026-07-29T00:00:00+00:00",
       "constants": {"n_bar": 60}

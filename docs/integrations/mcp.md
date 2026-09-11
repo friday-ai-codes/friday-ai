@@ -137,7 +137,7 @@ args = ["-y", "@friday-ai-codes/mcp"]
 直到 `completed`。该工具每次调用都会推进一步编排，不调它方案不会往前走。
 :::
 
-::: tip orchestration / 外部调度器的技术蓝图协议
+::: tip Workflow_suite / 外部调度器的技术蓝图协议
 
 不要让调度 Agent 自己撰写或总结技术方案。它只做 Friday 的薄控制层：保存 `artifact_id`，把
 `pending_clarifications` 的 `question` / `options` 原样交给人，按 `thread_id` 回灌真实答案，

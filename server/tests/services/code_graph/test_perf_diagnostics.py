@@ -661,7 +661,7 @@ def test_largest_repo_memory_calibration() -> None:
     # 断言：估算不得显著低估**实测常驻**（每一条测量都要过）。
     #
     # ⛔ 刻意**不**对 RSS 建同样的断言：小图上的 RSS 增量里混着 sqlite 的页缓存与
-    #    分配器粒度（study-app 实测 rss 14.47MB vs tracemalloc 10.03MB，多出来的
+    #    分配器粒度（sample_web 实测 rss 14.47MB vs tracemalloc 10.03MB，多出来的
     #    4.4MB 不是图占的），拿它当断言只会得到一个被无关开销驱动的红。RSS 的用途是
     #    ``rss/tracemalloc`` 比值这条**复校判据**（见上方 A1 输出），而该比值取自规模
     #    足够大、比值才稳定的合成参照图。

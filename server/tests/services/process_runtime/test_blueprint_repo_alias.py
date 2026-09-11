@@ -22,31 +22,31 @@ def _associations(*entries: tuple[str, str]) -> list[dict]:
 
 
 def test_resolve_exact_uuid():
-    associations = _associations((_UUID_ONION, "frontend/onion-learning"))
+    associations = _associations((_UUID_ONION, "frontend/sample_service_service"))
     assert resolve_repository_alias(associations, _UUID_ONION) == _UUID_ONION
 
 
 def test_resolve_exact_full_name():
-    associations = _associations((_UUID_ONION, "frontend/onion-learning"))
-    assert resolve_repository_alias(associations, "frontend/onion-learning") == _UUID_ONION
+    associations = _associations((_UUID_ONION, "frontend/sample_service_service"))
+    assert resolve_repository_alias(associations, "frontend/sample_service_service") == _UUID_ONION
 
 
 def test_resolve_unique_basename():
-    associations = _associations((_UUID_ONION, "frontend/onion-learning"))
-    assert resolve_repository_alias(associations, "onion-learning") == _UUID_ONION
+    associations = _associations((_UUID_ONION, "frontend/sample_service_service"))
+    assert resolve_repository_alias(associations, "sample_service_service") == _UUID_ONION
 
 
 def test_ambiguous_basename_is_unresolved():
     associations = _associations(
-        (_UUID_ONION, "frontend/onion-learning"),
-        ("other-uuid", "backend/onion-learning"),
+        (_UUID_ONION, "frontend/sample_service_service"),
+        ("other-uuid", "backend/sample_service_service"),
     )
-    assert resolve_repository_alias(associations, "onion-learning") is None
-    assert not is_resolvable_repository_alias(associations, "onion-learning")
+    assert resolve_repository_alias(associations, "sample_service_service") is None
+    assert not is_resolvable_repository_alias(associations, "sample_service_service")
 
 
 def test_absent_alias_is_unresolved():
-    associations = _associations((_UUID_ONION, "frontend/onion-learning"))
+    associations = _associations((_UUID_ONION, "frontend/sample_service_service"))
     assert resolve_repository_alias(associations, "onion-auth") is None
     assert resolve_repository_alias(associations, "backend/course-business") is None
 
@@ -61,19 +61,19 @@ def test_study_config_alias_resolves_only_when_actually_registered():
 
 
 def test_canonicalize_returns_uuid_or_original():
-    associations = _associations((_UUID_ONION, "frontend/onion-learning"))
-    assert canonicalize_repository_alias(associations, "onion-learning") == _UUID_ONION
+    associations = _associations((_UUID_ONION, "frontend/sample_service_service"))
+    assert canonicalize_repository_alias(associations, "sample_service_service") == _UUID_ONION
     assert canonicalize_repository_alias(associations, "onion-auth") == "onion-auth"
 
 
 def test_canonicalize_contract_support_repository_ids_in_place():
-    associations = _associations((_UUID_ONION, "frontend/onion-learning"))
+    associations = _associations((_UUID_ONION, "frontend/sample_service_service"))
     contracts = [
         {
             "direction": "consumed",
             "data_source": {
                 "availability": "needs_support",
-                "support_repository_id": "onion-learning",
+                "support_repository_id": "sample_service_service",
             },
         }
     ]
@@ -83,13 +83,13 @@ def test_canonicalize_contract_support_repository_ids_in_place():
 
 
 def test_case_sensitive_full_name():
-    associations = _associations((_UUID_ONION, "frontend/onion-learning"))
-    assert resolve_repository_alias(associations, "Frontend/Onion-Learning") is None
+    associations = _associations((_UUID_ONION, "frontend/sample_service_service"))
+    assert resolve_repository_alias(associations, "Frontend/Sample_learning_service") is None
 
 
 def test_whitespace_is_stripped():
-    associations = _associations((_UUID_ONION, "frontend/onion-learning"))
-    assert resolve_repository_alias(associations, "  onion-learning  ") == _UUID_ONION
+    associations = _associations((_UUID_ONION, "frontend/sample_service_service"))
+    assert resolve_repository_alias(associations, "  sample_service_service  ") == _UUID_ONION
 
 
 def test_support_alias_is_ignored_matches_basename_and_exact():
@@ -97,6 +97,6 @@ def test_support_alias_is_ignored_matches_basename_and_exact():
     assert support_alias_is_ignored("onion-auth", ignored)
     assert support_alias_is_ignored("backend/course-business", ignored)
     assert support_alias_is_ignored("course-business", ["backend/course-business"])
-    assert not support_alias_is_ignored("onion-learning", ignored)
+    assert not support_alias_is_ignored("sample_service_service", ignored)
     assert not support_alias_is_ignored("", ignored)
     assert not support_alias_is_ignored("onion-auth", None)

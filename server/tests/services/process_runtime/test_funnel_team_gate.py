@@ -21,7 +21,7 @@ from services.process_runtime.stage_sandbox import arun_route_stage
 
 def _spec() -> dict:
     return {
-        "goal": [{"block_id": "g1", "type": "paragraph", "text": "高阶提效看板改造"}],
+        "goal": [{"block_id": "g1", "type": "paragraph", "text": "示例功能看板改造"}],
         "feature_points": [
             {"id": "fp_1", "title": "任务分发", "intent": "brownfield"},
         ],

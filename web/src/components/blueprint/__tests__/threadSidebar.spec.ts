@@ -228,11 +228,11 @@ describe('线程正文的仓库标签', () => {
           created_at: '2026-08-01T00:00:00Z',
         }],
       }),
-      repoNames: { [repositoryId]: 'backend/study-course' },
+      repoNames: { [repositoryId]: 'backend/sample_course_service' },
     })
 
     const link = wrapper.find('[data-testid="blueprint-thread-repo-link"]')
-    expect(link.text()).toBe('仓库：backend/study-course')
+    expect(link.text()).toBe('仓库：backend/sample_course_service')
     expect(link.attributes('href')).toBe(`/repositories/${repositoryId}`)
     expect(wrapper.text()).not.toContain(repositoryId)
   })

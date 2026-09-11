@@ -44,7 +44,7 @@ from codegraph.services.repo_router_metadata import (
 # 测试用别名词典（domain/team 维度 DEFAULT 为空骨架，测试自带条目）
 _TEST_ALIAS_DICT = {
     FACET_DOMAIN: {
-        "高阶提效": {"aliases": ["学习专项"], "parent": "K12教育"},
+        "示例功能": {"aliases": ["示例专项"], "parent": "K12教育"},
     },
     FACET_TEAM: {
         "group/sub": {"aliases": ["基础平台组"], "parent": None},
@@ -60,19 +60,19 @@ _TEST_ALIAS_DICT = {
 class TestMatchT1:
     def test_canonical_substring_hit(self):
         """canonical 值本身子串命中 → 1.0（无需词典条目）。"""
-        assert match_t1("给示例功能专项加功能", FACET_DOMAIN, "高阶提效", {}) == 1.0
+        assert match_t1("给示例功能专项加功能", FACET_DOMAIN, "示例功能", {}) == 1.0
 
     def test_alias_hit(self):
         """query 仅含别名（不含 canonical）→ 1.0。"""
-        assert match_t1("学习专项要加导出功能", FACET_DOMAIN, "高阶提效", _TEST_ALIAS_DICT) == 1.0
+        assert match_t1("示例专项要加导出功能", FACET_DOMAIN, "示例功能", _TEST_ALIAS_DICT) == 1.0
 
     def test_parent_only_hit(self):
         """canonical 与别名均未命中、仅上位类目命中 → 0.6。"""
-        assert match_t1("K12教育行业的通用改造", FACET_DOMAIN, "高阶提效", _TEST_ALIAS_DICT) == 0.6
+        assert match_t1("K12教育行业的通用改造", FACET_DOMAIN, "示例功能", _TEST_ALIAS_DICT) == 0.6
 
     def test_no_hit_returns_none(self):
         """均未命中 → None（不可用，非 0）。"""
-        assert match_t1("完全无关的一条需求", FACET_DOMAIN, "高阶提效", _TEST_ALIAS_DICT) is None
+        assert match_t1("完全无关的一条需求", FACET_DOMAIN, "示例功能", _TEST_ALIAS_DICT) is None
 
     def test_case_insensitive_match(self):
         """大小写不敏感（casefold）：query 小写命中 canonical "Python"。"""
@@ -149,7 +149,7 @@ class TestResolveFacetScores:
     async def test_domain_t1_hit(self):
         result = await resolve_facet_scores(
             "给示例功能专项加功能",
-            {FACET_DOMAIN: "高阶提效"},
+            {FACET_DOMAIN: "示例功能"},
             alias_dict=_TEST_ALIAS_DICT,
             constants={},
         )
@@ -158,7 +158,7 @@ class TestResolveFacetScores:
     async def test_domain_parent_hit_scores_point_six(self):
         result = await resolve_facet_scores(
             "K12教育行业的通用改造",
-            {FACET_DOMAIN: "高阶提效"},
+            {FACET_DOMAIN: "示例功能"},
             alias_dict=_TEST_ALIAS_DICT,
             constants={},
         )
@@ -168,7 +168,7 @@ class TestResolveFacetScores:
         """T1 未命中且 t2_matcher 不可用 → 不可用（None），不给兜底分。"""
         result = await resolve_facet_scores(
             "完全无关的需求",
-            {FACET_DOMAIN: "高阶提效"},
+            {FACET_DOMAIN: "示例功能"},
             alias_dict=_TEST_ALIAS_DICT,
             constants={},
         )
@@ -287,10 +287,10 @@ class TestMergeAliasDict:
     def test_override_adds_new_canonical(self):
         merged = merge_alias_dict(
             DEFAULT_ALIAS_DICT,
-            {FACET_DOMAIN: {"高阶提效": {"aliases": ["学习专项"], "parent": "K12教育"}}},
+            {FACET_DOMAIN: {"示例功能": {"aliases": ["示例专项"], "parent": "K12教育"}}},
         )
-        assert "高阶提效" in merged[FACET_DOMAIN]
-        assert merged[FACET_DOMAIN]["高阶提效"]["aliases"] == ["学习专项"]
+        assert "示例功能" in merged[FACET_DOMAIN]
+        assert merged[FACET_DOMAIN]["示例功能"]["aliases"] == ["示例专项"]
 
     def test_override_appends_aliases_without_mutating_default(self):
         default = {FACET_STACK: {"Python": {"aliases": ["py"], "parent": None}}}
@@ -427,7 +427,7 @@ class TestFacetT2Matcher:
         matcher = FacetT2Matcher(model_id="no-query-vec", t2_c_lo=0.25, t2_c_hi=0.55)
         result = await resolve_facet_scores(
             "完全无关的需求",
-            {FACET_DOMAIN: "高阶提效"},
+            {FACET_DOMAIN: "示例功能"},
             alias_dict=_TEST_ALIAS_DICT,
             constants={},
             query_embedding=None,
@@ -443,7 +443,7 @@ class TestFacetT2Matcher:
         matcher = FacetT2Matcher(model_id="wiring-model", t2_c_lo=0.25, t2_c_hi=0.55)
         result = await resolve_facet_scores(
             "完全无关的需求",
-            {FACET_DOMAIN: "高阶提效"},
+            {FACET_DOMAIN: "示例功能"},
             alias_dict=_TEST_ALIAS_DICT,
             constants={},
             query_embedding=_QUERY_VEC,
@@ -459,7 +459,7 @@ class TestFacetT2Matcher:
         matcher = FacetT2Matcher(model_id="disabled-model", t2_c_lo=0.25, t2_c_hi=0.55)
         result = await resolve_facet_scores(
             "完全无关的需求",
-            {FACET_DOMAIN: "高阶提效"},
+            {FACET_DOMAIN: "示例功能"},
             alias_dict=_TEST_ALIAS_DICT,
             constants={"t2_disabled_facets": ["domain"]},
             query_embedding=_QUERY_VEC,
@@ -482,7 +482,7 @@ class TestFacetT2Matcher:
             mock.reset_mock()
             result = await resolve_facet_scores(
                 "完全无关的需求",
-                {FACET_DOMAIN: "高阶提效"},
+                {FACET_DOMAIN: "示例功能"},
                 alias_dict=_TEST_ALIAS_DICT,
                 constants={"t2_disabled_facets": [disabled_value]},
                 query_embedding=_QUERY_VEC,
@@ -498,7 +498,7 @@ class TestFacetT2Matcher:
         matcher = FacetT2Matcher(model_id="unknown-disable", t2_c_lo=0.25, t2_c_hi=0.55)
         result = await resolve_facet_scores(
             "完全无关的需求",
-            {FACET_DOMAIN: "高阶提效"},
+            {FACET_DOMAIN: "示例功能"},
             alias_dict=_TEST_ALIAS_DICT,
             constants={"t2_disabled_facets": ["不存在的维度", 42]},
             query_embedding=_QUERY_VEC,

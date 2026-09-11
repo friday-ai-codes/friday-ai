@@ -17,7 +17,7 @@ from services.process_runtime.shortlist import ShortlistResult
 
 def _spec_multi_features() -> dict:
     return {
-        "goal": [{"block_id": "g1", "type": "paragraph", "text": "高阶提效看板改造"}],
+        "goal": [{"block_id": "g1", "type": "paragraph", "text": "示例功能看板改造"}],
         "feature_points": [
             {"id": "fp_1", "title": "任务列表", "module": "模块A", "description": "列表"},
             {"id": "fp_2", "title": "任务详情", "module": "模块A", "description": "详情"},

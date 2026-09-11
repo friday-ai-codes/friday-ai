@@ -133,7 +133,7 @@ class TestGenerateBranchName:
                 repo=SimpleNamespace(id="r1"),
                 project=project,
                 work_item=work_item,
-                requirement_text="新增高阶提效功能 v1.0",
+                requirement_text="新增示例功能功能 v1.0",
                 initiated_by_user_id="42",
             )
         assert result["branch_name"] == _EXAMPLE

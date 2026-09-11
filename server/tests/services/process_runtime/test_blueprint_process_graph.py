@@ -142,7 +142,7 @@ _ROUTING_SUMMARY: dict[str, Any] = {
     "candidates": [
         {
             "repository_id": "repo-a",
-            "repository_name": "onion-learning",
+            "repository_name": "sample_service_service",
             "role_suggestion": "direct",
             "confidence": "high",
             "total": 0.7,

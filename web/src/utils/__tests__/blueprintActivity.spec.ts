@@ -246,7 +246,7 @@ describe('describeEventPayload', () => {
     const { fields, raw } = describeEventPayload({
       task_id: 't-1',
       repository_id: 'r-1',
-      repository_name: 'sample-web',
+      repository_name: 'sample_service-web',
       research_reason: '主落点仓',
       routed_confidence: 'high',
       fitness_verdict: 'suitable',

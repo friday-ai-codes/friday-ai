@@ -663,7 +663,7 @@ async def test_charter_injected_into_prompt() -> None:
     """prompt 含该仓 positioning / owned_domains 关键字（章程随 prompt 注入的证据），
     且需求规格「有什么就都给」：背景 / 验收标准 / 测试用例 / 范围边界 / 约束一并入 prompt。"""
     user = await _make_user()
-    repo = await _make_repo("onion-learning")
+    repo = await _make_repo("sample_service_service")
     await sync_to_async(RepoCharter.objects.create)(
         repository=repo,
         positioning="示例功能专项的学习前台",
@@ -792,7 +792,7 @@ async def test_emit_started_research_payload_has_name_and_reason() -> None:
     from subagent.models import SubAgentSession
 
     user = await _make_user()
-    repo = await _make_repo(name="sample-web")
+    repo = await _make_repo(name="sample_service-web")
     cand = _candidate(repo)
     cand["evidence"] = {**cand["evidence"], "reasoning": "placement_primary"}
     session = await _make_session(_routing_state(cand), user=user)
@@ -811,7 +811,7 @@ async def test_emit_started_research_payload_has_name_and_reason() -> None:
     ]
     assert started, "必须 emit research started"
     payload = started[0].payload
-    assert payload.get("repository_name") == "sample-web"
+    assert payload.get("repository_name") == "sample_service-web"
     assert payload.get("research_reason") == "主落点仓"
     assert payload.get("routed_confidence") == "high"
     # 关联键仍保留可查（前端再做人话优先排序；落库 JSON 不保证键序）
@@ -821,7 +821,7 @@ async def test_emit_started_research_payload_has_name_and_reason() -> None:
         last_output__blueprint_session_id=str(session.id)
     ).afirst()
     assert sub is not None
-    assert (sub.last_output or {}).get("repository_name") == "sample-web"
+    assert (sub.last_output or {}).get("repository_name") == "sample_service-web"
 
 
 @override_settings(FRIDAY_BASE_URL="https://friday.example.com")

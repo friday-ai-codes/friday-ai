@@ -145,7 +145,7 @@ class TestEvaluateRelevConfidence:
         result = evaluate_relev_confidence({
             "candidates": [
                 {"repository_id": "example-app", "score": 0.8214, "selected_by_ai": True},
-                {"repository_id": "onion-learning", "score": 0.7841, "selected_by_ai": True},
+                {"repository_id": "sample_service_service", "score": 0.7841, "selected_by_ai": True},
                 {"repository_id": "example-practice", "score": 0.7797, "selected_by_ai": True},
             ],
         })

@@ -267,7 +267,7 @@ const BLOCK_CTX = {
 function makeAssociation(overrides: Partial<BlueprintRepoAssociation> = {}): BlueprintRepoAssociation {
   return {
     repository_id: 'repo-1',
-    repository_name: 'onion-practice',
+    repository_name: 'sample_practice_service',
     role: 'direct',
     responsibility: [BLOCK],
     rationale: { text: [BLOCK] },
@@ -806,7 +806,7 @@ describe('实现概述 —— ⭐ 功能点 ← 模块 → 实现项 三层连�
     return mountWith(ImplementationOverviewSection, {
       overview: makeOverview(),
       featurePoints: FEATURE_POINTS,
-      repoNames: { 'repo-1': 'onion-learning' },
+      repoNames: { 'repo-1': 'sample_service_service' },
       ...BLOCK_CTX,
       ...props,
     })
@@ -895,11 +895,11 @@ describe('实现概述 —— ⭐ 功能点 ← 模块 → 实现项 三层连�
     const repoChip = wrapper.find('#impl-impl_1 [data-testid="blueprint-impl-repo"]')
     expect(repoChip.exists()).toBe(true)
     expect(repoChip.text()).toContain('仓库')
-    expect(repoChip.text()).toContain('onion-learning')
+    expect(repoChip.text()).toContain('sample_service_service')
 
     const filesRepo = wrapper.find('#impl-impl_1 [data-testid="blueprint-impl-files-repo"]')
     expect(filesRepo.exists()).toBe(true)
-    expect(filesRepo.text()).toContain('onion-learning')
+    expect(filesRepo.text()).toContain('sample_service_service')
 
     // 动作徽标中文化：LLM 吐的同义 token（edit）归一成「改动」
     const fileRow = wrapper.find('#impl-impl_1 [data-testid="blueprint-impl-file"]')

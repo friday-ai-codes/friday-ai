@@ -3,7 +3,7 @@
 守四件事：
 
 1. **`owned_domains` 三档语义**：implemented 命中 > planned 命中 > 0——`planned` 严格
-   为正这条断言直接锁住「规划中领域也能把仓推进候选」的机制（高阶提效 case 前提）。
+   为正这条断言直接锁住「规划中领域也能把仓推进候选」的机制（示例功能 case 前提）。
 2. **禁区判负与 evolution 降权**：`boundaries` 命中使总分为负，且能抵消 owned 正分；
    `maintenance_only` / `deprecated` 各自降权并在 `penalty_reasons` 留证据。
 3. **畸形章程不抛**：非 list / item 非 dict / 非法 status / 缺 domain 全部按回退处理；
@@ -406,7 +406,7 @@ async def _make_charter(repo: Repository, **fields) -> RepoCharter:
 @pytest.mark.asyncio
 async def test_aload_charters_batch_and_skips_missing() -> None:
     """一次取多仓章程；无章程的仓不出现在结果里。"""
-    with_charter = await _make_repo("onion-learning")
+    with_charter = await _make_repo("sample_service_service")
     without_charter = await _make_repo("study-plan")
     await _make_charter(
         with_charter,
@@ -434,14 +434,14 @@ async def test_aload_charters_empty_input_returns_empty() -> None:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_collect_charter_candidates_returns_planned_owner() -> None:
-    """章程 owned_domains(status=planned) 命中的仓被作为补入候选返回（高阶提效机制）。"""
-    repo = await _make_repo("onion-learning")
+    """章程 owned_domains(status=planned) 命中的仓被作为补入候选返回（示例功能机制）。"""
+    repo = await _make_repo("sample_service_service")
     await _make_charter(repo, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}])
 
     candidates = await acollect_charter_candidates(query_terms=_TERMS, exclude_repository_ids=set())
 
     assert [c["repository_id"] for c in candidates] == [str(repo.id)]
-    assert candidates[0]["repository_name"] == "onion-learning"
+    assert candidates[0]["repository_name"] == "sample_service_service"
     assert candidates[0]["charter_match_raw"] > 0.0
     assert candidates[0]["source"] == "charter_supplement"
     assert candidates[0]["matched_domains"] == [{"domain": "功能/流程优化", "status": "planned"}]
@@ -451,7 +451,7 @@ async def test_collect_charter_candidates_returns_planned_owner() -> None:
 @pytest.mark.asyncio
 async def test_collect_charter_candidates_respects_exclusion() -> None:
     """已在候选里的仓被 exclude_repository_ids 排除（避免重复补入）。"""
-    repo = await _make_repo("onion-learning")
+    repo = await _make_repo("sample_service_service")
     await _make_charter(repo, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}])
 
     candidates = await acollect_charter_candidates(
@@ -465,7 +465,7 @@ async def test_collect_charter_candidates_respects_exclusion() -> None:
 @pytest.mark.asyncio
 async def test_collect_charter_candidates_respects_repository_scope() -> None:
     """repository_ids 收窄生效：范围外的仓即便命中也不补入。"""
-    in_scope = await _make_repo("onion-learning")
+    in_scope = await _make_repo("sample_service_service")
     out_of_scope = await _make_repo("legacy-learning")
     for repo in (in_scope, out_of_scope):
         await _make_charter(repo, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}])
@@ -483,8 +483,8 @@ async def test_collect_charter_candidates_respects_repository_scope() -> None:
 @pytest.mark.asyncio
 async def test_collect_charter_candidates_orders_and_limits() -> None:
     """按 charter_match_raw 降序取前 limit（implemented 命中优先于 planned）。"""
-    planned_repo = await _make_repo("onion-learning")
-    implemented_repo = await _make_repo("study-course")
+    planned_repo = await _make_repo("sample_service_service")
+    implemented_repo = await _make_repo("sample_course_service")
     await _make_charter(
         planned_repo, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}]
     )
@@ -504,7 +504,7 @@ async def test_collect_charter_candidates_orders_and_limits() -> None:
 @pytest.mark.asyncio
 async def test_collect_charter_candidates_empty_terms_short_circuits() -> None:
     """空 query_terms 不打库、返回空（不把全库仓拉进候选）。"""
-    repo = await _make_repo("onion-learning")
+    repo = await _make_repo("sample_service_service")
     await _make_charter(repo, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}])
 
     assert await acollect_charter_candidates(query_terms=[], exclude_repository_ids=set()) == []

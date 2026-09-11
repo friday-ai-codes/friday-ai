@@ -274,7 +274,7 @@ class TestObservability:
         assert any(n.startswith("funnel_gates_") for n in names)
         for _n, kw in events:
             blob = " ".join(str(v) for v in kw.values())
-            assert "高阶提效" not in blob
+            assert "示例功能" not in blob
             assert len(blob) < 4000
             if "category" in kw:
                 assert kw["category"] == "sampling"

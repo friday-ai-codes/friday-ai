@@ -40,7 +40,7 @@ async def test_apply_signal_failsoft_on_error(monkeypatch) -> None:
 
     items = await aapply_module_summary_signal(
         query="改造错题本导出",
-        candidates=[(_REPO_A, "study-app", 0.8), (_REPO_B, "exam-service", 0.3)],
+        candidates=[(_REPO_A, "sample_web", 0.8), (_REPO_B, "exam-service", 0.3)],
     )
 
     assert [i.repository_id for i in items] == [_REPO_A, _REPO_B]
@@ -71,7 +71,7 @@ async def test_apply_signal_appends_evidence_without_changing_router_base(
 
     items = await aapply_module_summary_signal(
         query="改造错题本导出",
-        candidates=[(_REPO_A, "study-app", 0.55)],
+        candidates=[(_REPO_A, "sample_web", 0.55)],
     )
 
     assert len(items) == 1
@@ -90,7 +90,7 @@ async def test_empty_summaries_noop(monkeypatch) -> None:
 
     items = await aapply_module_summary_signal(
         query="改造错题本导出",
-        candidates=[(_REPO_A, "study-app", 0.8)],
+        candidates=[(_REPO_A, "sample_web", 0.8)],
     )
 
     assert len(items) == 1

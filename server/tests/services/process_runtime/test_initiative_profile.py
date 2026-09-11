@@ -126,7 +126,7 @@ def test_initiative_profile_shape_json_serializable():
 async def test_build_profile_ok_from_mock_llm():
     llm_json = {
         "product_form": "web_app",
-        "domains": ["sample", "score"],
+        "domains": ["sample_service", "score"],
         "change_kind": "brownfield",
         "capability_clusters": ["board", "dispatch"],
         "non_goals": ["不做移动端"],

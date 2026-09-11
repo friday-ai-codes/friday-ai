@@ -35,7 +35,7 @@ _TOOL_DESCRIPTION = (
     "List all API endpoints in a repository, sorted by HTTP method then URL path.\n"
     "\n"
     "USE WHEN you want to explore what APIs a backend repository exposes:\n"
-    "  - 'what endpoints does the study-course repo have?' → list_endpoints(repository_id='...')\n"
+    "  - 'what endpoints does the sample_course_service repo have?' → list_endpoints(repository_id='...')\n"
     "  - 'show me all POST endpoints' → list_endpoints(...) then filter client-side\n"
     "\n"
     "Returns up to `limit` endpoints (default 200, max 1000) with total count.\n"

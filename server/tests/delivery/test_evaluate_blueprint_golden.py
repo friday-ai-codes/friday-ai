@@ -1,7 +1,7 @@
 """evaluate_blueprint_golden command 测试（Phase 111-04 Task 2，GATE-02）。
 
 call_command + StringIO 范式（对齐 test_rebuild_repo_summaries）；command 纯文件读 +
-纯函数计算，无需 django_db。覆盖：默认目录通过（含 assessment_boost/PASS 输出）、离线
+纯函数计算，无需 django_db。覆盖：默认目录通过（含 sample_exam_boost/PASS 输出）、离线
 确定性（连续两次输出逐字节一致）、schema 退化非零退出、命中率门槛生效、空目录硬错误。
 """
 
@@ -37,20 +37,22 @@ def _write_case(directory: Path, name: str, blueprint: dict, expected: dict) -> 
     )
 
 
-def test_default_fixtures_dir_passes_and_reports_assessment_boost() -> None:
+def test_neutral_fixture_passes_and_reports_case_name(tmp_path: Path) -> None:
+    _write_case(tmp_path, "sample_blueprint", make_blueprint(), dict(_PERMISSIVE_EXPECTED))
     buf = StringIO()
-    call_command("evaluate_blueprint_golden", stdout=buf)
+    call_command("evaluate_blueprint_golden", "--fixtures-dir", str(tmp_path), stdout=buf)
     output = buf.getvalue()
-    assert "assessment_boost" in output
+    assert "sample_blueprint" in output
     assert "PASS" in output
     assert "FAIL" not in output.replace('"failed": 0', "")
 
 
-def test_repeat_runs_are_byte_identical() -> None:
+def test_repeat_runs_are_byte_identical(tmp_path: Path) -> None:
     """离线确定性（ROADMAP SC5）：同输入连续两次运行输出逐字节一致。"""
+    _write_case(tmp_path, "sample_blueprint", make_blueprint(), dict(_PERMISSIVE_EXPECTED))
     first, second = StringIO(), StringIO()
-    call_command("evaluate_blueprint_golden", stdout=first)
-    call_command("evaluate_blueprint_golden", stdout=second)
+    call_command("evaluate_blueprint_golden", "--fixtures-dir", str(tmp_path), stdout=first)
+    call_command("evaluate_blueprint_golden", "--fixtures-dir", str(tmp_path), stdout=second)
     assert first.getvalue() == second.getvalue()
 
 
@@ -70,7 +72,7 @@ def test_repo_hit_rate_gate_enforced(tmp_path: Path) -> None:
     for assoc in blueprint["repo_associations"][1:]:
         assoc["role"] = "indirect"
     expected = dict(_PERMISSIVE_EXPECTED)
-    expected["direct_repos"] = ["study-course"]
+    expected["direct_repos"] = ["sample_course_service"]
     expected["min_repo_hit_rate"] = 1.0
     _write_case(tmp_path, "hit_rate_miss", blueprint, expected)
     with pytest.raises(CommandError, match="未过门槛"):
@@ -126,8 +128,18 @@ def test_missing_fixtures_dir_is_hard_error(tmp_path: Path) -> None:
 
 
 def test_output_json_writes_report_file(tmp_path: Path) -> None:
+    fixtures_path = tmp_path / "fixtures"
+    fixtures_path.mkdir()
+    _write_case(fixtures_path, "sample_blueprint", make_blueprint(), dict(_PERMISSIVE_EXPECTED))
     report_path = tmp_path / "report" / "golden.json"
-    call_command("evaluate_blueprint_golden", "--output-json", str(report_path), stdout=StringIO())
+    call_command(
+        "evaluate_blueprint_golden",
+        "--fixtures-dir",
+        str(fixtures_path),
+        "--output-json",
+        str(report_path),
+        stdout=StringIO(),
+    )
     report = json.loads(report_path.read_text(encoding="utf-8"))
     assert report["failed"] == 0
-    assert any(case["name"] == "assessment_boost" for case in report["cases"])
+    assert any(case["name"] == "sample_blueprint" for case in report["cases"])

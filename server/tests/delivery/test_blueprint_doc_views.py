@@ -833,7 +833,7 @@ def test_events_limit_is_clamped_not_rejected(authenticated_client, user) -> Non
 # 4. 无会话 / 无调研任务回 200 空结构，⛔ 不是 404。
 
 
-def _make_repo(name: str = "backend/study-course") -> Any:
+def _make_repo(name: str = "backend/sample_course_service") -> Any:
     from repositories.models import Repository
 
     return Repository.objects.create(name=name, git_url=f"https://example.com/{name}.git")
@@ -897,7 +897,7 @@ def test_research_detail_covers_both_stages_despite_the_overwritten_fk(
 
     assert len(body["repositories"]) == 1
     row = body["repositories"][0]
-    assert row["repository_name"] == "backend/study-course"
+    assert row["repository_name"] == "backend/sample_course_service"
     assert row["conclusion"]["fitness"]["verdict"] == "partial"
     assert [f["id"] for f in row["conclusion"]["findings"]] == ["f1"]
 

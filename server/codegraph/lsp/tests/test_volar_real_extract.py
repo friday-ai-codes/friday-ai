@@ -14,8 +14,8 @@ import pytest
 pytestmark = pytest.mark.integration
 
 _VLS_BIN: str | None = shutil.which("vue-language-server")
-_STUDY_APP: Path = Path(os.environ.get("VOLAR_TEST_REPO", ""))
-_COURSES_SUB: Path = _STUDY_APP / "apps" / "courses"
+_SAMPLE_FRONTEND: Path = Path(os.environ.get("VOLAR_TEST_REPO", ""))
+_COURSES_SUB: Path = _SAMPLE_FRONTEND / "apps" / "courses"
 
 
 @pytest.mark.skipif(_VLS_BIN is None, reason="vue-language-server 未在 PATH")
@@ -27,7 +27,7 @@ class TestVolarRealExtract:
         """workspace_discovery 真实跑 example-app 找 apps/courses（vue 2.7.x）。"""
         from codegraph.lsp.workspace_discovery import discover_sub_projects
 
-        sub_projects = discover_sub_projects(_STUDY_APP)
+        sub_projects = discover_sub_projects(_SAMPLE_FRONTEND)
         assert len(sub_projects) >= 30, (
             f"example-app 应 ≥ 30 sub-projects，实测 {len(sub_projects)}"
         )

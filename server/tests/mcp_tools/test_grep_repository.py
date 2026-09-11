@@ -63,7 +63,7 @@ def origin_repo(tmp_path: Path) -> tuple[Path, str]:
         "".join(f"BULKMATCH line {i} {'x' * 60}\n" for i in range(100)),
         encoding="utf-8",
     )
-    (origin / "README.md").write_text("study app demo\n", encoding="utf-8")
+    (origin / "README.md").write_text("sample_web demo\n", encoding="utf-8")
     _git("add", "-A", cwd=origin)
     _git("commit", "-m", "init", cwd=origin)
     sha = _git("rev-parse", "HEAD", cwd=origin)

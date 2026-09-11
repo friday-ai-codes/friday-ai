@@ -45,8 +45,8 @@ MARKDOWN_LITE_WRITING_GUIDE = """## paragraph Block 正文写作约定（必须�
 以下规则适用于本次输出中所有面向读者的 `paragraph` Block 正文：
 
 1. 凡是代码标识符、文件路径、函数名、变量名、组件名、配置键、包名、URL 参数名，一律用单个反引号包裹。
-   - 正例：在 `SpecialCard.vue` 中调用 `browserJump`，跳转到 `apps/learn-rapid-score-boost`。
-   - 反例：在 SpecialCard.vue 中调用 browserJump，跳转到 apps/learn-rapid-score-boost。
+   - 正例：在 `SpecialCard.vue` 中调用 `browserJump`，跳转到 `apps/learn-sample_service_workflow`。
+   - 反例：在 SpecialCard.vue 中调用 browserJump，跳转到 apps/learn-sample_service_workflow。
 2. 多个并列要点必须用 `- ` 无序列表分条，不要写成用逗号、顿号或分号串联的一整段长句；存在先后顺序的步骤必须用 `1. `、`2. ` 有序列表。
 3. 需要小标题时只用 `####`，不要用 `#`、`##` 或 `###`。
 4. 关键约束或结论可用 `**加粗**` 标出，但只标真正需要读者注意的内容，不要整段加粗。
@@ -55,7 +55,7 @@ MARKDOWN_LITE_WRITING_GUIDE = """## paragraph Block 正文写作约定（必须�
 改造前：
 按 monorepo 既有子应用形态（package.json 的 buildName/vite --configLoader runner 脚本、src/{pages,components,composables,services,stores,helpers,types} 结构、文件路由 [...all].vue + index.vue、typed-router）创建快速提效营独立子应用，接入 @util/global 请求封装、onion-ui/onion-utils、vue-router 文件路由与埋点公共参数初始化。
 
-将 learn-textbook-sync 的 SpecialCard.vue 从「进阶课（即将上线）」占位改造成真实进阶卡片区：渲染「专项突破」等既有入口并在其右侧追加「快速提效营」入口，样式与同模块其他进阶课入口一致；同时 ContentArea.vue 模板中按 showSpecialCard（SPECIAL_CARD featureCode）真正渲染 SpecialCard（当前模板未渲染），点击入口经 browserJump 跳转 apps/learn-rapid-score-boost 题型图谱页。
+将 learn-textbook-sync 的 SpecialCard.vue 从「进阶课（即将上线）」占位改造成真实进阶卡片区：渲染「专项突破」等既有入口并在其右侧追加「快速提效营」入口，样式与同模块其他进阶课入口一致；同时 ContentArea.vue 模板中按 showSpecialCard（SPECIAL_CARD featureCode）真正渲染 SpecialCard（当前模板未渲染），点击入口经 browserJump 跳转 apps/learn-sample_service_workflow 题型图谱页。
 
 改造后：
 #### 创建快速提效营子应用
@@ -70,5 +70,5 @@ MARKDOWN_LITE_WRITING_GUIDE = """## paragraph Block 正文写作约定（必须�
 1. 将 `learn-textbook-sync` 的 `SpecialCard.vue` 从「进阶课（即将上线）」占位改造成真实进阶卡片区。
 2. 保留「专项突破」等既有入口，并在右侧追加「快速提效营」入口；**样式必须与同模块其他进阶课入口一致**。
 3. 在 `ContentArea.vue` 中根据 `showSpecialCard`（`SPECIAL_CARD` featureCode）渲染 `SpecialCard`，补齐当前模板未渲染的问题。
-4. 点击入口时调用 `browserJump`，跳转到 `apps/learn-rapid-score-boost` 题型图谱页。
+4. 点击入口时调用 `browserJump`，跳转到 `apps/learn-sample_service_workflow` 题型图谱页。
 """

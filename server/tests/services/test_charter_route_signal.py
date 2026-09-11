@@ -41,7 +41,7 @@ async def test_no_charter_leaves_score_untouched(monkeypatch) -> None:
     _patch_charter(monkeypatch, charters={})
 
     items = await aapply_charter_signal(
-        query="改造错题本导出", candidates=[(_REPO_A, "study-app", 0.8)]
+        query="改造错题本导出", candidates=[(_REPO_A, "sample_web", 0.8)]
     )
 
     assert len(items) == 1
@@ -66,7 +66,7 @@ async def test_owned_domain_hit_boosts_score(monkeypatch) -> None:
     )
 
     items = await aapply_charter_signal(
-        query="改造错题本导出", candidates=[(_REPO_A, "study-app", 0.5)]
+        query="改造错题本导出", candidates=[(_REPO_A, "sample_web", 0.5)]
     )
 
     assert items[0].charter_score > 0
@@ -92,7 +92,7 @@ async def test_boundary_hit_penalizes_score(monkeypatch) -> None:
     )
 
     items = await aapply_charter_signal(
-        query="展示课程内容与权益鉴权状态", candidates=[(_REPO_A, "study-app", 0.9)]
+        query="展示课程内容与权益鉴权状态", candidates=[(_REPO_A, "sample_web", 0.9)]
     )
 
     assert items[0].charter_score < 0
@@ -115,7 +115,7 @@ async def test_supplement_candidate_is_appended_with_zero_router_score(monkeypat
     )
 
     items = await aapply_charter_signal(
-        query="改造错题本导出", candidates=[(_REPO_A, "study-app", 0.8)]
+        query="改造错题本导出", candidates=[(_REPO_A, "sample_web", 0.8)]
     )
 
     supplement = next(i for i in items if i.repository_id == _REPO_B)
@@ -135,7 +135,7 @@ async def test_charter_failure_degrades_to_router_order(monkeypatch) -> None:
 
     items = await aapply_charter_signal(
         query="改造错题本导出",
-        candidates=[(_REPO_A, "study-app", 0.8), (_REPO_B, "exam-service", 0.3)],
+        candidates=[(_REPO_A, "sample_web", 0.8), (_REPO_B, "exam-service", 0.3)],
     )
 
     assert [i.repository_id for i in items] == [_REPO_A, _REPO_B]
@@ -161,6 +161,6 @@ async def test_weight_zero_disables_signal(monkeypatch) -> None:
 
     assert charter_route_signal.resolve_charter_weight() == 0.0
     items = await aapply_charter_signal(
-        query="改造错题本导出", candidates=[(_REPO_A, "study-app", 0.5)]
+        query="改造错题本导出", candidates=[(_REPO_A, "sample_web", 0.5)]
     )
     assert items[0].blended_score == 0.5

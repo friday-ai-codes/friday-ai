@@ -418,7 +418,7 @@ describe('resolveProgressKeys —— 插值完整性与判别式变体', () => {
   it('⭐ repo_research：有 repository_name 用具体文案，缺失回落 Generic（存量事件）', () => {
     expect(
       resolveProgressKeys('blueprint.repo_research.started', {
-        repository_name: 'sample-web',
+        repository_name: 'sample_service-web',
         research_reason: '主落点仓',
       }).key,
     ).toBe(`${PROGRESS}.repoResearchStarted`)
@@ -428,7 +428,7 @@ describe('resolveProgressKeys —— 插值完整性与判别式变体', () => {
 
     expect(
       resolveProgressKeys('blueprint.repo_research.completed', {
-        repository_name: 'sample-web',
+        repository_name: 'sample_service-web',
         fitness_verdict: 'suitable',
       }).key,
     ).toBe(`${PROGRESS}.repoResearchCompleted`)
@@ -438,7 +438,7 @@ describe('resolveProgressKeys —— 插值完整性与判别式变体', () => {
 
     expect(
       resolveProgressKeys('blueprint.repo_research.failed', {
-        repository_name: 'sample-web',
+        repository_name: 'sample_service-web',
         attempt: 2,
       }).key,
     ).toBe(`${PROGRESS}.repoResearchFailed`)

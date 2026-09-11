@@ -12,17 +12,17 @@ from pathlib import Path
 
 import pytest
 
-STUDY_APP_PATH = os.environ.get("TS_SAMPLE_REPO", "")
-STUDY_APP_GLOBAL_PKG = f"{STUDY_APP_PATH}/utils/global/src/axios.config.ts"
-STUDY_APP_HOME_SERVICES = f"{STUDY_APP_PATH}/apps/home/src/services/index.ts"
-STUDY_APP_LADDER_SERVICES = (
-    f"{STUDY_APP_PATH}/apps/tabStudyCompany/src/views/newLadder/services/lastTextbook.ts"
+SAMPLE_FRONTEND_PATH = os.environ.get("TS_SAMPLE_REPO", "")
+SAMPLE_FRONTEND_GLOBAL_PKG = f"{SAMPLE_FRONTEND_PATH}/utils/global/src/axios.config.ts"
+SAMPLE_FRONTEND_HOME_SERVICES = f"{SAMPLE_FRONTEND_PATH}/apps/home/src/services/index.ts"
+SAMPLE_FRONTEND_LADDER_SERVICES = (
+    f"{SAMPLE_FRONTEND_PATH}/apps/tabStudyCompany/src/views/newLadder/services/lastTextbook.ts"
 )
 
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not STUDY_APP_PATH or not Path(STUDY_APP_PATH).exists(),
+    not SAMPLE_FRONTEND_PATH or not Path(SAMPLE_FRONTEND_PATH).exists(),
     reason="example-app repo not found (run locally with access to example-app)",
 )
 class TestApiResolverStep0Integration:
@@ -36,15 +36,15 @@ class TestApiResolverStep0Integration:
             parse_ts_or_vue_for_api,
         )
 
-        if not Path(STUDY_APP_GLOBAL_PKG).exists():
+        if not Path(SAMPLE_FRONTEND_GLOBAL_PKG).exists():
             pytest.skip("axios.config.ts 不存在")
 
-        config = get_api_detector_config(STUDY_APP_PATH)
-        parsed = parse_ts_or_vue_for_api(STUDY_APP_GLOBAL_PKG)
+        config = get_api_detector_config(SAMPLE_FRONTEND_PATH)
+        parsed = parse_ts_or_vue_for_api(SAMPLE_FRONTEND_GLOBAL_PKG)
         assert parsed is not None, "axios.config.ts 解析失败"
         tree, source = parsed
 
-        helpers = discover_low_level_helpers(tree, source, STUDY_APP_GLOBAL_PKG, config)
+        helpers = discover_low_level_helpers(tree, source, SAMPLE_FRONTEND_GLOBAL_PKG, config)
         assert len(helpers) >= 2, f"应至少识别 get/post，实际 {helpers}"
         assert "get" in helpers, f"未识别 get，实际 {helpers}"
         assert "post" in helpers, f"未识别 post，实际 {helpers}"
@@ -52,7 +52,7 @@ class TestApiResolverStep0Integration:
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not STUDY_APP_PATH or not Path(STUDY_APP_PATH).exists(),
+    not SAMPLE_FRONTEND_PATH or not Path(SAMPLE_FRONTEND_PATH).exists(),
     reason="example-app repo not found (run locally with access to example-app)",
 )
 class TestApiResolverStep1Integration:
@@ -66,15 +66,15 @@ class TestApiResolverStep1Integration:
             parse_ts_or_vue_for_api,
         )
 
-        if not Path(STUDY_APP_HOME_SERVICES).exists():
+        if not Path(SAMPLE_FRONTEND_HOME_SERVICES).exists():
             pytest.skip("home services/index.ts 不存在")
 
-        config = get_api_detector_config(STUDY_APP_PATH)
-        parsed = parse_ts_or_vue_for_api(STUDY_APP_HOME_SERVICES)
+        config = get_api_detector_config(SAMPLE_FRONTEND_PATH)
+        parsed = parse_ts_or_vue_for_api(SAMPLE_FRONTEND_HOME_SERVICES)
         assert parsed is not None
         tree, source = parsed
 
-        wrappers = discover_api_wrappers(tree, source, STUDY_APP_HOME_SERVICES, {"get", "post"}, config)
+        wrappers = discover_api_wrappers(tree, source, SAMPLE_FRONTEND_HOME_SERVICES, {"get", "post"}, config)
         assert len(wrappers) >= 1, f"应至少发现 1 个 ApiWrapper，实际 {len(wrappers)}"
 
         symbols = [w.function_symbol for w in wrappers]
@@ -88,14 +88,14 @@ class TestApiResolverStep1Integration:
             parse_ts_or_vue_for_api,
         )
 
-        if not Path(STUDY_APP_HOME_SERVICES).exists():
+        if not Path(SAMPLE_FRONTEND_HOME_SERVICES).exists():
             pytest.skip("home services/index.ts 不存在")
 
-        config = get_api_detector_config(STUDY_APP_PATH)
-        parsed = parse_ts_or_vue_for_api(STUDY_APP_HOME_SERVICES)
+        config = get_api_detector_config(SAMPLE_FRONTEND_PATH)
+        parsed = parse_ts_or_vue_for_api(SAMPLE_FRONTEND_HOME_SERVICES)
         tree, source = parsed
 
-        wrappers = discover_api_wrappers(tree, source, STUDY_APP_HOME_SERVICES, {"get"}, config)
+        wrappers = discover_api_wrappers(tree, source, SAMPLE_FRONTEND_HOME_SERVICES, {"get"}, config)
         assert wrappers, "未找到任何 ApiWrapper"
 
         # getUserClassInfo → /api/revenue/baas/user_classification_info
@@ -111,14 +111,14 @@ class TestApiResolverStep1Integration:
         """getLadderV5TextbookLast JSDoc 富集 → yapi metadata 正确。"""
         from codegraph.extractors.api_resolver.detector import resolve_wrappers_for_repository
 
-        if not Path(STUDY_APP_LADDER_SERVICES).exists():
+        if not Path(SAMPLE_FRONTEND_LADDER_SERVICES).exists():
             pytest.skip("lastTextbook.ts 不存在")
-        if not Path(STUDY_APP_GLOBAL_PKG).exists():
+        if not Path(SAMPLE_FRONTEND_GLOBAL_PKG).exists():
             pytest.skip("axios.config.ts 不存在")
 
         wrappers = resolve_wrappers_for_repository(
-            [STUDY_APP_GLOBAL_PKG, STUDY_APP_LADDER_SERVICES],
-            STUDY_APP_PATH,
+            [SAMPLE_FRONTEND_GLOBAL_PKG, SAMPLE_FRONTEND_LADDER_SERVICES],
+            SAMPLE_FRONTEND_PATH,
         )
 
         textbook = next(
@@ -136,7 +136,7 @@ class TestApiResolverStep1Integration:
 
 @pytest.mark.integration
 @pytest.mark.skipif(
-    not STUDY_APP_PATH or not Path(STUDY_APP_PATH).exists(),
+    not SAMPLE_FRONTEND_PATH or not Path(SAMPLE_FRONTEND_PATH).exists(),
     reason="example-app repo not found (run locally with access to example-app)",
 )
 class TestApiResolverFullScan:
@@ -149,7 +149,7 @@ class TestApiResolverFullScan:
         # 只扫 apps 目录（避免 node_modules），限制文件数加速测试
         file_paths: list[str] = []
         for ext in ("*.ts", "*.vue"):
-            for fp in Path(f"{STUDY_APP_PATH}/apps").rglob(ext):
+            for fp in Path(f"{SAMPLE_FRONTEND_PATH}/apps").rglob(ext):
                 if "node_modules" not in fp.parts:
                     file_paths.append(str(fp))
                     if len(file_paths) >= 100:
@@ -157,10 +157,10 @@ class TestApiResolverFullScan:
             if len(file_paths) >= 100:
                 break
 
-        if STUDY_APP_GLOBAL_PKG not in file_paths:
-            file_paths.append(STUDY_APP_GLOBAL_PKG)
+        if SAMPLE_FRONTEND_GLOBAL_PKG not in file_paths:
+            file_paths.append(SAMPLE_FRONTEND_GLOBAL_PKG)
 
-        wrappers = resolve_wrappers_for_repository(file_paths, STUDY_APP_PATH)
+        wrappers = resolve_wrappers_for_repository(file_paths, SAMPLE_FRONTEND_PATH)
         assert len(wrappers) >= 5, (
             f"完整扫描应发现 ≥ 5 个 ApiWrapper，实际 {len(wrappers)}"
         )
@@ -171,16 +171,16 @@ class TestApiResolverFullScan:
 
         file_paths: list[str] = []
         for ext in ("*.ts",):
-            for fp in Path(f"{STUDY_APP_PATH}/apps").rglob(ext):
+            for fp in Path(f"{SAMPLE_FRONTEND_PATH}/apps").rglob(ext):
                 if "node_modules" not in fp.parts:
                     file_paths.append(str(fp))
                     if len(file_paths) >= 50:
                         break
 
-        if STUDY_APP_GLOBAL_PKG not in file_paths:
-            file_paths.append(STUDY_APP_GLOBAL_PKG)
+        if SAMPLE_FRONTEND_GLOBAL_PKG not in file_paths:
+            file_paths.append(SAMPLE_FRONTEND_GLOBAL_PKG)
 
-        wrappers = resolve_wrappers_for_repository(file_paths, STUDY_APP_PATH)
+        wrappers = resolve_wrappers_for_repository(file_paths, SAMPLE_FRONTEND_PATH)
 
         methods = {w.http_method for w in wrappers}
         # 至少有 GET 或 POST（example-app 同时使用两者）

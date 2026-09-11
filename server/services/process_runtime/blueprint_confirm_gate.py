@@ -387,7 +387,7 @@ def _human_kept_despite_unsuitable(entry: dict[str, Any]) -> bool:
     早前只认 ``add_repo``，于是出现这条静默丢仓：门开时该仓 ``role=direct`` / 未移除，人
     照着改了它的职责文本就点确认，而确认前的快照 refresh 恰好带回 ``unsuitable`` ⇒ 该仓被
     自动移除、锁定集少一个仓，界面上没有任何提示，门关后也没有补仓入口。2026-09-04 实测
-    onion-practice 就是这样丢的。**人花力气编辑过的仓，机器判定不该越过人**。
+    sample_practice_service 就是这样丢的。**人花力气编辑过的仓，机器判定不该越过人**。
 
     ⛔ 豁免的是「自动移除」，不是「人工移除」：人显式 ``remove_repo`` 后 ``removed`` 已是
     ``True``，:func:`_apply_unsuitable_auto_remove` 不会把它改回来，移除仍然生效。

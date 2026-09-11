@@ -100,7 +100,7 @@ logger = structlog.get_logger(__name__)
 Confidence = Literal["high", "medium", "low"]
 
 # Stage 0 全局节点召回预算。50 是历史值，实测偏小：30 仓空间下「示例功能专项」
-# 语料把 study-course 的最佳节点压到全局 #80，它因此**从未进入候选**，Stage 1 的
+# 语料把 sample_course_service 的最佳节点压到全局 #80，它因此**从未进入候选**，Stage 1 的
 # LLM 再强也无从挽回（reranker/LLM 救不回没见过的文档——一阶召回即天花板）。
 # 200 覆盖实测所需深度且仍是单次 query_points 调用（服务端 RRF，零额外往返）。
 # 运维可经 settings 覆盖而不必改代码发版。
@@ -144,7 +144,7 @@ STAGE0_DENSE_K = _STAGE0_NODE_K_DEFAULT
 #
 # 为什么需要它（2026-08 实测）：六信号打分含 `breadth`（命中广度）分量，而多探针
 # 检索把这个信号放大了——泛泛相关的仓在 8 个探针上各捞几个节点，累积出 20~27 个；
-# 专精仓只在少数探针上强命中，只有 9 个。结果 study-course 在融合节点里排 #58
+# 专精仓只在少数探针上强命中，只有 9 个。结果 sample_course_service 在融合节点里排 #58
 # （稳稳在 top-200 内），却因节点数少而挤不进仓级 top-12，Stage 1 的 LLM 从未见过它。
 # cross-encoder 拿 query 与文档**联合**打分，不吃「你出现了多少次」，正是这一偏置的解药。
 STAGE0_REPO_K_WIDE = 30
@@ -152,15 +152,15 @@ STAGE0_REPO_K_WIDE = 30
 # 每仓取几个命中节点拼成 rerank 文档（够表达该仓与需求的关系，又不撑爆 pair 长度）。
 _RERANK_REPO_DOC_HITS = 6
 # cross-encoder 的 query 侧预算。它同样是 transformer，pair 总长受限；且实测**短
-# query 反而更准**（一句话摘要能把 study-course 从"未进候选"直接拉到 #1）。
+# query 反而更准**（一句话摘要能把 sample_course_service 从"未进候选"直接拉到 #1）。
 _RERANK_QUERY_MAX_CHARS = 2000
 # 双序融合的 RRF 常数（社区默认 k=60）。
 #
 # 为什么是融合而不是「精排全权定序」：实测两个极端都会漏。让精排主导中后段能把
-# study-course 从 #11 提到 #9（进了 LLM 视野），但同时把 onion-practice 挤出
+# sample_course_service 从 #11 提到 #9（进了 LLM 视野），但同时把 sample_practice_service 挤出
 # top-12，换进两个无关仓——净收益为负。六信号里有 cross-encoder 看不到的事实
 # （活跃度、关键度、子应用结构），两路必须互补而非相互取代。
-# RRF 融合下四个目标仓**全部**落在 top-12 内（study-course #11），代价只是
+# RRF 融合下四个目标仓**全部**落在 top-12 内（sample_course_service #11），代价只是
 # Stage 1 得看得到第 11 名 —— 见 REPO_ROUTER_STAGE1_MAX_CANDIDATES。
 _RERANK_RRF_K = 60
 
@@ -199,11 +199,11 @@ _STAGE1_DECODE_PARAMS: dict[str, Any] = {"temperature": 0.0, "top_p": 1.0, "seed
 # 便于按供应商速度调整而不必改代码发版。默认见 friday/settings.py。
 _STAGE1_DEFAULTS = {
     "REPO_ROUTER_STAGE1_TIMEOUT_SECONDS": 90.0,
-    # 实测不要调大：8→12 后平均命中从 3.00 掉到 1.20（onion-practice 5/5→0/5）。
+    # 实测不要调大：8→12 后平均命中从 3.00 掉到 1.20（sample_practice_service 5/5→0/5）。
     # 容量不是原因（12 仓 × 4 节点对 1M 上下文毫无压力），是 lost-in-the-middle
     # ——候选越多，LLM 越容易被聚合分高的假阳性淹没。名额要靠**精排提高前 8 名的
     # 质量**来用好，而不是靠放宽。
-    # 8→10：多探针下专精仓（如 study-course）常落在聚合分 #10~#14；
+    # 8→10：多探针下专精仓（如 sample_course_service）常落在聚合分 #10~#14；
     # 配合 ``select_stage0_pool(diversify_breadth=True)`` 去 breadth 入选后，
     # Stage 1 需要看到第 10 名才能覆盖。再往 12 实测会触发 lost-in-the-middle
     # （平均命中 3.00→1.20），故停在 10。
@@ -1055,7 +1055,7 @@ class RepoRouterV2:
         # 回传向量供 _load_repo_meta 复用（零额外 embedding）：
         # - primary 供 T2 facet 匹配（单向量接口）；
         # - 全部探针供 dense_cos_max —— **必须全给**。只用首块算余弦会让 S_top
-        #   只看 1/N 的需求语料，相关内容落在后面块的仓（实测 study-course）
+        #   只看 1/N 的需求语料，相关内容落在后面块的仓（实测 sample_course_service）
         #   text 信号被系统性压低，进而挤不进候选池。
         return hits or [], embedded.primary, embedded.vectors
 
@@ -1184,7 +1184,7 @@ class RepoRouterV2:
         # ---- dense 余弦（O-3 口径）：复用已算好的探针向量，归仓取 max ----
         # 长查询切成 N 块时**必须用全部探针**：dense_cos_max 的语义是「该仓与需求
         # 任一部分的最佳匹配度」。只用首块会让相关内容在后段的仓 S_top 被系统性
-        # 压低（实测 study-course 因此 text 信号落后 0.23，挤不进候选池）。
+        # 压低（实测 sample_course_service 因此 text 信号落后 0.23，挤不进候选池）。
         # 单探针时 dense_search_multi_by_name 逐字委托单向量实现，调用计数不变。
         dense_probes = [v for v in (probe_vectors or []) if v] or (
             [query_dense] if query_dense else []

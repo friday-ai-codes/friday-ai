@@ -29,8 +29,8 @@ def test_derive_groups_by_repo_with_required_fields():
         assert task["branch_strategy"] == DEFAULT_BRANCH_STRATEGY
     # repository_name 从 repo_associations 快照取
     by_repo = {task["repository_id"]: task for task in plan}
-    assert by_repo["repo-backend"]["repository_name"] == "onion-practice"
-    assert by_repo["repo-frontend"]["repository_name"] == "study-app"
+    assert by_repo["repo-backend"]["repository_name"] == "sample_practice_service"
+    assert by_repo["repo-frontend"]["repository_name"] == "sample_web"
     # wave 排序：repo-backend（wave 1）先于 repo-frontend（wave 2）
     assert [task["repository_id"] for task in plan] == ["repo-backend", "repo-frontend"]
 

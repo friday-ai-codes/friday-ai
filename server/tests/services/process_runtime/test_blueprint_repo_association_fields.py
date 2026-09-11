@@ -97,7 +97,7 @@ def _locked_association() -> dict:
     snapshot = [
         _build_snapshot_entry(
             _RID,
-            candidate={"repository_name": "frontend/onion-practice"},
+            candidate={"repository_name": "frontend/sample_practice_service"},
             conclusion=_conclusion(),
             router_version="v1",
         )

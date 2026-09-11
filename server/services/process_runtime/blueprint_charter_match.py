@@ -38,7 +38,7 @@ __all__ = [
 #
 # `owned_planned` 显著为正但低于 `owned_implemented`——这是 greenfield 场景让
 # **规划中**领域的仓进候选的机制：能力树里没有节点（router_base=0.0）也能靠
-# 「章程写明这块归我、只是还没实现」被召回（示例功能专项的 onion-learning case）。
+# 「章程写明这块归我、只是还没实现」被召回（示例功能专项的 sample_service_service case）。
 # `boundary_hit` 取 -1.0：单条禁区命中即可把满分 owned 命中压回 0，语义是
 # 「章程明令不承接」应当压倒「能力沾边」，但**只降权不淘汰**（保留候选 +
 # 要求显式理由的机制在 `blueprint_route.resolve_boundary_override`）。
@@ -385,7 +385,7 @@ async def acollect_charter_candidates(
 ) -> list[dict]:
     """章程候选补入清单 —— **示例功能专项 case 的机制解**（ROADMAP SC2 前半）。
 
-    能力树里没有节点的仓不会被能力树路由器召回（onion-learning 的进阶领域尚未
+    能力树里没有节点的仓不会被能力树路由器召回（sample_service_service 的进阶领域尚未
     实现），但章程已写明「这块归我」（`status=planned`）——本函数把这类仓作为**补入
     候选**返回，让它们以 `router_base=0.0` + `charter_match>0` 参与排序，从而不被淘汰。
 

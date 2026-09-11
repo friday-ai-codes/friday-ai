@@ -342,7 +342,7 @@ describe('blueprintStageStepper —— 详情区（单选展开）', () => {
       ],
       currentStage: 'ai_review',
       currentStatus: 'ai_reviewing',
-      repoNames: { [repositoryId]: 'backend/study-course' },
+      repoNames: { [repositoryId]: 'backend/sample_course_service' },
     })
 
     await wrapper.find(`${NODE}[data-stage="ai_review"] button`).trigger('click')
@@ -353,7 +353,7 @@ describe('blueprintStageStepper —— 详情区（单选展开）', () => {
     expect(detail.text()).toContain('警告数量')
     expect(detail.text()).toContain('审查结论')
     expect(detail.text()).toContain('重试已用尽')
-    expect(detail.text()).toContain('仓库：backend/study-course')
+    expect(detail.text()).toContain('仓库：backend/sample_course_service')
     expect(detail.text()).not.toContain('blueprint.review.completed')
     expect(detail.text()).not.toContain(repositoryId)
   })
@@ -529,14 +529,14 @@ describe('blueprintStageStepper —— 仓库调研过程明细可读性（quick
     const wrapper = mountStepper({
       events: [
         event('blueprint.repo_research.started', {
-          repository_name: 'sample-web',
+          repository_name: 'sample_service-web',
           research_reason: '主落点仓',
           routed_confidence: 'high',
           repository_id: '11111111-1111-1111-1111-111111111111',
           task_id: '22222222-2222-2222-2222-222222222222',
         }),
         event('blueprint.repo_research.completed', {
-          repository_name: 'sample-web',
+          repository_name: 'sample_service-web',
           fitness_verdict: 'suitable',
           repository_id: '11111111-1111-1111-1111-111111111111',
         }),
@@ -552,7 +552,7 @@ describe('blueprintStageStepper —— 仓库调研过程明细可读性（quick
     const cards = wrapper.findAll(REPO_GROUP)
     expect(cards).toHaveLength(1)
     const card = cards[0]
-    expect(card.text()).toContain('sample-web')
+    expect(card.text()).toContain('sample_service-web')
     expect(card.text()).toContain('已完成')
     expect(card.text()).toContain('调研理由')
     expect(card.text()).toContain('主落点仓')

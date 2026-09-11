@@ -246,7 +246,7 @@ def test_blueprint_list_item_exposes_the_full_contract(authenticated_client) -> 
     assert item["current_version_no"] == 1
     assert item["created_at"]
     # 仓库名取不到（库里没有该 Repository 行）时回落 content 快照名，⛔ 不丢行
-    assert {"id": _REPO_ID, "name": "onion-practice", "role": "direct"} in item["repositories"]
+    assert {"id": _REPO_ID, "name": "sample_practice_service", "role": "direct"} in item["repositories"]
 
 
 def test_blueprint_list_orders_by_created_at_desc(authenticated_client) -> None:

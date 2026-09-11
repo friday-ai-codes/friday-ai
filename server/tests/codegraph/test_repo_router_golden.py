@@ -56,8 +56,8 @@ FIXTURE_DIR: Path = Path(__file__).resolve().parent / "fixtures" / "repo_router_
 MAIN_FIXTURE: Path = FIXTURE_DIR / "golden_main.json"
 BASELINE_FIXTURE: Path = FIXTURE_DIR / "golden_baseline.json"
 
-# 事故锚点 case（SC-1）：study-app 以命中广度碾压 onion-learning 的真实场景。
-GK001_CASE_ID = "gk-001-sample-tifen"
+# 事故锚点 case（SC-1）：sample_web 以命中广度碾压 sample_service_service 的真实场景。
+GK001_CASE_ID = "gk-001-sample_service-tifen"
 
 # 跨组样本（ROUTE-01）：正确答案落在「本项目关联仓之外」，用来验证 block ranking
 # 能把全局组置顶——这正是本里程碑要修的那类故障的离线复现。
@@ -289,24 +289,24 @@ def test_all_candidates_satisfy_score_invariants(
 def test_gk001_mechanism_breadth_not_favor_monolith(
     gk001_ranked: list[ScoredCandidate],
 ) -> None:
-    """尺寸偏置已消除：巨仓 study-app 的 breadth 贡献不高于小仓 onion-learning。
+    """尺寸偏置已消除：巨仓 sample_web 的 breadth 贡献不高于小仓 sample_service_service。
 
     pivoted normalization 的因果性质——命中数多但仓体量更大（N_r=620 vs 30）时，
     广度分项不再奖励巨仓。这是机制断言，与两者最终名次无关。
     """
-    monolith = _breadth_of(gk001_ranked, "study-app")
-    focused = _breadth_of(gk001_ranked, "onion-learning")
+    monolith = _breadth_of(gk001_ranked, "sample_web")
+    focused = _breadth_of(gk001_ranked, "sample_service_service")
     assert monolith <= focused, (
-        f"breadth 仍偏袒巨仓：study-app={monolith:.4f} > "
-        f"onion-learning={focused:.4f}（pivoted normalization 失效）"
+        f"breadth 仍偏袒巨仓：sample_web={monolith:.4f} > "
+        f"sample_service_service={focused:.4f}（pivoted normalization 失效）"
     )
 
 
 def test_gk001_mechanism_rank_flipped(
     gk001_ranked: list[ScoredCandidate],
 ) -> None:
-    """事故翻转：onion-learning 排在 study-app 之前（Phase 105 baseline 为反）。"""
-    assert _rank_of(gk001_ranked, "onion-learning") < _rank_of(gk001_ranked, "study-app"), (
+    """事故翻转：sample_service_service 排在 sample_web 之前（Phase 105 baseline 为反）。"""
+    assert _rank_of(gk001_ranked, "sample_service_service") < _rank_of(gk001_ranked, "sample_web"), (
         f"gk-001 未翻转：{[c.repo_id for c in gk001_ranked]}"
     )
 
@@ -314,10 +314,10 @@ def test_gk001_mechanism_rank_flipped(
 def test_gk001_cross_group_repos_in_top5(
     gk001_ranked: list[ScoredCandidate],
 ) -> None:
-    """跨组两仓进 Top-5：新信号不得把 study-course / study-user-status 压出窗口。"""
+    """跨组两仓进 Top-5：新信号不得把 sample_course_service / sample_user_service 压出窗口。"""
     top5 = [c.repo_id for c in gk001_ranked[:5]]
-    assert "study-course" in top5, top5
-    assert "study-user-status" in top5, top5
+    assert "sample_course_service" in top5, top5
+    assert "sample_user_service" in top5, top5
 
 
 def test_cross_group_cases_trigger_block_order_promotion(

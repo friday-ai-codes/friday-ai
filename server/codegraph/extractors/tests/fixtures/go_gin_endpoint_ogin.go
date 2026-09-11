@@ -5,14 +5,14 @@ import (
 	"gitlab.example.com/backend/example/pkg/server/ogin"
 )
 
-// StartHTTP 模拟 study-course 风格的 *ogin.Server 路由注册（用于 work item 测试）
+// StartHTTP 模拟 sample_course_service 风格的 *ogin.Server 路由注册（用于 work item 测试）
 func StartHTTP(server *ogin.Server) {
 	// Use() 注册全局 middleware —— work item：不写入 endpoint 表
 	server.Use(metricsMiddleware())
 	server.Use(tracingMiddleware())
 
 	// ogin.G* 参数验证 middleware：测试 work item metadata 提取
-	server.GET("/study-course/course/:topicId/detail",
+	server.GET("/sample_course_service/course/:topicId/detail",
 		ogin.GPathRequireString("topicId"),
 		ogin.GQueryOptionalString("courseId"),
 		ogin.GHeaderOptionalString("client-type"),
@@ -20,7 +20,7 @@ func StartHTTP(server *ogin.Server) {
 		newTopic.GetTopicDetail)
 
 	// 混合路径 + 查询参数
-	server.GET("/study-course/chapter/tree",
+	server.GET("/sample_course_service/chapter/tree",
 		ogin.GQueryRequireInt("subjectId"),
 		ogin.GQueryRequireInt("stageId"),
 		ogin.GQueryRequireInt("publisherId"),
@@ -28,10 +28,10 @@ func StartHTTP(server *ogin.Server) {
 		newChapter.GetChapters)
 
 	// POST 路由 + 无 G* middleware（metadata 应为 None）
-	server.POST("/study-course/batch/topic/detail", newTopic.BatchGetTopicDetail)
+	server.POST("/sample_course_service/batch/topic/detail", newTopic.BatchGetTopicDetail)
 
 	// 匿名 handler（handler_name 应为 "<anonymous>"）
-	server.GET("/study-course/ping", func(c *gin.Context) {})
+	server.GET("/sample_course_service/ping", func(c *gin.Context) {})
 
 	// HEAD 方法路由
 	server.HEAD("/", func(c *gin.Context) {})

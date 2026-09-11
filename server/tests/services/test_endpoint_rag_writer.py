@@ -63,13 +63,13 @@ class TestBuildApiEndpointMd:
             handler_name="userHandler.CreateUser",
             file_path="handlers/users.go",
             line_number=10,
-            repo_name="study-course",
+            repo_name="sample_course_service",
         )
         assert "POST" in md
         assert "/api/users" in md
         assert "userHandler.CreateUser" in md
         assert "handlers/users.go" in md
-        assert "study-course" in md
+        assert "sample_course_service" in md
         assert "10" in md
 
     def test_method_uppercase(self) -> None:

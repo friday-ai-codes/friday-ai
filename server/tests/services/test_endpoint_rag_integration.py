@@ -70,7 +70,7 @@ class TestCrossRagEndToEnd:
     """端到端 write endpoint → Qdrant → 可被 search 召回。"""
 
     TEST_REPO_ID = "work-item"
-    TEST_REPO_NAME = "study-course-test"
+    TEST_REPO_NAME = "sample_course_service-test"
 
     @pytest.fixture(autouse=True)
     async def setup_and_teardown(self):
