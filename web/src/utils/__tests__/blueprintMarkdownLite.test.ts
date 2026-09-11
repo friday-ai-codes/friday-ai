@@ -37,7 +37,7 @@ describe('isMarkdownishText', () => {
    * 路径，反引号就会原样显示在页面上 —— 约定越守，页面越脏。
    */
   it('⭐ 单行含行内代码 / 加粗 ⇒ true（记号必须被渲染掉而不是裸露）', () => {
-    expect(isMarkdownishText('在 `SpecialCard.vue` 中调用 `browserJump`')).toBe(true)
+    expect(isMarkdownishText('在 `TrainingCard.vue` 中调用 `navigateToApp`')).toBe(true)
     expect(isMarkdownishText('**样式必须与同模块其他入口一致**')).toBe(true)
   })
 
@@ -63,16 +63,16 @@ describe('isMarkdownishText', () => {
 
 describe('单行行内代码的渲染映射（配合 isMarkdownishText 的单行分支）', () => {
   it('反引号被删除、内容标为 code，且坐标可双向还原', () => {
-    const source = '调用 `browserJump` 跳转'
+    const source = '调用 `navigateToApp` 跳转'
     const model = buildMarkdownRender(source)
 
-    expect(model.rendered).toBe('调用 browserJump 跳转')
+    expect(model.rendered).toBe('调用 navigateToApp 跳转')
     const code = model.styles.filter(style => style.style === 'code')
     expect(code).toHaveLength(1)
-    expect(model.rendered.slice(code[0].start, code[0].end)).toBe('browserJump')
+    expect(model.rendered.slice(code[0].start, code[0].end)).toBe('navigateToApp')
     // 渲染坐标 → 源坐标：切出来的必须还是同一个词（批注锚点靠这条换算）。
     expect(source.slice(model.toSource(code[0].start), model.toSource(code[0].end - 1) + 1)).toBe(
-      'browserJump',
+      'navigateToApp',
     )
   })
 })

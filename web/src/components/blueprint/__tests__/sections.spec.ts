@@ -763,7 +763,7 @@ describe('实现概述 —— ⭐ 功能点 ← 模块 → 实现项 三层连�
       intent: 'brownfield' as const,
       acceptance_criteria: ['无权益不渲染入口', '置灰态不展示购买引导'],
     },
-    fp_2: { id: 'fp_2', title: '题型图谱页', intent: 'greenfield' as const },
+    fp_2: { id: 'fp_2', title: '分类图谱页', intent: 'greenfield' as const },
   }
 
   function makeOverview() {
@@ -783,7 +783,7 @@ describe('实现概述 —— ⭐ 功能点 ← 模块 → 实现项 三层连�
           module_id: 'mod_1',
           repository_id: 'repo-1',
           change_type: 'modify' as const,
-          title: '改造 SpecialCard 入口',
+          title: '改造 TrainingCard 入口',
           wave: 1,
           depends_on: ['impl_2'],
           how: [BLOCK],
@@ -794,7 +794,7 @@ describe('实现概述 —— ⭐ 功能点 ← 模块 → 实现项 三层连�
           module_id: 'mod_1',
           repository_id: 'repo-1',
           change_type: 'create' as const,
-          title: '新建题型图谱页',
+          title: '新建分类图谱页',
           wave: 2,
           how: [BLOCK],
         },
@@ -888,7 +888,7 @@ describe('实现概述 —— ⭐ 功能点 ← 模块 → 实现项 三层连�
     const overview = makeOverview()
     const withFiles = {
       ...overview.items[0],
-      files_touched: [{ path: 'apps/learn-textbook-sync/src/x.ts', action: 'edit' }],
+      files_touched: [{ path: 'apps/sample-textbook-sync/src/x.ts', action: 'edit' }],
     }
     const wrapper = mountOverview({ overview: { ...overview, items: [withFiles, overview.items[1]] } })
 

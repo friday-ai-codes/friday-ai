@@ -45,30 +45,30 @@ MARKDOWN_LITE_WRITING_GUIDE = """## paragraph Block 正文写作约定（必须�
 以下规则适用于本次输出中所有面向读者的 `paragraph` Block 正文：
 
 1. 凡是代码标识符、文件路径、函数名、变量名、组件名、配置键、包名、URL 参数名，一律用单个反引号包裹。
-   - 正例：在 `SpecialCard.vue` 中调用 `browserJump`，跳转到 `apps/learn-sample_service_workflow`。
-   - 反例：在 SpecialCard.vue 中调用 browserJump，跳转到 apps/learn-sample_service_workflow。
+   - 正例：在 `TrainingCard.vue` 中调用 `navigateToApp`，跳转到 `apps/learn-sample_service_workflow`。
+   - 反例：在 TrainingCard.vue 中调用 navigateToApp，跳转到 apps/learn-sample_service_workflow。
 2. 多个并列要点必须用 `- ` 无序列表分条，不要写成用逗号、顿号或分号串联的一整段长句；存在先后顺序的步骤必须用 `1. `、`2. ` 有序列表。
 3. 需要小标题时只用 `####`，不要用 `#`、`##` 或 `###`。
 4. 关键约束或结论可用 `**加粗**` 标出，但只标真正需要读者注意的内容，不要整段加粗。
 5. 禁止在 paragraph 中使用 markdown-lite 不支持的语法：Markdown 表格（如 `|---|`）、围栏代码块（三个反引号）、链接（如 `[text](url)`）、引用（`> `）和图片。多行代码必须输出为独立的 `pseudocode` Block，不要塞进 paragraph。
 
 改造前：
-按 monorepo 既有子应用形态（package.json 的 buildName/vite --configLoader runner 脚本、src/{pages,components,composables,services,stores,helpers,types} 结构、文件路由 [...all].vue + index.vue、typed-router）创建快速提效营独立子应用，接入 @util/global 请求封装、onion-ui/onion-utils、vue-router 文件路由与埋点公共参数初始化。
+按 monorepo 既有子应用形态创建自动化检查子应用，沿用 package.json 的 buildName 与 vite --configLoader runner 脚本、src 下既有目录结构、文件路由和 typed-router，并接入 @sample/global 请求封装、sample-ui、sample-utils、vue-router 与公共追踪参数初始化。
 
-将 learn-textbook-sync 的 SpecialCard.vue 从「进阶课（即将上线）」占位改造成真实进阶卡片区：渲染「专项突破」等既有入口并在其右侧追加「快速提效营」入口，样式与同模块其他进阶课入口一致；同时 ContentArea.vue 模板中按 showSpecialCard（SPECIAL_CARD featureCode）真正渲染 SpecialCard（当前模板未渲染），点击入口经 browserJump 跳转 apps/learn-sample_service_workflow 题型图谱页。
+将 sample-textbook-sync 的 TrainingCard.vue 从任务状态占位改造成自动化检查卡片区，保留既有状态入口并追加检查详情入口，同时在 LearningArea.vue 中根据 showTrainingCard 与 TRAINING_CARD featureCode 渲染 TrainingCard，点击入口经 navigateToApp 跳转 apps/learn-sample_service_workflow 的任务状态页。
 
 改造后：
-#### 创建快速提效营子应用
+#### 创建自动化检查子应用
 - 按 monorepo 既有子应用形态创建独立应用：
   - 在 `package.json` 中配置 `buildName` 与 `vite --configLoader runner` 脚本。
   - 建立 `src/{pages,components,composables,services,stores,helpers,types}` 目录结构。
   - 使用 `[...all].vue`、`index.vue` 与 `typed-router` 接入文件路由。
-- 接入 `@util/global` 请求封装、`onion-ui`、`onion-utils` 与 `vue-router`。
-- 初始化埋点公共参数。
+- 接入 `@sample/global` 请求封装、`sample-ui`、`sample-utils` 与 `vue-router`。
+- 初始化公共追踪参数。
 
-#### 接入快速提效营入口
-1. 将 `learn-textbook-sync` 的 `SpecialCard.vue` 从「进阶课（即将上线）」占位改造成真实进阶卡片区。
-2. 保留「专项突破」等既有入口，并在右侧追加「快速提效营」入口；**样式必须与同模块其他进阶课入口一致**。
-3. 在 `ContentArea.vue` 中根据 `showSpecialCard`（`SPECIAL_CARD` featureCode）渲染 `SpecialCard`，补齐当前模板未渲染的问题。
-4. 点击入口时调用 `browserJump`，跳转到 `apps/learn-sample_service_workflow` 题型图谱页。
+#### 接入任务状态入口
+1. 将 `sample-textbook-sync` 的 `TrainingCard.vue` 从任务状态占位改造成自动化检查卡片区。
+2. 保留既有状态入口，并在右侧追加检查详情入口；**样式必须与同模块其他状态入口一致**。
+3. 在 `LearningArea.vue` 中根据 `showTrainingCard`（`TRAINING_CARD` featureCode）渲染 `TrainingCard`，补齐当前模板未渲染的问题。
+4. 点击入口时调用 `navigateToApp`，跳转到 `apps/learn-sample_service_workflow` 的任务状态页。
 """

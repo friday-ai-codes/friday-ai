@@ -47,8 +47,8 @@ def test_ambiguous_basename_is_unresolved():
 
 def test_absent_alias_is_unresolved():
     associations = _associations((_UUID_ONION, "frontend/sample_service_service"))
-    assert resolve_repository_alias(associations, "onion-auth") is None
-    assert resolve_repository_alias(associations, "backend/course-business") is None
+    assert resolve_repository_alias(associations, "sample-auth") is None
+    assert resolve_repository_alias(associations, "backend/sample-business") is None
 
 
 def test_study_config_alias_resolves_only_when_actually_registered():
@@ -63,7 +63,7 @@ def test_study_config_alias_resolves_only_when_actually_registered():
 def test_canonicalize_returns_uuid_or_original():
     associations = _associations((_UUID_ONION, "frontend/sample_service_service"))
     assert canonicalize_repository_alias(associations, "sample_service_service") == _UUID_ONION
-    assert canonicalize_repository_alias(associations, "onion-auth") == "onion-auth"
+    assert canonicalize_repository_alias(associations, "sample-auth") == "sample-auth"
 
 
 def test_canonicalize_contract_support_repository_ids_in_place():
@@ -93,10 +93,10 @@ def test_whitespace_is_stripped():
 
 
 def test_support_alias_is_ignored_matches_basename_and_exact():
-    ignored = ["onion-auth", "course-business"]
-    assert support_alias_is_ignored("onion-auth", ignored)
-    assert support_alias_is_ignored("backend/course-business", ignored)
-    assert support_alias_is_ignored("course-business", ["backend/course-business"])
+    ignored = ["sample-auth", "sample-business"]
+    assert support_alias_is_ignored("sample-auth", ignored)
+    assert support_alias_is_ignored("backend/sample-business", ["sample-business"])
+    assert support_alias_is_ignored("sample-business", ["backend/sample-business"])
     assert not support_alias_is_ignored("sample_service_service", ignored)
     assert not support_alias_is_ignored("", ignored)
-    assert not support_alias_is_ignored("onion-auth", None)
+    assert not support_alias_is_ignored("sample-auth", None)

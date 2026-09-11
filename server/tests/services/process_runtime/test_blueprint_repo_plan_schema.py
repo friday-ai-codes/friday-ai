@@ -168,7 +168,7 @@ def test_block_text_aliases_are_normalized_without_rewriting_content() -> None:
         risks=[
             {
                 "summary": "上游字段依赖",
-                "detail": "需要 course-business 补齐章级视频字段",
+                "detail": "需要 sample-business 补齐章级视频字段",
                 "citations": ["services/course.go:42"],
             }
         ],
@@ -177,7 +177,7 @@ def test_block_text_aliases_are_normalized_without_rewriting_content() -> None:
     normalized = coerce_repo_plan_shapes(plan)
 
     assert validate_repo_plan(normalized) == (True, None)
-    assert normalized["risks"][0]["text"] == "需要 course-business 补齐章级视频字段"
+    assert normalized["risks"][0]["text"] == "需要 sample-business 补齐章级视频字段"
     assert normalized["risks"][0]["summary"] == "上游字段依赖"
     assert normalized["risks"][0]["citations"] == ["services/course.go:42"]
 

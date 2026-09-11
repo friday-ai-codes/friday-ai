@@ -483,7 +483,7 @@ def test_consumed_needs_support_with_absent_alias_is_blocker():
     blueprint["api_contracts"][0]["direction"] = "consumed"
     blueprint["api_contracts"][0]["data_source"] = {
         "availability": "needs_support",
-        "support_repository_id": "onion-auth",
+        "support_repository_id": "sample-auth",
     }
     assert _rule_ids(check_api_closure(blueprint)) == ["support_repo_missing"]
 

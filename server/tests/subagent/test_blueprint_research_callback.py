@@ -304,9 +304,9 @@ def test_age64_six_in_six_out_research_verdict_shape() -> None:
         "backend/backend-config": "apps/config/models.py",
     }
     excluded = {
-        "frontend/onion-auth",
+        "frontend/sample-auth",
         "frontend/onion-mall",
-        "backend/course-business",
+        "backend/sample-business",
         "backend/study-plan",
         "backend/study-report",
         "backend/legacy-course",

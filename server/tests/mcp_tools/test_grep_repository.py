@@ -40,7 +40,7 @@ def _single_repo_entry(body: dict[str, Any]) -> dict[str, Any]:
 
 @pytest.fixture
 def origin_repo(tmp_path: Path) -> tuple[Path, str]:
-    """本地 origin：3 个文件、若干 browserJump 跳转点 + 一个批量匹配文件。"""
+    """本地 origin：3 个文件、若干 navigateToApp 跳转点 + 一个批量匹配文件。"""
     origin = tmp_path / "origin"
     origin.mkdir()
     _git("init", "-b", "main", cwd=origin)
@@ -50,13 +50,13 @@ def origin_repo(tmp_path: Path) -> tuple[Path, str]:
     (origin / "apps" / "home").mkdir(parents=True)
     (origin / "apps" / "tab").mkdir(parents=True)
     (origin / "apps" / "home" / "index.ts").write_text(
-        "export function goProblem() {\n  browserJump('/problem-app/scene1?id=1')\n}\n",
+        "export function goProblem() {\n  navigateToApp('/problem-app/scene1?id=1')\n}\n",
         encoding="utf-8",
     )
     (origin / "apps" / "tab" / "jump.ts").write_text(
-        "const a = browserJump('/problem-app/scene2?from=tab')\n"
-        "const b = browserJump('/problem-app/scene3')\n"
-        "const other = BROWSERJUMP_PLACEHOLDER\n",
+        "const a = navigateToApp('/problem-app/scene2?from=tab')\n"
+        "const b = navigateToApp('/problem-app/scene3')\n"
+        "const other = navigateToApp_PLACEHOLDER\n",
         encoding="utf-8",
     )
     (origin / "bulk.txt").write_text(
@@ -145,7 +145,7 @@ def test_grep_regex_and_case_insensitive(
         "/api/mcp/tools/grep_repository/",
         {
             "repository_id": str(repo.id),
-            "pattern": "browserjump\\('/problem-app/scene[0-9]",
+            "pattern": "navigateToApp\\('/problem-app/scene[0-9]",
             "regex": True,
             "case_sensitive": False,
         },
@@ -426,7 +426,7 @@ def test_get_repository_file_reads_full_content_from_mirror(
     assert body["commit_sha"] == sha
     assert body["total_lines"] == 3
     assert "scene2" in body["content"]
-    assert "BROWSERJUMP_PLACEHOLDER" in body["content"]
+    assert "navigateToApp_PLACEHOLDER" in body["content"]
     assert body["truncated"] is False
 
 

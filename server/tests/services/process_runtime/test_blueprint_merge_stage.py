@@ -764,10 +764,10 @@ async def test_declared_external_existing_dependency_is_not_flagged_as_missing_s
                 {
                     "name": "GetTrainingTreeByCvs",
                     "method": "RPC",
-                    "path": "course-business.GetTrainingTreeByCvs",
+                    "path": "sample-business.GetTrainingTreeByCvs",
                     "data_source": {
                         "availability": "existing",
-                        "from_service": "course-business",
+                        "from_service": "sample-business",
                         "notes": "按现有契约只读复用，本次不改对方",
                     },
                 }
@@ -837,7 +837,7 @@ def test_extract_ignored_support_aliases_requires_named_repo_and_exclusion_inten
                 "repository_id": "rid-a",
                 "data_source": {
                     "availability": "needs_support",
-                    "support_repository_id": "backend/course-business",
+                    "support_repository_id": "backend/sample-business",
                 },
             }
         ],
@@ -845,20 +845,20 @@ def test_extract_ignored_support_aliases_requires_named_repo_and_exclusion_inten
 
     # 点了名 + 排除语义 → 命中（basename 匹配也算）
     assert extract_ignored_support_aliases(
-        "course-business 是现有外部依赖，只读复用，本次不纳入", blueprint
-    ) == ("backend/course-business",)
+        "sample-business 是现有外部依赖，只读复用，本次不纳入", blueprint
+    ) == ("backend/sample-business",)
     # 有排除语义但没点名 → 不写（宁可下轮再问一次，也不留错误的永久副作用）
     assert extract_ignored_support_aliases("这些都不纳入本次范围", blueprint) == ()
     # 点了名但没有排除语义 → 不写
-    assert extract_ignored_support_aliases("course-business 那边我去对一下", blueprint) == ()
+    assert extract_ignored_support_aliases("sample-business 那边我去对一下", blueprint) == ()
 
     # 并入 stage_state 增量：只动 merge 桶，保留桶内其他键
     update = merge_ignored_support_aliases(
-        {"merge": {"count": 2, "ignored_support_aliases": ["onion-auth"]}},
-        ("backend/course-business",),
+        {"merge": {"count": 2, "ignored_support_aliases": ["sample-auth"]}},
+        ("backend/sample-business",),
     )
     assert update == {
-        "merge": {"count": 2, "ignored_support_aliases": ["onion-auth", "backend/course-business"]}
+        "merge": {"count": 2, "ignored_support_aliases": ["sample-auth", "backend/sample-business"]}
     }
     # 无新增 → None（调用方据此完全跳过写库）
     assert (
@@ -872,7 +872,7 @@ async def test_ignored_support_aliases_skip_missing_repo_clarification():
     session, artifact = await _make_locked_session(_association(rid_a))
     session.stage_state = {
         **(session.stage_state or {}),
-        "merge": {"ignored_support_aliases": ["onion-auth", "course-business"]},
+        "merge": {"ignored_support_aliases": ["sample-auth", "sample-business"]},
     }
     await session.asave(update_fields=["stage_state"])
     plans = {
@@ -885,16 +885,16 @@ async def test_ignored_support_aliases_skip_missing_repo_clarification():
                     "path": "onion Auth.GetUserAuth",
                     "data_source": {
                         "availability": "needs_support",
-                        "support_repository_id": "onion-auth",
+                        "support_repository_id": "sample-auth",
                     },
                 },
                 {
                     "name": "GetTrainingTreeByCvs",
                     "method": "RPC",
-                    "path": "course-business.GetTrainingTreeByCvs",
+                    "path": "sample-business.GetTrainingTreeByCvs",
                     "data_source": {
                         "availability": "needs_support",
-                        "support_repository_id": "backend/course-business",
+                        "support_repository_id": "backend/sample-business",
                     },
                 },
             ],
@@ -905,15 +905,15 @@ async def test_ignored_support_aliases_skip_missing_repo_clarification():
     assert result["reconcile"]["missing_support_repos"] == 0
     assert await BlueprintThread.objects.filter(artifact_id=artifact.id).acount() == 0
     assert result["stage_state"]["merge"]["ignored_support_aliases"] == [
-        "onion-auth",
-        "course-business",
+        "sample-auth",
+        "sample-business",
     ]
     if result["validation_status"] == "passed":
         content = await _landed_content(result)
         consumed = [item for item in content["api_contracts"] if item["direction"] == "consumed"]
         assert consumed
         assert all(item["data_source"]["availability"] == "existing" for item in consumed)
-        assert any("onion-auth" in str(idea) for idea in content.get("deferred_ideas") or [])
+        assert any("sample-auth" in str(idea) for idea in content.get("deferred_ideas") or [])
 
 
 # ── 10. ⭐ consumed 无 provider 必标 needs_support（B4 路径断言） ────────────

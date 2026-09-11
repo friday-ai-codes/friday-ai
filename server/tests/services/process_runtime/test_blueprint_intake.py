@@ -516,7 +516,7 @@ async def test_decompose_uses_explicit_module_table_when_llm_unavailable() -> No
 | # | 模块名 | 一句话描述 | 依赖模块 | 优先级 |
 |---|---|---|---|---|
 | 1 | App 入口与权益展示 | 课程包鉴权并展示入口 | — | P0 |
-| 2 | 功能主页 / 题型图谱 | 章切换、目录联动与题型卡片 | 1 | P0 |
+| 2 | 功能主页 / 分类图谱 | 章切换、目录联动与题型卡片 | 1 | P0 |
 """
 
     with patch(
@@ -531,7 +531,7 @@ async def test_decompose_uses_explicit_module_table_when_llm_unavailable() -> No
     points = version.content["requirement_spec"]["feature_points"]
     assert [point["title"] for point in points] == [
         "App 入口与权益展示",
-        "功能主页 / 题型图谱",
+        "功能主页 / 分类图谱",
     ]
     assert points[0]["module"] == "App 入口与权益展示"
     assert "课程包鉴权" in points[0]["description"][0]["text"]

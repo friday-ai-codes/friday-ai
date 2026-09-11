@@ -13,7 +13,7 @@
         {"score": 0.0195, "payload": {"node_id": "n-h01-ca-1", "repository_id": "content-audit", "repo_name": "content-audit", "node_path": "审核/流水线/敏感词检测", "facets": {"业务线/产品线": "内容审核", "技术栈": "Go", "团队归属": "内容安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
         {"score": 0.0175, "payload": {"node_id": "n-h01-ca-2", "repository_id": "content-audit", "repo_name": "content-audit", "node_path": "审核/规则/词库管理", "facets": {"业务线/产品线": "内容审核", "技术栈": "Go", "团队归属": "内容安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
         {"score": 0.0150, "payload": {"node_id": "n-h01-ca-3", "repository_id": "content-audit", "repo_name": "content-audit", "node_path": "审核/回调/结果通知", "facets": {"业务线/产品线": "内容审核", "技术栈": "Go", "团队归属": "内容安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
-        {"score": 0.0090, "payload": {"node_id": "n-h01-ech-1", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/内容发布流程", "facets": {"业务线/产品线": "教研内容中台", "技术栈": "Java", "团队归属": "教研技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+        {"score": 0.0090, "payload": {"node_id": "n-h01-ech-1", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/内容发布流程", "facets": {"业务线/产品线": "研究内容中台", "技术栈": "Java", "团队归属": "研究技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
       ],
       "repo_meta": {
         "content-audit": {"n_r": 40, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},
@@ -29,8 +29,8 @@
       "cross_group": false,
       "expected_repos": ["question-bank"],
       "node_hits": [
-        {"score": 0.0185, "payload": {"node_id": "n-h02-qb-1", "repository_id": "question-bank", "repo_name": "question-bank", "node_path": "题库/导入/Excel 解析", "facets": {"业务线/产品线": "题库内容", "技术栈": "Java", "团队归属": "教研技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
-        {"score": 0.0155, "payload": {"node_id": "n-h02-qb-2", "repository_id": "question-bank", "repo_name": "question-bank", "node_path": "题库/校验/题型格式校验", "facets": {"业务线/产品线": "题库内容", "技术栈": "Java", "团队归属": "教研技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+        {"score": 0.0185, "payload": {"node_id": "n-h02-qb-1", "repository_id": "question-bank", "repo_name": "question-bank", "node_path": "题库/导入/Excel 解析", "facets": {"业务线/产品线": "题库内容", "技术栈": "Java", "团队归属": "研究技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+        {"score": 0.0155, "payload": {"node_id": "n-h02-qb-2", "repository_id": "question-bank", "repo_name": "question-bank", "node_path": "题库/校验/题型格式校验", "facets": {"业务线/产品线": "题库内容", "技术栈": "Java", "团队归属": "研究技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
         {"score": 0.0085, "payload": {"node_id": "n-h02-mt-1", "repository_id": "misc-tools", "repo_name": "misc-tools", "node_path": "工具集/表格转换脚本", "facets": {"业务线/产品线": "工具脚本集", "技术栈": "Shell", "团队归属": "效能工具组", "关键程度": "边缘", "活跃度": "低频"}}}
       ],
       "repo_meta": {

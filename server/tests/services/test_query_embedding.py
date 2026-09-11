@@ -84,7 +84,7 @@ def test_low_information_detects_noise(text: str) -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "用户点击快速提效营入口后跳转到题型图谱页",
+        "用户点击快速提效营入口后跳转到分类图谱页",
         "def resolve_permission(user, package_id): return has_course_package(user, package_id)",
     ],
 )

@@ -190,8 +190,8 @@ class TestEnrichWrapperMetadata:
         assert result is not None
         tree, source = result
 
-        # 先发现 helpers（get / post 来自 @util/global 导入，但 jsdoc fixture 调用了这些函数）
-        helpers = {"get", "post"}  # 直接指定（fixture 从 @util/global 导入）
+        # 先发现 helpers（get / post 来自 @sample/global 导入，但 jsdoc fixture 调用了这些函数）
+        helpers = {"get", "post"}  # 直接指定（fixture 从 @sample/global 导入）
         wrappers = discover_api_wrappers(tree, source, JSDOC_TS, helpers, config)
         assert wrappers, "jsdoc fixture 应有 ApiWrapper"
 

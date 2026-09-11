@@ -148,8 +148,8 @@
   },
   {
     "id": "gk-008-cross-group-auth",
-    "_notice": "cross_group 样本（O-4）：正确答案 auth-service 不在 project_scope 内，供 Phase 107 校准跨组 delta。106-08：edu-content-hub 按查询语义获得 domain/team 匹配（教研内容中台被点名），auth-service 仍须凭文本证据胜出——新信号不与标签打架。",
-    "query": "跨团队接入：教研内容中台统一改走平台鉴权中心签发的访问令牌",
+    "_notice": "cross_group 样本（O-4）：正确答案 auth-service 不在 project_scope 内，供 Phase 107 校准跨组 delta。106-08：edu-content-hub 按查询语义获得 domain/team 匹配（研究内容中台被点名），auth-service 仍须凭文本证据胜出——新信号不与标签打架。",
+    "query": "跨团队接入：研究内容中台统一改走平台鉴权中心签发的访问令牌",
     "label_source": "human",
     "cross_group": true,
     "project_scope": ["edu-content-hub"],
@@ -158,8 +158,8 @@
       {"score": 0.0210, "payload": {"node_id": "n-008-as-1", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/开放平台/访问令牌签发", "facets": {"业务线/产品线": "账号与认证", "技术栈": "Go", "团队归属": "平台安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
       {"score": 0.0180, "payload": {"node_id": "n-008-as-2", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/接入方管理/应用凭证", "facets": {"业务线/产品线": "账号与认证", "技术栈": "Go", "团队归属": "平台安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
       {"score": 0.0165, "payload": {"node_id": "n-008-as-3", "repository_id": "auth-service", "repo_name": "auth-service", "node_path": "认证/网关/令牌校验中间件", "facets": {"业务线/产品线": "账号与认证", "技术栈": "Go", "团队归属": "平台安全团队", "关键程度": "核心", "活跃度": "活跃开发"}}},
-      {"score": 0.0140, "payload": {"node_id": "n-008-ech-1", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/开放接口/内容拉取", "facets": {"业务线/产品线": "教研内容中台", "技术栈": "Java", "团队归属": "教研技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
-      {"score": 0.0120, "payload": {"node_id": "n-008-ech-2", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/权限/内容可见性", "facets": {"业务线/产品线": "教研内容中台", "技术栈": "Java", "团队归属": "教研技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
+      {"score": 0.0140, "payload": {"node_id": "n-008-ech-1", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/开放接口/内容拉取", "facets": {"业务线/产品线": "研究内容中台", "技术栈": "Java", "团队归属": "研究技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}},
+      {"score": 0.0120, "payload": {"node_id": "n-008-ech-2", "repository_id": "edu-content-hub", "repo_name": "edu-content-hub", "node_path": "内容中台/权限/内容可见性", "facets": {"业务线/产品线": "研究内容中台", "技术栈": "Java", "团队归属": "研究技术团队", "关键程度": "重要", "活跃度": "活跃开发"}}}
     ],
     "repo_meta": {
       "auth-service": {"n_r": 65, "last_commit_at": "2026-07-26T00:00:00+00:00", "facet_scores": {"domain": {"score": 1.0, "layer": "t1"}}, "criticality_value": "核心"},

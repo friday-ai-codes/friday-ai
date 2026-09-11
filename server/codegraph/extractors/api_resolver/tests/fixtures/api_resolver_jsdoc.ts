@@ -1,4 +1,4 @@
-import { get, post } from '@util/global'
+import { get, post } from '@sample/global'
 
 /**
  * @description 查询用户的最后一次学习的教材.

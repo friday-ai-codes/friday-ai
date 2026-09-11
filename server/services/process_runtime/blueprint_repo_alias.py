@@ -70,7 +70,7 @@ def support_alias_is_ignored(alias: Any, ignored: Any) -> bool:
     - 精确全等（strip 后）；
     - 或双方 basename（``/`` 末段）全等。
 
-    这样 ``course-business`` 与 ``backend/course-business`` 视为同一排除项；
+    这样 ``sample-business`` 与 ``backend/sample-business`` 视为同一排除项；
     空串、非序列 ``ignored`` 一律不命中。
     """
     text = str(alias or "").strip()
