@@ -14,7 +14,7 @@ provides:
   - RepoAssociationService feature-list 发布纪律
   - stage_sandbox block/review 全库守卫
 affects:
-  - 132 集成验收与高阶回归
+  - 132 集成验收与目标回归
 
 tech-stack:
   added: []

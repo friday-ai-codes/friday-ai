@@ -41,13 +41,13 @@ Does not require prior new-project setup — auto-creates `.planning/sketches/` 
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/sketch.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/sketch-wrap-up.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/sketch-theme-system.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/sketch-interactivity.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/sketch-tooling.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/sketch-variant-patterns.md
+@./.cursor/gsd-core/workflows/sketch.md
+@./.cursor/gsd-core/workflows/sketch-wrap-up.md
+@./.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/references/sketch-theme-system.md
+@./.cursor/gsd-core/references/sketch-interactivity.md
+@./.cursor/gsd-core/references/sketch-tooling.md
+@./.cursor/gsd-core/references/sketch-variant-patterns.md
 </execution_context>
 
 <runtime_note>

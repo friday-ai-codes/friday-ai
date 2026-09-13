@@ -368,7 +368,7 @@ Usage: `/gsd-capture Add auth token refresh`
 **`/gsd-capture --note <text>`**
 Zero-friction note capture — one command, instant save, no questions.
 
-- Saves timestamped note to `.planning/notes/` (or `/Users/example/Projects/open-source/friday-ai/.cursor/notes/` globally)
+- Saves timestamped note to `.planning/notes/` (or `./.cursor/notes/` globally)
 - Three subcommands: append (default), list, promote
 - Promote converts a note into a structured todo
 - Works without a project (falls back to global scope)

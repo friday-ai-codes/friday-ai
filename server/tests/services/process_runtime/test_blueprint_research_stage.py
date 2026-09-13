@@ -105,7 +105,7 @@ def _candidate(repo: Repository, *, role: str = "direct", confidence: str = "hig
         "breakdown": {"router_base": 0.5, "charter_match": 0.0, "history_match": 0.0},
         "evidence": {
             "matched_node_paths": ["apps/study/page"],
-            "matched_domains": [{"domain": "功能/流程优化", "status": "planned"}],
+            "matched_domains": [{"domain": "功能/学习优化", "status": "planned"}],
             "violated_boundaries": [],
             "history_match_unavailable": "",
         },
@@ -667,14 +667,14 @@ async def test_charter_injected_into_prompt() -> None:
     await sync_to_async(RepoCharter.objects.create)(
         repository=repo,
         positioning="示例功能专项的学习前台",
-        owned_domains=[{"domain": "功能/流程优化", "status": "planned"}],
+        owned_domains=[{"domain": "功能/学习优化", "status": "planned"}],
         boundaries=[{"rule": "不承接课程权益鉴权"}],
         evolution="active",
         source=RepoCharter.Source.HUMAN_CONFIRMED,
         version=1,
     )
     spec = {
-        "goal": [{"block_id": "b1", "type": "paragraph", "text": "高阶学员进入专项学习页"}],
+        "goal": [{"block_id": "b1", "type": "paragraph", "text": "目标用户进入专项学习页"}],
         "background": [{"block_id": "b0", "type": "paragraph", "text": "现有学习页只覆盖初中学段"}],
         "feature_points": [
             {
@@ -688,7 +688,7 @@ async def test_charter_injected_into_prompt() -> None:
                 ],
             }
         ],
-        "boundaries": {"in_scope": ["高阶学员"], "out_of_scope": ["初中学段沿用旧页"]},
+        "boundaries": {"in_scope": ["目标用户"], "out_of_scope": ["初中学段沿用旧页"]},
         "constraints": [{"id": "c1", "kind": "compliance", "text": "不得展示未审核内容"}],
     }
     session = await _make_session(_routing_state(_candidate(repo), spec=spec), user=user)
@@ -701,10 +701,10 @@ async def test_charter_injected_into_prompt() -> None:
 
     prompt = dispatcher.tasks[0].prompt
     assert "示例功能专项的学习前台" in prompt
-    assert "功能/流程优化" in prompt
+    assert "功能/学习优化" in prompt
     assert "不承接课程权益鉴权" in prompt
     # 服务端权威状态入 prompt（需求目标与功能点），并写死输出 JSON 形状
-    assert "高阶学员进入专项学习页" in prompt
+    assert "目标用户进入专项学习页" in prompt
     assert "专项学习页" in prompt
     assert "fitness" in prompt and "role_suggestion" in prompt
     assert "candidate_files" in prompt

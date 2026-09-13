@@ -34,7 +34,7 @@ doesn't belong to any specific phase.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/thread.md
+@./.cursor/gsd-core/workflows/thread.md
 </execution_context>
 
 <process>

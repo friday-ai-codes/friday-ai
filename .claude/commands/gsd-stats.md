@@ -12,7 +12,7 @@ Display comprehensive project statistics including phase progress, plan executio
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/stats.md
+@./.claude/gsd-core/workflows/stats.md
 </execution_context>
 
 <process>

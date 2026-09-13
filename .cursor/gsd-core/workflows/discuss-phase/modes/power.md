@@ -8,7 +8,7 @@
 ## Dispatch
 
 ```
-Read @/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/discuss-phase-power.md
+Read @./.cursor/gsd-core/workflows/discuss-phase-power.md
 ```
 
 Execute it end-to-end. Do not continue with the standard interactive steps.

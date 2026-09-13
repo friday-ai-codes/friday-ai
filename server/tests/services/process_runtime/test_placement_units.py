@@ -29,7 +29,7 @@ def _features_two_modules() -> tuple[list[dict], list[dict]]:
             "id": "f-a1",
             "module": "模块A",
             "name": "任务列表",
-            "description": "展示高阶任务",
+            "description": "展示目标任务",
             "acceptance": "验收：任务必须出现在列表 SECRET_ACCEPT_A1",
         },
         {

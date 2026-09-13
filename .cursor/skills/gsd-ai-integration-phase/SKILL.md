@@ -34,9 +34,9 @@ Flow: Select Framework → Research Docs → Research Domain → Design Eval Str
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/ai-integration-phase.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ai-frameworks.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ai-evals.md
+@./.cursor/gsd-core/workflows/ai-integration-phase.md
+@./.cursor/gsd-core/references/ai-frameworks.md
+@./.cursor/gsd-core/references/ai-evals.md
 </execution_context>
 
 <context>

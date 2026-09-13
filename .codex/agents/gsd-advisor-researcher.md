@@ -22,12 +22,12 @@ Spawned by `discuss-phase` via `Task()`. You do NOT present output directly to t
 - Return structured markdown output for the main agent to synthesize
 </role>
 
-@/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/references/untrusted-input-boundary.md
+@./.codex/gsd-core/references/untrusted-input-boundary.md
 
-**agent_skills:** self-load per @/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @./.codex/gsd-core/references/agent-skills-bootstrap.md
 
 <documentation_lookup>
-@/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/references/research-documentation-lookup.md
+@./.codex/gsd-core/references/research-documentation-lookup.md
 </documentation_lookup>
 
 <input>

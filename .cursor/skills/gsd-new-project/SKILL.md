@@ -51,11 +51,11 @@ Initialize a new project through unified flow: questioning → research (optiona
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/new-project.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/questioning.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/project.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/requirements.md
+@./.cursor/gsd-core/workflows/new-project.md
+@./.cursor/gsd-core/references/questioning.md
+@./.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/templates/project.md
+@./.cursor/gsd-core/templates/requirements.md
 </execution_context>
 
 <process>

@@ -32,7 +32,7 @@ cd server && uv run python manage.py measure_stage1_latency --days 7 --json
   同口径，stdlib）——**dev 降级，结果不得回填本文档**。
 - 输出只含聚合量（`event` / `window_days` / `window_start` / `db_vendor` / `n` /
   `p50_ms` / `p90_ms` / `p99_ms`），不回显任何 payload 原文（T-107-02）。
-- 零样本时退出码 0 并给排查提示（采样配置 / 组件日志级别 / 缓存命中率过高阶种常见成因）；
+- 零样本时退出码 0 并给排查提示（采样配置 / 组件日志级别 / 缓存命中率过目标种常见成因）；
   查询本身失败则以非零退出码结束（排障工具，失败必须可见）。
 
 **回填时必须同时记录**：执行时刻的采样配置与 `repo_router_v2` 组件日志级别、时间窗、

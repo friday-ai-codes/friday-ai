@@ -35,7 +35,7 @@ Output: Forensic report saved to `.planning/forensics/`, presented inline, with 
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/forensics.md
+@./.cursor/gsd-core/workflows/forensics.md
 </execution_context>
 
 <context>

@@ -31,8 +31,8 @@ Create executable phase prompts (PLAN.md files) for a roadmap phase with integra
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/plan-phase.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/ui-brand.md
+@./.claude/gsd-core/workflows/plan-phase.md
+@./.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <runtime_note>

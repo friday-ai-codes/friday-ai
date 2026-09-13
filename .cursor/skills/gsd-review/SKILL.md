@@ -36,7 +36,7 @@ planning via /gsd-plan-phase --reviews.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/review.md
+@./.cursor/gsd-core/workflows/review.md
 </execution_context>
 
 <context>

@@ -61,4 +61,4 @@ completed: 2026-08-14
 `uv run pytest` 相关 41 条全绿（见 VERIFICATION.md）。
 
 ## Deferred
-shortlist / 角色图 / 放置单元 / 反思 / 高阶回归 → 129–132。
+shortlist / 角色图 / 放置单元 / 反思 / 目标回归 → 129–132。

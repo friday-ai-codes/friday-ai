@@ -115,8 +115,8 @@ completed: 2026-07-30
 ### 示例功能专项机制断言（可证伪，全绿）
 
 `test_charter_planned_owner_enters_candidates_as_supplement`：建 `sample_service_service` + 章程
-`owned_domains=[{"domain": "功能/流程优化", "status": "planned"}]`；mock router **不返回**该仓
-（模拟能力树无进阶节点）→ 对 greenfield 功能点跑 `route`，断言
+`owned_domains=[{"domain": "功能/学习优化", "status": "planned"}]`；mock router **不返回**该仓
+（模拟能力树无功能节点）→ 对 greenfield 功能点跑 `route`，断言
 
 - `sample_service_service` **在 candidates 里**（`assert ... in by_id` 带失败信息）
 - `breakdown["router_base"] == 0.0` 且 `breakdown["charter_match"] > 0`

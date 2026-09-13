@@ -23,7 +23,7 @@ Output: updated SECURITY.md.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/secure-phase.md
+@./.claude/gsd-core/workflows/secure-phase.md
 </execution_context>
 
 <context>

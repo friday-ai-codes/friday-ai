@@ -154,7 +154,7 @@ def _candidate(repo: Repository, *, role: str = "direct", confidence: str = "hig
         "breakdown": {"router_base": 0.4, "charter_match": 0.2, "history_match": 0.0},
         "evidence": {
             "router_version": "v2",
-            "matched_domains": [{"domain": "功能/流程优化", "status": "planned"}],
+            "matched_domains": [{"domain": "功能/学习优化", "status": "planned"}],
             "violated_boundaries": [],
             "history_match_unavailable": "",
         },

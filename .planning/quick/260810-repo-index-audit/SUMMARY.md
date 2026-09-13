@@ -29,20 +29,20 @@ feat/coding-agent-base tip = `0462f68`（2026-07-14，= merge-base）；master t
 ```
 f1ee68a zadig     Merge branch 'pre/26.07.27' into 'master'
 49b494a zadig     Merge branch 'feat/newProblem-4' into 'pre/26.07.27'
-b783fc6 yang.liu  feat: 重难点进阶支持四级目录
+b783fc6 yang.liu  feat: 重难点功能支持四级目录
 ```
 
 改动文件（+558/-43）：`services/new_problem_type.go`、`new_problem_type_test.go`(+262)、`totalReview.go`(+1)、go.mod/go.sum，及 openspec 文档 5 个。
 
 ### 改动目的（openspec proposal）
 
-**重难点进阶章节接口从「三级压平」恢复为「四级真实目录」。**
+**重难点功能章节接口从「三级压平」恢复为「四级真实目录」。**
 
 - 现状问题：`GET /sample_course_service/newProblemType/packageChapter` 在四级课程下把后台「章节—大节—小节—知识点」**强制压平成三级**（`convert4LevelTo3LevelChapter` 丢掉小节层、levelNum 4→3），客户端无法按真实四级展示。
 - 本次：四级课程保持 `levelNum=4`，原位整形保留小节层；在每个有免费知识点的章节聚合虚拟「免费试学」大节+小节；过滤空层级；三级课程行为不变。
 - **BREAKING**：四级课程该接口从三级响应恢复为四级响应，客户端须按 levelNum 解析。
 - 入口 `handlers/new_problem_type.go`，上游仍 `course-bff.GetSpecialCourseTreeById`。
 
-与「示例功能专项」语料的「重难点进阶/专项课/章节树/四级目录」模块直接对应 —— 这正是 sample_course_service 应被路由命中的业务依据。
+与「示例功能专项」语料的「重难点功能/专项课/章节树/四级目录」模块直接对应 —— 这正是 sample_course_service 应被路由命中的业务依据。
 
 注：master 改动只动 10 个文件，不影响"树有 244 文件"的事实 —— feat 与 master 两分支树都是全量的（feat=244 / master=250），master 只是相对 feat 多了这 3 个提交的增量。

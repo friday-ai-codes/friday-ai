@@ -133,7 +133,7 @@ class _Seams:
         monkeypatch.setattr("services.feishu_im.FeishuIMService.create", AsyncMock(return_value=im))
 
 
-_QUESTIONS = [{"text": "目标用户是谁？", "options": ["高阶", "初三"], "citations": []}]
+_QUESTIONS = [{"text": "目标用户是谁？", "options": ["目标", "初三"], "citations": []}]
 
 
 # ═══════════════════════════════════════════════════════════════════════════

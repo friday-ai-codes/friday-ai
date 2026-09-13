@@ -76,7 +76,7 @@ cd server && uv run pytest \
 
 ## Gaps / Deferred
 
-- 高阶四基线 hit@primary / out_of_team=0 → **Phase 132**
+- 目标四基线 hit@primary / out_of_team=0 → **Phase 132**
 - INT-03 全量契约套件扩面 → **Phase 132**（本相位已留角色坍塌合成钩子）
 - GATE-F01 / REFL-F01 / 大前端 → 明确延期
 

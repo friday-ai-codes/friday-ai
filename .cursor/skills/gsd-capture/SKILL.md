@@ -51,12 +51,12 @@ Mode routing:
 </routing>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/add-todo.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/note.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/add-backlog.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/plant-seed.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/check-todos.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/workflows/add-todo.md
+@./.cursor/gsd-core/workflows/note.md
+@./.cursor/gsd-core/workflows/add-backlog.md
+@./.cursor/gsd-core/workflows/plant-seed.md
+@./.cursor/gsd-core/workflows/check-todos.md
+@./.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

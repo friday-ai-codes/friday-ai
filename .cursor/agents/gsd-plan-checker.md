@@ -42,7 +42,7 @@ Issues without a severity classification are not valid output.
 </adversarial_stance>
 
 <required_reading>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/gates.md
+@./.cursor/gsd-core/references/gates.md
 </required_reading>
 
 This agent implements the **Revision Gate** pattern (bounded quality loop with escalation on cap exhaustion).
@@ -102,10 +102,10 @@ Same methodology (goal-backward), different timing, different subject matter.
 <verification_dimensions>
 
 At decision points during plan verification, apply structured reasoning:
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/thinking-models-planning.md
+@./.cursor/gsd-core/references/thinking-models-planning.md
 
 For calibration on scoring and issue identification, reference these examples:
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/few-shot-examples/plan-checker.md
+@./.cursor/gsd-core/references/few-shot-examples/plan-checker.md
 
 ## Dimension 1: Requirement Coverage
 

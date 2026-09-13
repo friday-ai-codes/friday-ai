@@ -38,8 +38,8 @@ Requirements: Cursor v2.1.91+, claude.ai account, GitHub repository.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/ultraplan-phase.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/workflows/ultraplan-phase.md
+@./.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

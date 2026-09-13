@@ -23,7 +23,7 @@
 
 ### Deferred Ideas (OUT OF SCOPE)
 - GATE/REFL → 131
-- 高阶四基线回归 → 132
+- 目标四基线回归 → 132
 - 大前端 / 章程自动生效 / 重写 V2
 </user_constraints>
 
@@ -60,7 +60,7 @@ Phase 129 已把候选收窄到 shortlist 并导出角色图，但主路径仍�
 ### Feature list 形状
 - `modules[{name, features[{name, description, acceptance}]}]` + `features_flat[{module, name, description, ...}]`
 - Blueprint：`_requirement_spec_to_feature_list` 可从 requirement_spec 派生 flat
-- 高阶 demo：模块总览含「依赖模块」；正文大量「复用端内做题组件 / 复用通用知识点播放器」——正则/短语可抽 reuse 边
+- 目标 demo：模块总览含「依赖模块」；正文大量「复用端内做题组件 / 复用通用知识点播放器」——正则/短语可抽 reuse 边
 
 ### RepoRouterV2（只调不改）
 - `route(query, top_k=, repository_ids=, use_llm=, corpus_kind=)`
@@ -148,7 +148,7 @@ team_gate → shortlist(+history) → role_map          # Phase 129
 | 43 点各自一次 V2 | 聚合后按 unit 调用，unit 数 ≪ feature 数（测断言） |
 
 ## Out of Scope
-- GATE/REFL、高阶回归、大前端、重写 V2、活跃度 v2 混合项
+- GATE/REFL、目标回归、大前端、重写 V2、活跃度 v2 混合项
 
 ## Package Legitimacy
 无新 pip/npm 包。复用 Django、structlog、既有 shortlist/role_map/V2。

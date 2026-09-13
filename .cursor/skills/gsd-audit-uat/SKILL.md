@@ -32,7 +32,7 @@ Scan all phases for pending, skipped, blocked, and human_needed UAT items. Cross
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/audit-uat.md
+@./.cursor/gsd-core/workflows/audit-uat.md
 </execution_context>
 
 <context>

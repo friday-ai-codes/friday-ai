@@ -36,7 +36,7 @@ Accepts an optional topic argument: `/gsd-explore authentication strategy`
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/explore.md
+@./.cursor/gsd-core/workflows/explore.md
 </execution_context>
 
 <process>

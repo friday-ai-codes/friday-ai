@@ -35,10 +35,10 @@ Import external plan files into the GSD planning system with conflict detection 
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/import.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/gate-prompts.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/doc-conflict-engine.md
+@./.cursor/gsd-core/workflows/import.md
+@./.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/references/gate-prompts.md
+@./.cursor/gsd-core/references/doc-conflict-engine.md
 </execution_context>
 
 <context>
@@ -47,7 +47,7 @@ Import external plan files into the GSD planning system with conflict detection 
 
 <process>
 If `--from-gsd2` is in {{GSD_ARGS}}:
-Run: `node "/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/bin/gsd-tools.cjs" from-gsd2`
+Run: `node "./.cursor/gsd-core/bin/gsd-tools.cjs" from-gsd2`
 Pass `--path <dir>` if provided. Present the migration result to the user.
 Stop here (do not run the standard import workflow).
 

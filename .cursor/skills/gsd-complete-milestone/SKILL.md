@@ -37,8 +37,8 @@ Output: Milestone archived (roadmap + requirements), PROJECT.md evolved, git tag
 <execution_context>
 **Load these files NOW (before proceeding):**
 
-- @/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/complete-milestone.md (main workflow)
-- @/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/milestone-archive.md (archive template)
+- @./.cursor/gsd-core/workflows/complete-milestone.md (main workflow)
+- @./.cursor/gsd-core/templates/milestone-archive.md (archive template)
   </execution_context>
 
 <context>

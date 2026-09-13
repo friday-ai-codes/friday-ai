@@ -41,10 +41,10 @@ Auto-synthesizes most conflicts using the precedence rule `ADR > SPEC > PRD > DO
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/ingest-docs.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/gate-prompts.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/doc-conflict-engine.md
+@./.cursor/gsd-core/workflows/ingest-docs.md
+@./.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/references/gate-prompts.md
+@./.cursor/gsd-core/references/doc-conflict-engine.md
 </execution_context>
 
 <context>

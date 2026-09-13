@@ -55,7 +55,7 @@ Existing pytest infra sufficient — RED tasks create new test modules. No frame
 
 ## Manual-Only Verifications
 
-All phase behaviors have automated verification. Phase 132 owns 高阶四基线人工/回归门槛；本相位不要求真环境 Space。
+All phase behaviors have automated verification. Phase 132 owns 目标四基线人工/回归门槛；本相位不要求真环境 Space。
 
 ---
 

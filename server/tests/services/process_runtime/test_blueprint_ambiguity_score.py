@@ -73,7 +73,7 @@ def _model_returning(content: object) -> MagicMock:
 def _full_payload(score: float = 0.1) -> dict:
     return {
         "dimensions": {dim: {"score": score, "reason": f"{dim} 说明"} for dim in _DIMS},
-        "questions": [{"text": "目标用户是谁？", "options": ["高阶", "初三"], "citations": ["c1"]}],
+        "questions": [{"text": "目标用户是谁？", "options": ["目标", "初三"], "citations": ["c1"]}],
     }
 
 
@@ -89,7 +89,7 @@ def test_normalize_keeps_valid_payload() -> None:
     assert set(result["dimensions"]) == set(_DIMS)
     assert all(entry["score"] == 0.25 for entry in result["dimensions"].values())
     assert result["questions"] == [
-        {"text": "目标用户是谁？", "options": ["高阶", "初三"], "citations": ["c1"]}
+        {"text": "目标用户是谁？", "options": ["目标", "初三"], "citations": ["c1"]}
     ]
 
 
@@ -385,9 +385,9 @@ async def test_score_prior_context_enters_prompt() -> None:
         patch(_ARESOLVE, AsyncMock(return_value=_resolved())),
         patch(_BUILD, return_value=model),
     ):
-        await ascore_ambiguity(goal="g", feature_points=[], prior_context="- 目标用户：高阶学生")
+        await ascore_ambiguity(goal="g", feature_points=[], prior_context="- 目标用户：目标用户")
     human_message = model.ainvoke.await_args.args[0][1]
-    assert "高阶学生" in human_message.content
+    assert "目标用户" in human_message.content
 
 
 # ── normalize_intents ─────────────────────────────────────────────────────

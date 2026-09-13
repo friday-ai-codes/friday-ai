@@ -41,9 +41,9 @@ Does not require prior new-project setup — auto-creates `.planning/spikes/` if
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/spike.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/spike-wrap-up.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/workflows/spike.md
+@./.cursor/gsd-core/workflows/spike-wrap-up.md
+@./.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
 <runtime_note>

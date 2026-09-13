@@ -34,8 +34,8 @@ Produces EVAL-REVIEW.md with score, verdict, gaps, and remediation plan.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/eval-review.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ai-evals.md
+@./.cursor/gsd-core/workflows/eval-review.md
+@./.cursor/gsd-core/references/ai-evals.md
 </execution_context>
 
 <context>

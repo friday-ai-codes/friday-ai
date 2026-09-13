@@ -39,7 +39,7 @@ def _point(pid: str, title: str, *, module: str = "", description: str = "") -> 
     return point
 
 
-def _spec(points: list[dict[str, Any]], *, goal: str = "让高阶学生一键生成个性化练习") -> dict:
+def _spec(points: list[dict[str, Any]], *, goal: str = "让目标用户一键生成个性化练习") -> dict:
     return {
         "goal": [{"block_id": "goal_1", "type": "paragraph", "text": goal}],
         "feature_points": points,

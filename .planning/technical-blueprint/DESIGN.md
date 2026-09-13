@@ -555,8 +555,8 @@ flowchart TB
 
 | 案例 | 根因 | 揭示的知识缺口 |
 |------|------|----------------|
-| `sample_course_service` 十轮全漏 | 能力树有「专项课与总复习 > 重难点进阶」强相关节点，但被长 query 稀释 + 全空间 top-50 节点名额竞争出局；换一句话摘要 query 立刻升至第 1 | 查询侧问题（spec 摘要化可解），非知识缺口 |
-| `sample_service_service` 被 LLM 阶段淘汰 | 代码里有「进阶课（即将上线）」占位入口（`sample-textbook-sync`），但能力树把该 app 抽象为「教材同步课程/章节导航」，无进阶/功能页节点 | **净新增需求在目标仓没有代码痕迹，事实面永远推不出落点** |
+| `sample_course_service` 十轮全漏 | 能力树有「专项课与总复习 > 重难点功能」强相关节点，但被长 query 稀释 + 全空间 top-50 节点名额竞争出局；换一句话摘要 query 立刻升至第 1 | 查询侧问题（spec 摘要化可解），非知识缺口 |
+| `sample_service_service` 被 LLM 阶段淘汰 | 代码里有「功能入口（即将上线）」占位入口（`sample-textbook-sync`），但能力树把该 app 抽象为「教材同步课程/章节导航」，无功能/功能页节点 | **净新增需求在目标仓没有代码痕迹，事实面永远推不出落点** |
 | `study-plan`/`study-practice` 顽固误报（medium 置信 + 理由通顺） | LLM 按能力树推理「权益鉴权→study-plan」逻辑自洽，但团队已决定该职责归属 sample_course_service | **服务边界归属是团队决策，代码/能力树推不出来** |
 
 结论：能力树是**事实面**（这个仓现在有什么，随索引自动刷新），回答不了净新增需求的「应该落哪」。需要补一个**意图面**知识资产——仓库章程：职责、侧重、落点偏好、边界禁区。其核心内容是决策知识，必须人工确认或从历史行为学习，不可全自动推导。
@@ -566,9 +566,9 @@ flowchart TB
 ```jsonc
 {
   "repository_id": "…",
-  "positioning": "C 端学生移动 H5 学习应用集（功能页/教材同步/进阶课入口的前端落点）",  // 一句话定位
+  "positioning": "C 端学生移动 H5 学习应用集（功能页/教材同步/功能入口的前端落点）",  // 一句话定位
   "owned_domains": [{                          // 正向：业务域 owned（净新增落点的第一依据；可含"规划中尚未实现"的域）
-    "domain": "学习功能页入口 / 进阶课 / 专题突破",
+    "domain": "学习功能页入口 / 功能入口 / 专题突破",
     "status": "implemented | planned",         // planned = 规划归属但代码尚未落地（正是净新增场景）
     "note": "…", "citations": ["cit_…"]
   }],
@@ -748,7 +748,7 @@ BlueprintThreadMessage（多轮消息）
 5. **AI 审查模型档位 — 已定**：默认与起草代理**同一档位**（不强制换模型）；档位可配留作后续实验。
 6. **质量评估基线 — 已定**：**起步即建**蓝图 golden set（对齐 Phase 105 golden set 方法论），回归指标：引用覆盖率 / AI 审查打回率 / 人审修改量 / 澄清轮次；纳入 v0.20.0 第一个 phase 的交付物。
 7. **多容器共享上下文 — 已定**：建会话级 Blueprint Context Bus（§5.6）——作用域绑定从「分支 + 项目」改为「任务 token → 会话 → 项目」（方案期无分支不再阻塞）；容器经扩展的知识 MCP 实时读写；等待恢复走两档原语（保活轮询 / `waiting_context` 退出重派）+ 等待环检测。
-8. **净新增需求的落点知识 — 已定（2026-07-29）**：建 `RepoCharter` 仓库章程（§5.7）补齐路由的**意图面**——能力树只反映既有实现（事实面），回答不了「净新增功能应该落哪」与「服务边界归属」这类团队决策（实证：示例功能专项 5 轮路由试验，sample_service_service 因树无进阶/功能页节点被淘汰、study-plan/study-practice 因 LLM 不知边界决策而顽固误报）。路由按 feature_point 意图分流加权（greenfield 重章程/历史落点，brownfield 重能力树），章程经确认门动作回灌（AI 草案 + 人工 confirm），实现收敛在 `blueprint_route` adapter 不改 `repo_router_v2.py`。
+8. **净新增需求的落点知识 — 已定（2026-07-29）**：建 `RepoCharter` 仓库章程（§5.7）补齐路由的**意图面**——能力树只反映既有实现（事实面），回答不了「净新增功能应该落哪」与「服务边界归属」这类团队决策（实证：示例功能专项 5 轮路由试验，sample_service_service 因树无功能/功能页节点被淘汰、study-plan/study-practice 因 LLM 不知边界决策而顽固误报）。路由按 feature_point 意图分流加权（greenfield 重章程/历史落点，brownfield 重能力树），章程经确认门动作回灌（AI 草案 + 人工 confirm），实现收敛在 `blueprint_route` adapter 不改 `repo_router_v2.py`。
 
 ---
 

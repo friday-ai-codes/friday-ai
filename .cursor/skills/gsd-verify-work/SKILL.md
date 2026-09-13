@@ -36,8 +36,8 @@ Output: {phase_num}-UAT.md tracking all test results. If issues found: diagnosed
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/verify-work.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/UAT.md
+@./.cursor/gsd-core/workflows/verify-work.md
+@./.cursor/gsd-core/templates/UAT.md
 </execution_context>
 
 <context>

@@ -1197,7 +1197,7 @@ _TECHNICAL_BLUEPRINT_STAGES = {
             # `_MAX_TEAM_CLARIFICATION_ROUNDS` 保证：到顶不再出题，停在门里交人。
             "reroute_required": "route",
             # ⭐ 116 重排：确认门通过后先过规格门（带调研上下文的澄清），
-            # spec_locked 才进阶段 2 分仓方案。下一个接续点在 merge.merged。
+            # spec_locked 才功能段 2 分仓方案。下一个接续点在 merge.merged。
             "confirmed": "spec_gate",
         },
         pausable=True,

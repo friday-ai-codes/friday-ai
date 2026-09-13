@@ -39,7 +39,7 @@ Flags:
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/audit-fix.md
+@./.cursor/gsd-core/workflows/audit-fix.md
 </execution_context>
 
 <process>

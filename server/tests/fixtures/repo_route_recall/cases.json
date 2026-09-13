@@ -23,7 +23,7 @@
     {
       "id": "short-query-entry-permission",
       "_desc": "短查询基线：确认长文本改造没有拖累正常短查询（单块快路径，行为应与改造前逐字一致）。",
-      "query": "高中数学全部功能页里「快速提效营」入口的课程包权益鉴权在哪个服务实现",
+      "query": "高中数学全部功能页里「快速优化营」入口的课程包权益鉴权在哪个服务实现",
       "space_id": "2f6ae28d-444d-4dd7-8eac-97a85f94fcae",
       "corpus_kind": "conversation",
       "expected_repos": [

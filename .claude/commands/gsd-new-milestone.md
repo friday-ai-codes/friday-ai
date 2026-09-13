@@ -26,11 +26,11 @@ Brownfield equivalent of new-project. Project exists, PROJECT.md has history. Ga
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/new-milestone.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/questioning.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/ui-brand.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/templates/project.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/templates/requirements.md
+@./.claude/gsd-core/workflows/new-milestone.md
+@./.claude/gsd-core/references/questioning.md
+@./.claude/gsd-core/references/ui-brand.md
+@./.claude/gsd-core/templates/project.md
+@./.claude/gsd-core/templates/requirements.md
 </execution_context>
 
 <context>

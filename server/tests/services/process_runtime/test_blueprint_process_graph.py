@@ -225,7 +225,7 @@ def test_research_required_back_edge_exists_and_is_reachable() -> None:
 
 
 def test_confirmed_edge_enters_stage_two() -> None:
-    """116 重排：确认门通过先过规格门（带调研上下文的澄清），``spec_locked`` 才进阶段 2。
+    """116 重排：确认门通过先过规格门（带调研上下文的澄清），``spec_locked`` 才功能段 2。
 
     用户裁定的新顺序：拆解 → 路由调研 → 仓库集确认门（人修正仓库集）→ 规格门（澄清）
     → 分仓方案。规格门不再是流程入口的第一道闸。
@@ -469,7 +469,7 @@ async def test_decompose_handler_syncs_existing_spec_when_content_is_unchanged(
         "feature_points": [
             {
                 "id": "fp_entry",
-                "title": "快速提效营入口",
+                "title": "快速优化营入口",
                 "intent": "brownfield",
                 "description": [
                     {"block_id": "fp", "type": "paragraph", "text": "按课程包权益展示入口"}

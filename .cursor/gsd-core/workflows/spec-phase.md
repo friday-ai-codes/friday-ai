@@ -56,7 +56,7 @@ Rotate through these perspectives — each naturally surfaces different blindspo
 ## Step 1: Initialize
 
 ```bash
-INIT=$(node "/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/bin/gsd-tools.cjs" init phase-op "${PHASE}")
+INIT=$(node "./.cursor/gsd-core/bin/gsd-tools.cjs" init phase-op "${PHASE}")
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
 
@@ -188,7 +188,7 @@ If gate passes (ambiguity ≤ 0.20 AND all minimums met):
 
 ## Step 6: Generate SPEC.md
 
-Use the SPEC.md template from @/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/spec.md.
+Use the SPEC.md template from @./.cursor/gsd-core/templates/spec.md.
 
 **Requirements for every requirement entry:**
 - One specific, testable statement

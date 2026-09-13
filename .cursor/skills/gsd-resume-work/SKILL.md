@@ -40,7 +40,7 @@ Routes to the resume-project workflow which handles:
   </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/resume-project.md
+@./.cursor/gsd-core/workflows/resume-project.md
 </execution_context>
 
 <process>

@@ -38,7 +38,7 @@ def test_split_empty_returns_empty() -> None:
 
 
 def test_split_short_text_is_single_segment_verbatim() -> None:
-    text = "高中数学进阶课入口鉴权"
+    text = "高中数学功能入口鉴权"
     assert split_for_embedding(text) == [text]
 
 
@@ -84,7 +84,7 @@ def test_low_information_detects_noise(text: str) -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "用户点击快速提效营入口后跳转到分类图谱页",
+        "用户点击快速优化营入口后跳转到分类图谱页",
         "def resolve_permission(user, package_id): return has_course_package(user, package_id)",
     ],
 )
@@ -170,7 +170,7 @@ def spy(monkeypatch: pytest.MonkeyPatch) -> _EmbedSpy:
 
 async def test_embed_query_short_uses_single_call(spy: _EmbedSpy) -> None:
     """短文本必须与改造前逐字同路径：单发一次，绝不走批量。"""
-    result = await embed_query("快速提效营入口鉴权在哪个服务")
+    result = await embed_query("快速优化营入口鉴权在哪个服务")
     assert result.ok
     assert result.is_multi is False
     assert spy.single_calls == 1

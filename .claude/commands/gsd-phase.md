@@ -31,10 +31,10 @@ Mode routing:
 </routing>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/add-phase.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/insert-phase.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/remove-phase.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/edit-phase.md
+@./.claude/gsd-core/workflows/add-phase.md
+@./.claude/gsd-core/workflows/insert-phase.md
+@./.claude/gsd-core/workflows/remove-phase.md
+@./.claude/gsd-core/workflows/edit-phase.md
 </execution_context>
 
 <context>

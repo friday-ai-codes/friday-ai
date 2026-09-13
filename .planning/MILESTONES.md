@@ -72,7 +72,7 @@
 - **短名单 + 历史先验 + 角色图（Phase 129）**：activity/capability/charter shortlist（planned 强制拉入）+ 需求史/上线史 ∩ team_core force-include + 固定四角色主/辅/禁与 boundary 降级；候选硬限制 ⊆ shortlist。
 - **放置单元 + 主路径接线（Phase 130）**：`build_placement_units`（模块依赖 +「复用」边）→ `place_units`（V2 硬限 hard_scope）；蓝图/项目选仓主路径走漏斗，三分量不再唯一决策（INT-01）。
 - **门禁 + 反思环（Phase 131）**：统一 `pass|clarify|block` 五门（含 D4 发布门独占 `auto_selected`）+ 有界反思（N=2、子集重算、ledger 脱敏可回放）。
-- **高阶回归 + 契约（Phase 132）**：合成 Learning-tools 宇宙上 D2 bar（四基线 hit@primary / out_of_team=0）自动化绿；INT-03 契约包 + 接线级 role_collapse→reflection 修复。
+- **目标回归 + 契约（Phase 132）**：合成 Learning-tools 宇宙上 D2 bar（四基线 hit@primary / out_of_team=0）自动化绿；INT-03 契约包 + 接线级 role_collapse→reflection 修复。
 
 **质量基线：** 128–132 验证全部 `passed`；审计 status `tech_debt`（25/25 satisfied；无 BLOCKER；Nyquist 五相位 draft 未 reconcile；live_space 默认 skip）。
 

@@ -3,9 +3,9 @@ Guide the user through MVP-mode planning for a phase. Prompts for an "As a / I w
 </purpose>
 
 <required_reading>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/user-story-template.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/spidr-splitting.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/planner-mvp-mode.md
+@./.cursor/gsd-core/references/user-story-template.md
+@./.cursor/gsd-core/references/spidr-splitting.md
+@./.cursor/gsd-core/references/planner-mvp-mode.md
 </required_reading>
 
 <runtime_note>
@@ -29,12 +29,12 @@ Example: /gsd mvp-phase 2.1
 ```
 Exit.
 
-Normalize per `@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/phase-argument-parsing.md` (zero-pad integer phases to two digits).
+Normalize per `@./.cursor/gsd-core/references/phase-argument-parsing.md` (zero-pad integer phases to two digits).
 
 ## 2. Validate phase exists and check status
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
 PHASE_INFO=$(gsd_run query roadmap.get-phase "${PHASE}")
 PHASE_FOUND=$(echo "$PHASE_INFO" | jq -r '.found')
 PHASE_NAME=$(echo "$PHASE_INFO" | jq -r '.phase_name')
@@ -74,7 +74,7 @@ Use `conversational prompting` with options [Re-prompt / Abort]. On Abort, exit 
 
 ## 3. User story prompts
 
-Run three sequential `conversational prompting` calls. Each is free-text. After all three, assemble into the canonical sentence per `@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/user-story-template.md`:
+Run three sequential `conversational prompting` calls. Each is free-text. After all three, assemble into the canonical sentence per `@./.cursor/gsd-core/references/user-story-template.md`:
 
 **Prompt 1 — As a:**
 > "As a [user role]?"
@@ -113,7 +113,7 @@ If `RE_PROMPT_USER_STORY=true`, re-run only the offending prompt field(s), rebui
 
 ## 4. SPIDR splitting check
 
-Run the SPIDR rules from `@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/spidr-splitting.md`. Briefly:
+Run the SPIDR rules from `@./.cursor/gsd-core/references/spidr-splitting.md`. Briefly:
 
 **Trigger evaluation.** Check the assembled `USER_STORY` against the four size signals from the reference (compound capabilities, multi-actor, length > 120 chars, vague capability). If none fire, **skip SPIDR** entirely — go to step 5.
 

@@ -33,7 +33,7 @@ works via Bash and produces equivalent output.
 </documentation_lookup>
 
 <required_reading>
-Read `/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ai-evals.md` — specifically the rubric design and domain expert sections.
+Read `./.cursor/gsd-core/references/ai-evals.md` — specifically the rubric design and domain expert sections.
 </required_reading>
 
 <input>

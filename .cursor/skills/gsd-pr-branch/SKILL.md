@@ -36,7 +36,7 @@ changes that are irrelevant to code review.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/pr-branch.md
+@./.cursor/gsd-core/workflows/pr-branch.md
 </execution_context>
 
 <process>

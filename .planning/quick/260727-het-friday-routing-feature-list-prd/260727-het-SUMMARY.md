@@ -65,7 +65,7 @@ frontmatter（只有 name + description）
 | 落点（目录/文件） | 真实路径；判 new 时给建议目录并注明参照的同类结构 |
 | 变更类型 | `new` / `modify` / `unclear` |
 | 证据 | 真实文件路径或 chunk，来自工具返回而非推理 |
-| 置信度 | high / medium / low（判据表写进阶段五） |
+| 置信度 | high / medium / low（判据表写功能段五） |
 | 风险与跨仓依赖 | `reverse_lookup_requirements` 反查的回归面 + 接口契约另一侧 |
 
 矩阵后附 `run_id`、涉及仓库清单、`new`/`modify`/`unclear` 计数、待澄清项编号。

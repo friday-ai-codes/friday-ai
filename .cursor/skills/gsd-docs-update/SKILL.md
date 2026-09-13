@@ -40,7 +40,7 @@ Flag handling rule:
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/docs-update.md
+@./.cursor/gsd-core/workflows/docs-update.md
 </execution_context>
 
 <context>

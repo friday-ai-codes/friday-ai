@@ -41,8 +41,8 @@ Uses ROADMAP.md phase discovery and Skill() flat invocations for each phase comm
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/autonomous.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/workflows/autonomous.md
+@./.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

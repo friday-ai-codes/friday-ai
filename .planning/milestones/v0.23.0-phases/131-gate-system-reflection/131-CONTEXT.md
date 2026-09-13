@@ -64,7 +64,7 @@
 
 - Phase 128–130 已有 team_gate / shortlist / role_map / placements 与 funnel 守卫测；本相位是 **统一契约 + 聚合门 + 反思**，不是重做团队解析。
 - 既有 `BlueprintConfirmGateAdapter`（蓝图阶段确认门）与本相位 **漏斗发布门** 互补：本相位管「路由结果能否 auto / 须确认」；不替换蓝图 repo_confirmation 线程模型，不扩大前端。
-- 高阶四基线回归属 Phase 132；本相位用合成 placements/role_map 证明五门与反思预算即可。
+- 目标四基线回归属 Phase 132；本相位用合成 placements/role_map 证明五门与反思预算即可。
 - INT-03「角色坍塌→反思修复」合成用例可在本相位落最小一条，132 再扩回归套件。
 
 </specifics>
@@ -116,7 +116,7 @@
 <deferred>
 ## Deferred Ideas
 
-- 高阶四基线 hit@primary / out_of_team=0 门槛 → Phase 132 / D2
+- 目标四基线 hit@primary / out_of_team=0 门槛 → Phase 132 / D2
 - GATE-F01 可配置策略包运营后台
 - REFL-F01 多 Agent 对抗式反思
 - 路由控制台大前端 / 章程自动生效

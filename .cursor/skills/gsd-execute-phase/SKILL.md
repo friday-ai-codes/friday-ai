@@ -45,8 +45,8 @@ Context budget: ~15% orchestrator, 100% fresh per subagent.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/execute-phase.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/workflows/execute-phase.md
+@./.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
 <runtime_note>

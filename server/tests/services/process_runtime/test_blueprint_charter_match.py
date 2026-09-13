@@ -26,8 +26,8 @@ from services.process_runtime.blueprint_charter_match import (
     score_charter_match,
 )
 
-# 示例功能专项语料：功能/流程优化领域 + 权益鉴权禁区（DESIGN §5.7 实证语料）
-_TERMS = ["进阶课入口改造", "示例功能专项学习页", "专项练习组卷"]
+# 示例功能专项语料：功能/学习优化领域 + 权益鉴权禁区（DESIGN §5.7 实证语料）
+_TERMS = ["功能入口改造", "示例功能专项学习页", "专项练习组卷"]
 
 
 def _charter(**overrides) -> dict:
@@ -48,17 +48,17 @@ def _charter(**overrides) -> dict:
 def test_owned_implemented_scores_higher_than_planned() -> None:
     """implemented 命中 > planned 命中 > 0，且两者都记进 matched_domains。"""
     implemented = score_charter_match(
-        _charter(owned_domains=[{"domain": "功能/流程优化", "status": "implemented"}]),
+        _charter(owned_domains=[{"domain": "功能/学习优化", "status": "implemented"}]),
         query_terms=_TERMS,
     )
     planned = score_charter_match(
-        _charter(owned_domains=[{"domain": "功能/流程优化", "status": "planned"}]),
+        _charter(owned_domains=[{"domain": "功能/学习优化", "status": "planned"}]),
         query_terms=_TERMS,
     )
 
     assert implemented.score > planned.score > 0.0
-    assert implemented.matched_domains == [{"domain": "功能/流程优化", "status": "implemented"}]
-    assert planned.matched_domains == [{"domain": "功能/流程优化", "status": "planned"}]
+    assert implemented.matched_domains == [{"domain": "功能/学习优化", "status": "implemented"}]
+    assert planned.matched_domains == [{"domain": "功能/学习优化", "status": "planned"}]
 
 
 def test_short_ascii_segment_alone_does_not_match() -> None:
@@ -96,7 +96,7 @@ def test_note_participates_in_domain_match() -> None:
 def test_note_generic_two_char_word_does_not_match() -> None:
     """note 是长自由文本，"导出/管理" 这类通用 2 字词不参与其命中判定——实测
     「错题本导出」曾经 note 里的「导出」命中「发货单操作管理」。domain 侧 2 字词
-    （进阶）保持可命中，只收紧 note 侧。"""
+    （功能）保持可命中，只收紧 note 侧。"""
     result = score_charter_match(
         _charter(
             owned_domains=[
@@ -117,7 +117,7 @@ def test_note_generic_two_char_word_does_not_match() -> None:
 def test_planned_domain_scores_strictly_positive() -> None:
     """planned 命中严格 > 0 —— 「规划中领域也能把仓推进候选」的机制锁。"""
     result = score_charter_match(
-        _charter(owned_domains=[{"domain": "功能/流程优化", "status": "planned"}]),
+        _charter(owned_domains=[{"domain": "功能/学习优化", "status": "planned"}]),
         query_terms=_TERMS,
     )
 
@@ -194,26 +194,26 @@ def test_no_domain_match_scores_zero() -> None:
 def test_boundary_hit_makes_score_negative() -> None:
     """boundaries 命中使总分为负并记 violated_boundaries。"""
     result = score_charter_match(
-        _charter(boundaries=[{"rule": "不承接进阶课入口改造"}]),
+        _charter(boundaries=[{"rule": "不承接功能入口改造"}]),
         query_terms=_TERMS,
     )
 
     assert result.score < 0.0
-    assert result.violated_boundaries == ["不承接进阶课入口改造"]
+    assert result.violated_boundaries == ["不承接功能入口改造"]
     assert any("boundary_hit" in reason for reason in result.penalty_reasons)
 
 
 def test_boundary_self_collision_with_owned_is_exempted() -> None:
     """boundary 命中词与本仓 owned 同源（自指边界）→ 豁免不扣分（自撞豁免）。
 
-    旧行为：boundary 命中即 -1.0，owned 正分被抵消到 ≤ 0。但「进阶课入口改造」与
-    owned「功能/流程优化」同源——这是本仓内部职责划分（做进阶学习、不做入口改造），
+    旧行为：boundary 命中即 -1.0，owned 正分被抵消到 ≤ 0。但「功能入口改造」与
+    owned「功能/学习优化」同源——这是本仓内部职责划分（做功能学习、不做入口改造），
     不是路由到他仓的信号。若照扣，正仓会被无 boundary 的干扰仓挤掉（自撞 bug）。
     """
     result = score_charter_match(
         _charter(
-            owned_domains=[{"domain": "功能/流程优化", "status": "implemented"}],
-            boundaries=[{"rule": "不承接进阶课入口改造"}],
+            owned_domains=[{"domain": "功能/学习优化", "status": "implemented"}],
+            boundaries=[{"rule": "不承接功能入口改造"}],
         ),
         query_terms=_TERMS,
     )
@@ -227,10 +227,10 @@ def test_true_boundary_unrelated_to_owned_still_penalizes() -> None:
     """boundary 命中词与本仓 owned **无关**（真禁区，他仓的事）→ 照常扣分。"""
     result = score_charter_match(
         _charter(
-            owned_domains=[{"domain": "功能/流程优化", "status": "implemented"}],
+            owned_domains=[{"domain": "功能/学习优化", "status": "implemented"}],
             boundaries=[{"rule": "不承接支付结算与发票开具"}],
         ),
-        query_terms=["进阶课入口改造", "支付结算", "发票开具"],
+        query_terms=["功能入口改造", "支付结算", "发票开具"],
     )
 
     # owned 命中 +1 与真禁区 -1 抵消 → ≤ 0，且禁区被记录
@@ -249,12 +249,12 @@ def test_true_boundary_unrelated_to_owned_still_penalizes() -> None:
 def test_evolution_penalties_recorded(evolution: str, reason: str) -> None:
     """maintenance_only / deprecated 各自降权且降权理由进 penalty_reasons。"""
     baseline = score_charter_match(
-        _charter(owned_domains=[{"domain": "功能/流程优化", "status": "implemented"}]),
+        _charter(owned_domains=[{"domain": "功能/学习优化", "status": "implemented"}]),
         query_terms=_TERMS,
     )
     penalized = score_charter_match(
         _charter(
-            owned_domains=[{"domain": "功能/流程优化", "status": "implemented"}],
+            owned_domains=[{"domain": "功能/学习优化", "status": "implemented"}],
             evolution=evolution,
         ),
         query_terms=_TERMS,
@@ -269,14 +269,14 @@ def test_deprecated_penalty_exceeds_maintenance_only() -> None:
     """deprecated 降权强度严格大于 maintenance_only。"""
     maintenance = score_charter_match(
         _charter(
-            owned_domains=[{"domain": "功能/流程优化", "status": "implemented"}],
+            owned_domains=[{"domain": "功能/学习优化", "status": "implemented"}],
             evolution="maintenance_only",
         ),
         query_terms=_TERMS,
     )
     deprecated = score_charter_match(
         _charter(
-            owned_domains=[{"domain": "功能/流程优化", "status": "implemented"}],
+            owned_domains=[{"domain": "功能/学习优化", "status": "implemented"}],
             evolution="deprecated",
         ),
         query_terms=_TERMS,
@@ -320,11 +320,11 @@ def test_malformed_charter_does_not_raise(malformed: dict) -> None:
 def test_illegal_status_falls_back_to_implemented() -> None:
     """非法 status 按 implemented 处理（与 normalize_charter_draft 回退一致）。"""
     result = score_charter_match(
-        _charter(owned_domains=[{"domain": "功能/流程优化", "status": "sort-of-done"}]),
+        _charter(owned_domains=[{"domain": "功能/学习优化", "status": "sort-of-done"}]),
         query_terms=_TERMS,
     )
 
-    assert result.matched_domains == [{"domain": "功能/流程优化", "status": "implemented"}]
+    assert result.matched_domains == [{"domain": "功能/学习优化", "status": "implemented"}]
     assert result.score == pytest.approx(DEFAULT_CHARTER_RULES["owned_implemented"])
 
 
@@ -333,7 +333,7 @@ def test_positive_score_clamped_to_one() -> None:
     result = score_charter_match(
         _charter(
             owned_domains=[
-                {"domain": "功能/流程优化", "status": "implemented"},
+                {"domain": "功能/学习优化", "status": "implemented"},
                 {"domain": "专项学习页", "status": "implemented"},
                 {"domain": "专项练习组卷", "status": "implemented"},
             ]
@@ -350,7 +350,7 @@ def test_evidence_carries_source_and_version() -> None:
     result = score_charter_match(
         _charter(
             owned_domains=[
-                {"domain": "功能/流程优化", "status": "planned", "citations": ["cit_a", "cit_a"]}
+                {"domain": "功能/学习优化", "status": "planned", "citations": ["cit_a", "cit_a"]}
             ],
             source="ai_draft",
             version=3,
@@ -367,8 +367,8 @@ def test_empty_query_terms_never_match() -> None:
     """空 query_terms 不命中任何领域/禁区（避免空需求把所有仓都拉进来）。"""
     result = score_charter_match(
         _charter(
-            owned_domains=[{"domain": "功能/流程优化", "status": "implemented"}],
-            boundaries=[{"rule": "不承接进阶课入口改造"}],
+            owned_domains=[{"domain": "功能/学习优化", "status": "implemented"}],
+            boundaries=[{"rule": "不承接功能入口改造"}],
         ),
         query_terms=[],
     )
@@ -410,7 +410,7 @@ async def test_aload_charters_batch_and_skips_missing() -> None:
     without_charter = await _make_repo("study-plan")
     await _make_charter(
         with_charter,
-        owned_domains=[{"domain": "功能/流程优化", "status": "planned"}],
+        owned_domains=[{"domain": "功能/学习优化", "status": "planned"}],
         source=RepoCharter.Source.AI_DRAFT,
         version=2,
     )
@@ -419,7 +419,7 @@ async def test_aload_charters_batch_and_skips_missing() -> None:
 
     assert set(charters) == {str(with_charter.id)}
     row = charters[str(with_charter.id)]
-    assert row["owned_domains"] == [{"domain": "功能/流程优化", "status": "planned"}]
+    assert row["owned_domains"] == [{"domain": "功能/学习优化", "status": "planned"}]
     assert row["source"] == "ai_draft"
     assert row["version"] == 2
 
@@ -436,7 +436,7 @@ async def test_aload_charters_empty_input_returns_empty() -> None:
 async def test_collect_charter_candidates_returns_planned_owner() -> None:
     """章程 owned_domains(status=planned) 命中的仓被作为补入候选返回（示例功能机制）。"""
     repo = await _make_repo("sample_service_service")
-    await _make_charter(repo, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}])
+    await _make_charter(repo, owned_domains=[{"domain": "功能/学习优化", "status": "planned"}])
 
     candidates = await acollect_charter_candidates(query_terms=_TERMS, exclude_repository_ids=set())
 
@@ -444,7 +444,7 @@ async def test_collect_charter_candidates_returns_planned_owner() -> None:
     assert candidates[0]["repository_name"] == "sample_service_service"
     assert candidates[0]["charter_match_raw"] > 0.0
     assert candidates[0]["source"] == "charter_supplement"
-    assert candidates[0]["matched_domains"] == [{"domain": "功能/流程优化", "status": "planned"}]
+    assert candidates[0]["matched_domains"] == [{"domain": "功能/学习优化", "status": "planned"}]
 
 
 @pytest.mark.django_db(transaction=True)
@@ -452,7 +452,7 @@ async def test_collect_charter_candidates_returns_planned_owner() -> None:
 async def test_collect_charter_candidates_respects_exclusion() -> None:
     """已在候选里的仓被 exclude_repository_ids 排除（避免重复补入）。"""
     repo = await _make_repo("sample_service_service")
-    await _make_charter(repo, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}])
+    await _make_charter(repo, owned_domains=[{"domain": "功能/学习优化", "status": "planned"}])
 
     candidates = await acollect_charter_candidates(
         query_terms=_TERMS, exclude_repository_ids={str(repo.id)}
@@ -468,7 +468,7 @@ async def test_collect_charter_candidates_respects_repository_scope() -> None:
     in_scope = await _make_repo("sample_service_service")
     out_of_scope = await _make_repo("legacy-learning")
     for repo in (in_scope, out_of_scope):
-        await _make_charter(repo, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}])
+        await _make_charter(repo, owned_domains=[{"domain": "功能/学习优化", "status": "planned"}])
 
     candidates = await acollect_charter_candidates(
         query_terms=_TERMS,
@@ -486,11 +486,11 @@ async def test_collect_charter_candidates_orders_and_limits() -> None:
     planned_repo = await _make_repo("sample_service_service")
     implemented_repo = await _make_repo("sample_course_service")
     await _make_charter(
-        planned_repo, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}]
+        planned_repo, owned_domains=[{"domain": "功能/学习优化", "status": "planned"}]
     )
     await _make_charter(
         implemented_repo,
-        owned_domains=[{"domain": "功能/流程优化", "status": "implemented"}],
+        owned_domains=[{"domain": "功能/学习优化", "status": "implemented"}],
     )
 
     candidates = await acollect_charter_candidates(
@@ -505,6 +505,6 @@ async def test_collect_charter_candidates_orders_and_limits() -> None:
 async def test_collect_charter_candidates_empty_terms_short_circuits() -> None:
     """空 query_terms 不打库、返回空（不把全库仓拉进候选）。"""
     repo = await _make_repo("sample_service_service")
-    await _make_charter(repo, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}])
+    await _make_charter(repo, owned_domains=[{"domain": "功能/学习优化", "status": "planned"}])
 
     assert await acollect_charter_candidates(query_terms=[], exclude_repository_ids=set()) == []

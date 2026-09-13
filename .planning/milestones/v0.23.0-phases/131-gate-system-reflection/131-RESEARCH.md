@@ -23,7 +23,7 @@
 - needs_human_review 字段形态
 
 ### Deferred Ideas (OUT OF SCOPE)
-- Phase 132 高阶回归；GATE-F01；REFL-F01；大前端；重写 V2
+- Phase 132 目标回归；GATE-F01；REFL-F01；大前端；重写 V2
 </user_constraints>
 
 <architectural_responsibility_map>
@@ -140,7 +140,7 @@ team → shortlist → role_map → placement → place     # 128–130
 | 第三套状态词 | 映射既有 clarify；needs_human_review 可测锁定 |
 
 ## Out of Scope
-- 高阶回归、策略后台、对抗反思、大前端、重写 V2
+- 目标回归、策略后台、对抗反思、大前端、重写 V2
 
 ## Package Legitimacy
 无新 pip/npm 包。复用 Django、structlog、既有 funnel 模块、interactions ledger。

@@ -47,10 +47,10 @@ Mode routing:
 </routing>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/new-workspace.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/list-workspaces.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/remove-workspace.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/workflows/new-workspace.md
+@./.cursor/gsd-core/workflows/list-workspaces.md
+@./.cursor/gsd-core/workflows/remove-workspace.md
+@./.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

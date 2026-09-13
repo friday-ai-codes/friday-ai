@@ -39,10 +39,10 @@ Replaces gsd-plan-phase's internal gsd-plan-checker with external AI reviewers (
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/plan-review-convergence.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/revision-loop.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/gates.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/agent-contracts.md
+@./.cursor/gsd-core/workflows/plan-review-convergence.md
+@./.cursor/gsd-core/references/revision-loop.md
+@./.cursor/gsd-core/references/gates.md
+@./.cursor/gsd-core/references/agent-contracts.md
 </execution_context>
 
 <runtime_note>

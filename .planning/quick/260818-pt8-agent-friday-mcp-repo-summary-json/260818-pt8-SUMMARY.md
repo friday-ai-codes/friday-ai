@@ -117,7 +117,7 @@ None - plan executed as written（未 git commit / stage，符合 git 纪律）�
 
 ## Next Phase Readiness
 
-- 三场景结构化提交链路 MCP-only 就绪；可重跑「高阶」蓝图验证真实容器提交路径。
+- 三场景结构化提交链路 MCP-only 就绪；可重跑「目标」蓝图验证真实容器提交路径。
 - 建议后续独立修复 `_detect_changes_guidance` 对非字符串 `repository_id` 的健壮性（既有缺陷）。
 
 ---

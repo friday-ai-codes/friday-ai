@@ -8,7 +8,7 @@
 ## Dispatch
 
 ```
-Read @/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/workflows/discuss-phase-power.md
+Read @./.codex/gsd-core/workflows/discuss-phase-power.md
 ```
 
 Execute it end-to-end. Do not continue with the standard interactive steps.

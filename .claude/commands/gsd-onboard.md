@@ -28,9 +28,9 @@ Guide brownfield onboarding for an existing codebase by routing through the exis
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/onboard.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/ui-brand.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/gate-prompts.md
+@./.claude/gsd-core/workflows/onboard.md
+@./.claude/gsd-core/references/ui-brand.md
+@./.claude/gsd-core/references/gate-prompts.md
 </execution_context>
 
 <context>

@@ -94,7 +94,7 @@ must_haves truths are user/route-observable (画像字段、clarify、非全库 
 | 不重写 RepoRouterV2 | Yes (explicit bans) |
 | 画像语料排除测试 case | Yes (01+03) |
 | team_adjacent 证据 → 129 | Yes (deferred, interface only) |
-| Deferred LIST/UNIT/GATE/REFL / 高阶 | Not in plans |
+| Deferred LIST/UNIT/GATE/REFL / 目标 | Not in plans |
 
 ### 7b. Scope Reduction — PASS (after fix)
 

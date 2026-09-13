@@ -32,7 +32,7 @@ async def _make_repo() -> Repository:
     )
 
 
-def _draft(domain: str = "功能/流程优化", rule: str = "不承接课程权益鉴权", **extra) -> dict:
+def _draft(domain: str = "功能/学习优化", rule: str = "不承接课程权益鉴权", **extra) -> dict:
     base = {
         "positioning": extra.pop("positioning", "C 端学生移动 H5 学习应用集"),
         "owned_domains": [{"domain": domain, "status": "planned", "note": "", "citations": []}],
@@ -56,7 +56,7 @@ async def test_creates_ai_draft_row_when_absent() -> None:
     assert charter.source == RepoCharter.Source.AI_DRAFT
     assert charter.version == 1
     assert charter.positioning == "C 端学生移动 H5 学习应用集"
-    assert [item["domain"] for item in charter.owned_domains] == ["功能/流程优化"]
+    assert [item["domain"] for item in charter.owned_domains] == ["功能/学习优化"]
     assert charter.baseline_fingerprint == "fp-create"
     assert charter.baseline_locked_at is not None
 
@@ -73,7 +73,7 @@ async def test_existing_row_formal_unchanged_new_key_appendix() -> None:
     assert charter.source == RepoCharter.Source.AI_DRAFT
     assert charter.version == 1
     assert charter.positioning == "C 端学生移动 H5 学习应用集"
-    assert [item["domain"] for item in charter.owned_domains] == ["功能/流程优化"]
+    assert [item["domain"] for item in charter.owned_domains] == ["功能/学习优化"]
     assert charter.draft_content == {}
     appendix_domains = [
         a["item"]["domain"]
@@ -125,7 +125,7 @@ async def test_merge_false_does_not_wipe_formal_lists() -> None:
     )
 
     charter = await _reload(repo)
-    assert [item["domain"] for item in charter.owned_domains] == ["功能/流程优化"]
+    assert [item["domain"] for item in charter.owned_domains] == ["功能/学习优化"]
     assert charter.draft_content == {}
 
 

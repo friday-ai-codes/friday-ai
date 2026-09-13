@@ -1079,7 +1079,7 @@ def test_e2e_confirm_through_rest_drives_session_into_stage_two(
     """confirm 也接了续驱：会话离开 ``repo_confirmation`` 向后推进。
 
     116 重排后 ``repo_confirmation.confirmed`` 的目标是 ``spec_gate``（带调研上下文的
-    澄清门），``spec_locked`` 才进阶段 2/3。本用例断言「**已推进且没有静默失败**」——
+    澄清门），``spec_locked`` 才功能段 2/3。本用例断言「**已推进且没有静默失败**」——
     测试环境缺 LLM 时规格门 fail-closed 开兜底澄清、停在 ``spec_gate``；LLM 可得且
     无歧义时会一路到 ``repo_plan`` / ``merge``。两种停点都合法，
     **绝不允许**被推到步数上限落 FAILED（那会把「缺条件」变成「流程失败」）。

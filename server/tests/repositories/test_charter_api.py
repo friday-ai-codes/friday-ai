@@ -48,7 +48,7 @@ def _charter_json(positioning: str = "C 端学生移动 H5 学习应用集") -> 
             "positioning": positioning,
             "owned_domains": [
                 {
-                    "domain": "学习功能页 / 进阶课",
+                    "domain": "学习功能页 / 功能入口",
                     "status": "planned",
                     "note": "净新增落点",
                     "citations": ["cit_1"],
@@ -139,7 +139,7 @@ class TestCharterDraft:
         body = resp.json()
         assert body["source"] == "ai_draft"
         assert body["positioning"] == "起草定位"
-        assert body["owned_domains"][0]["domain"] == "学习功能页 / 进阶课"
+        assert body["owned_domains"][0]["domain"] == "学习功能页 / 功能入口"
         # DB 真落行
         charter = RepoCharter.objects.get(repository=repository)
         assert charter.source == RepoCharter.Source.AI_DRAFT

@@ -72,12 +72,12 @@ class TestBuildBranchName:
             change_type="feat",
             yymmdd="260610",
             tracking_id="1",
-            project_name="高阶 提效/专项",
+            project_name="目标 优化/专项",
         )
         assert " " not in name
         assert "/" in name  # 仅 type 后的那个斜杠
         assert name.count("/") == 1
-        assert "高阶" in name
+        assert "目标" in name
         assert validate_branch_name(name) is True
 
     def test_version_normalized_from_loose_input(self) -> None:

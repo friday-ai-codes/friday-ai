@@ -40,7 +40,7 @@ Routes to the update workflow which handles:
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/update.md
+@./.cursor/gsd-core/workflows/update.md
 </execution_context>
 
 <flags>
@@ -58,6 +58,6 @@ Parse the first token of {{GSD_ARGS}}:
 </process>
 
 <execution_context_extended>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/sync-skills.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/reapply-patches.md
+@./.cursor/gsd-core/workflows/sync-skills.md
+@./.cursor/gsd-core/workflows/reapply-patches.md
 </execution_context_extended>

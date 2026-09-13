@@ -18,7 +18,7 @@ changes that are irrelevant to code review.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/pr-branch.md
+@./.claude/gsd-core/workflows/pr-branch.md
 </execution_context>
 
 <process>

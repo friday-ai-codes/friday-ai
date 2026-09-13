@@ -34,11 +34,11 @@ Initialize a new project through unified flow: questioning → research (optiona
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/new-project.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/questioning.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/ui-brand.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/templates/project.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/templates/requirements.md
+@./.claude/gsd-core/workflows/new-project.md
+@./.claude/gsd-core/references/questioning.md
+@./.claude/gsd-core/references/ui-brand.md
+@./.claude/gsd-core/templates/project.md
+@./.claude/gsd-core/templates/requirements.md
 </execution_context>
 
 <process>

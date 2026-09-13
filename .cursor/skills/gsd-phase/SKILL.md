@@ -49,10 +49,10 @@ Mode routing:
 </routing>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/add-phase.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/insert-phase.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/remove-phase.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/edit-phase.md
+@./.cursor/gsd-core/workflows/add-phase.md
+@./.cursor/gsd-core/workflows/insert-phase.md
+@./.cursor/gsd-core/workflows/remove-phase.md
+@./.cursor/gsd-core/workflows/edit-phase.md
 </execution_context>
 
 <context>

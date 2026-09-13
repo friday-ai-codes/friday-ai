@@ -50,7 +50,7 @@ def _charter_json(positioning: str = "C 端学生移动 H5 学习应用集") -> 
             "positioning": positioning,
             "owned_domains": [
                 {
-                    "domain": "学习功能页 / 进阶课",
+                    "domain": "学习功能页 / 功能入口",
                     "status": "planned",
                     "note": "净新增落点",
                     "citations": ["cit_1"],
@@ -89,7 +89,7 @@ async def test_adraft_creates_ai_draft_row(repository: Repository) -> None:
     assert charter.positioning == "C 端学生移动 H5 学习应用集"
     assert charter.owned_domains == [
         {
-            "domain": "学习功能页 / 进阶课",
+            "domain": "学习功能页 / 功能入口",
             "status": "planned",
             "note": "净新增落点",
             "citations": ["cit_1"],

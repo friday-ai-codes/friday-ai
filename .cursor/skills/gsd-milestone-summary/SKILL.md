@@ -35,7 +35,7 @@ Output: MILESTONE_SUMMARY written to `.planning/reports/`, presented inline, opt
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/milestone-summary.md
+@./.cursor/gsd-core/workflows/milestone-summary.md
 </execution_context>
 
 <context>

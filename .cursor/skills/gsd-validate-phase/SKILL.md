@@ -37,7 +37,7 @@ Output: updated VALIDATION.md + generated test files.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/validate-phase.md
+@./.cursor/gsd-core/workflows/validate-phase.md
 </execution_context>
 
 <context>

@@ -16,8 +16,8 @@ This is a launcher/router only. It never does the work itself. It reads project 
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/smart-entry.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/ui-brand.md
+@./.claude/gsd-core/workflows/smart-entry.md
+@./.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>
@@ -25,5 +25,5 @@ Arguments: $ARGUMENTS
 </context>
 
 <process>
-Follow /Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/smart-entry.md. Detect the situation, present the menu, and dispatch exactly one command. Then stop.
+Follow ./.claude/gsd-core/workflows/smart-entry.md. Detect the situation, present the menu, and dispatch exactly one command. Then stop.
 </process>

@@ -32,7 +32,7 @@ Display comprehensive project statistics including phase progress, plan executio
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/stats.md
+@./.cursor/gsd-core/workflows/stats.md
 </execution_context>
 
 <process>

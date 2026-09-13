@@ -39,7 +39,7 @@ Routes to the settings workflow which handles:
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/settings.md
+@./.cursor/gsd-core/workflows/settings.md
 </execution_context>
 
 <process>

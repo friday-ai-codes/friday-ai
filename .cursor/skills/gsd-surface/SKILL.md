@@ -28,9 +28,9 @@ When the workflow needs to spawn a subagent:
 </cursor_skill_adapter>
 
 <objective>
-Manage the runtime skill surface without reinstall. Reads/writes `/Users/example/Projects/open-source/friday-ai/.cursor/.gsd-surface.json`
-(sibling to `/Users/example/Projects/open-source/friday-ai/.cursor/.gsd-profile`) and re-stages the active skills directory in place.
-Skill dirs live at `/Users/example/Projects/open-source/friday-ai/.cursor/skills/gsd-*/`.
+Manage the runtime skill surface without reinstall. Reads/writes `./.cursor/.gsd-surface.json`
+(sibling to `./.cursor/.gsd-profile`) and re-stages the active skills directory in place.
+Skill dirs live at `./.cursor/skills/gsd-*/`.
 
 Sub-commands: list · status · profile · disable · enable · reset
 </objective>
@@ -134,11 +134,11 @@ Valid cluster names: `core_loop`, `audit_review`, `milestone`, `research_ideate`
 ## runtimeConfigDir resolution
 
 The `runtimeConfigDir` for `applySurface` is the **base Claude config directory**
-(`~/.claude`), NOT the skills sub-directory (`/Users/example/Projects/open-source/friday-ai/.cursor/skills`).
+(`~/.claude`), NOT the skills sub-directory (`./.cursor/skills`).
 
 This matches `installRuntimeArtifacts` and `uninstallRuntimeArtifacts`, which also
 receive `~/.claude` as `configDir`. The skill dirs themselves live at
-`/Users/example/Projects/open-source/friday-ai/.cursor/skills/gsd-*/` because the `claude global` layout has `destSubpath =
+`./.cursor/skills/gsd-*/` because the `claude global` layout has `destSubpath =
 'skills'` — they are derived from `configDir`, not the root for it.
 
 ```bash
@@ -152,7 +152,7 @@ SCOPE="global"
 ```
 
 Surface state is stored at `${RUNTIME_CONFIG_DIR}/.gsd-surface.json`
-(i.e. `/Users/example/Projects/open-source/friday-ai/.cursor/.gsd-surface.json`).
+(i.e. `./.cursor/.gsd-surface.json`).
 
 All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 
@@ -165,9 +165,9 @@ All paths can be overridden by reading the `CLAUDE_CONFIG_DIR` env var if set.
 - Missing `surface.cjs` → prompt: "Run `npm i -g gsd-core` to reinstall GSD."
 
 <execution_context>
-Surface state file: `/Users/example/Projects/open-source/friday-ai/.cursor/.gsd-surface.json`
-Install profile marker: `/Users/example/Projects/open-source/friday-ai/.cursor/.gsd-profile`
-Skill dirs: `/Users/example/Projects/open-source/friday-ai/.cursor/skills/gsd-*/`
-Engine module: `/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/bin/lib/surface.cjs`
-Cluster definitions: `/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/bin/lib/clusters.cjs`
+Surface state file: `./.cursor/.gsd-surface.json`
+Install profile marker: `./.cursor/.gsd-profile`
+Skill dirs: `./.cursor/skills/gsd-*/`
+Engine module: `./.cursor/gsd-core/bin/lib/surface.cjs`
+Cluster definitions: `./.cursor/gsd-core/bin/lib/clusters.cjs`
 </execution_context>

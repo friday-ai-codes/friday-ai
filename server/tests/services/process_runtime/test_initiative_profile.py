@@ -20,12 +20,12 @@ def _feature_list_with_summaries() -> dict:
     return {
         "modules": [
             {
-                "name": "提效看板",
+                "name": "优化看板",
                 "summary": "示例功能专项的看板与任务流转总览",
                 "features": [
                     {
                         "name": "任务分发",
-                        "description": "按班级分发提效任务",
+                        "description": "按班级分发优化任务",
                         "acceptance": ["给定班级列表，当分发时，则每人收到任务"],
                     }
                 ],
@@ -34,8 +34,8 @@ def _feature_list_with_summaries() -> dict:
         "features_flat": [
             {
                 "name": "任务分发",
-                "description": "按班级分发提效任务",
-                "module": "提效看板",
+                "description": "按班级分发优化任务",
+                "module": "优化看板",
                 "acceptance": ["给定班级列表，当分发时，则每人收到任务"],
             }
         ],
@@ -76,7 +76,7 @@ def test_select_profile_corpus_includes_summary_excludes_acceptance():
     corpus = select_profile_corpus(_feature_list_with_summaries())
     joined = "\n".join(corpus.texts)
     assert "示例功能专项的看板与任务流转总览" in joined
-    assert "按班级分发提效任务" in joined
+    assert "按班级分发优化任务" in joined
     assert "教师发布" in joined
     assert "给定班级列表" not in joined
     assert corpus.sufficient is True

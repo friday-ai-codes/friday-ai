@@ -3,7 +3,7 @@
 守六件事：
 
 1. **示例功能专项机制**：`sample_service_service` 靠章程 `owned_domains(status=planned)` 进候选
-   （`router_base == 0.0`、`charter_match > 0`）——不因能力树无进阶节点被淘汰。
+   （`router_base == 0.0`、`charter_match > 0`）——不因能力树无功能节点被淘汰。
 2. **禁区降权**：命中 `boundaries` 的候选 `charter_match < 0`，同 `router_base` 下总分更低。
 3. **禁区候选必须有显式理由（SC2 后半）**：三种上游情形（router 有 reasoning / 靠单次
    sanity-check LLM 补 / LLM 不可得）各断言一次，外加「有理由 或 有标记」总不变量。
@@ -36,7 +36,7 @@ _EMIT = "delivery.services.convergence_session_service.ConvergenceSessionService
 _ARESOLVE = "services.provider_config.ProviderConfigService.aresolve"
 _BUILD = "agents.llm_factory.build_chat_model"
 
-_GOAL = "高阶学员可从进阶课入口进入专项学习页完成学习并开始专项练习。"
+_GOAL = "目标用户可从功能入口进入专项学习页完成学习并开始专项练习。"
 _TOP_LEVEL_KEYS = {
     "router_version",
     "auto_selected",
@@ -235,9 +235,9 @@ async def test_charter_planned_team_owner_remains_candidate() -> None:
     supplement = await _make_repo("sample_service_service")
     await _make_charter(
         supplement,
-        owned_domains=[{"domain": "功能/流程优化", "status": "planned", "citations": ["cit_x"]}],
+        owned_domains=[{"domain": "功能/学习优化", "status": "planned", "citations": ["cit_x"]}],
     )
-    # 能力树里没有进阶节点 → 路由器不返回 sample_service_service
+    # 能力树里没有功能节点 → 路由器不返回 sample_service_service
     router = _router([_rv2_candidate(str(routed.id), "sample_course_service", 0.85)])
 
     result = await _adapter(router).route(session)
@@ -246,7 +246,7 @@ async def test_charter_planned_team_owner_remains_candidate() -> None:
     assert str(supplement.id) in by_id, "章程 owned(planned) 命中的仓必须被补入候选"
     entered = by_id[str(supplement.id)]
     assert entered["breakdown"]["charter_match"] > 0
-    assert {"domain": "功能/流程优化", "status": "planned"} in entered["evidence"][
+    assert {"domain": "功能/学习优化", "status": "planned"} in entered["evidence"][
         "matched_domains"
     ]
     assert entered["role_suggestion"] == "candidate"
@@ -258,7 +258,7 @@ async def test_charter_supplement_produces_repo_charter_citation() -> None:
     session = await _make_session(_spec(_GREENFIELD_POINTS))
     supplement = await _make_repo("sample_service_service")
     await _make_charter(
-        supplement, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}]
+        supplement, owned_domains=[{"domain": "功能/学习优化", "status": "planned"}]
     )
     router = _router([])
 
@@ -267,7 +267,7 @@ async def test_charter_supplement_produces_repo_charter_citation() -> None:
     charter_citations = [c for c in result["citations"] if c["source_type"] == "repo_charter"]
     assert charter_citations
     assert charter_citations[0]["source_id"] == str(supplement.id)
-    assert charter_citations[0]["locator"] == {"domain": "功能/流程优化"}
+    assert charter_citations[0]["locator"] == {"domain": "功能/学习优化"}
 
 
 async def test_charter_component_fully_explains_ranking_difference() -> None:
@@ -497,7 +497,7 @@ async def test_route_confidence_and_charter_do_not_decide_role() -> None:
     charter_owned = await _make_repo("sample_service_service")
     plain = await _make_repo("sample_practice_service")
     await _make_charter(
-        charter_owned, owned_domains=[{"domain": "功能/流程优化", "status": "planned"}]
+        charter_owned, owned_domains=[{"domain": "功能/学习优化", "status": "planned"}]
     )
     router = _router(
         [
@@ -538,7 +538,7 @@ async def test_route_context_preserves_provenance_without_hardening_references()
         stage_state={
             "decomposition": {
                 "feature_meta": {
-                    "prd": "高阶专项",
+                    "prd": "目标专项",
                     "test_cases": ["完成课程后可练习"],
                     "access_token": "must-not-enter-routing",
                     "client_secret": "must-not-enter-routing",
@@ -560,7 +560,7 @@ async def test_intent_recorded_from_feature_points() -> None:
     session = await _make_session(
         _spec(
             [
-                _point("fp_01", "进阶课入口改造", "brownfield", "改造既有进阶课占位入口。"),
+                _point("fp_01", "功能入口改造", "brownfield", "改造既有功能入口占位入口。"),
                 _point("fp_02", "专项学习页", "greenfield", "新增专项学习页。"),
             ]
         )

@@ -704,7 +704,7 @@ function durationBetween(from: string, to: string): number | null {
  * 有效活跃耗时：相邻事件间隔 ≤ `pauseThresholdMs` 才计入，更大间隔视为暂停
  * （等人澄清 / 跨夜挂起 / 会话失败后人工恢复）。
  *
- * ⭐ 首末墙钟差会把「等了 1 天」算进阶段耗时（实测把各仓方案显示成 1621m）。
+ * ⭐ 首末墙钟差会把「等了 1 天」算功能段耗时（实测把各仓方案显示成 1621m）。
  * 活跃耗时只累加连续工作片段，暂停不计入。
  */
 export const STAGE_ACTIVE_PAUSE_THRESHOLD_MS = 30 * 60 * 1000

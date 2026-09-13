@@ -38,13 +38,13 @@ Mode routing:
 </routing>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/add-todo.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/note.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/add-backlog.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/plant-seed.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/check-todos.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/list-seeds.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/ui-brand.md
+@./.claude/gsd-core/workflows/add-todo.md
+@./.claude/gsd-core/workflows/note.md
+@./.claude/gsd-core/workflows/add-backlog.md
+@./.claude/gsd-core/workflows/plant-seed.md
+@./.claude/gsd-core/workflows/check-todos.md
+@./.claude/gsd-core/workflows/list-seeds.md
+@./.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

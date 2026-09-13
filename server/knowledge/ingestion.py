@@ -578,7 +578,7 @@ def _persist_sync(event: IngestionEvent, chunks: list[KnowledgeChunk]) -> _Persi
                 vector_synced = False
             else:
                 # 元数据-only 登记：无向量点、无章节树；vector_synced=True 使重触发走
-                # skipped 短路（天然幂等），且不进阶段 C upsert。
+                # skipped 短路（天然幂等），且不功能段 C upsert。
                 point_ids = []
                 toc_tree = []
                 vector_synced = True

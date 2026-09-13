@@ -122,7 +122,7 @@ team_gate pass (team_core, optional adjacent stubs)
 ## Out of Scope
 - Placement units / RepoRouterV2 细 primary 编排 → 130
 - GATE/REFL → 131
-- 高阶四基线回归 → 132
+- 目标四基线回归 → 132
 - 近 90d commit 混合活跃度 → 不做
 
 ## Package Legitimacy

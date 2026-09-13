@@ -32,7 +32,7 @@ Extract structured learnings from completed phase artifacts (PLAN.md, SUMMARY.md
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/extract-learnings.md
+@./.cursor/gsd-core/workflows/extract-learnings.md
 </execution_context>
 
-Execute the extract-learnings workflow from @/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/extract-learnings.md end-to-end.
+Execute the extract-learnings workflow from @./.cursor/gsd-core/workflows/extract-learnings.md end-to-end.

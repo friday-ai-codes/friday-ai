@@ -37,9 +37,9 @@ Three modes:
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/undo.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/gate-prompts.md
+@./.cursor/gsd-core/workflows/undo.md
+@./.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/references/gate-prompts.md
 </execution_context>
 
 <context>

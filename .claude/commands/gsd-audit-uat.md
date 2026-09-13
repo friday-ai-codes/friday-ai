@@ -12,7 +12,7 @@ Scan all phases for pending, skipped, blocked, and human_needed UAT items. Cross
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/audit-uat.md
+@./.claude/gsd-core/workflows/audit-uat.md
 </execution_context>
 
 <context>

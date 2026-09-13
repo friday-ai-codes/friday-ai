@@ -20,7 +20,7 @@ planning via /gsd-plan-phase --reviews.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/review.md
+@./.claude/gsd-core/workflows/review.md
 </execution_context>
 
 <context>

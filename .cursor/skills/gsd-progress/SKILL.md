@@ -46,10 +46,10 @@ Three modes:
 </flags>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/progress.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/next.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/do.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/workflows/progress.md
+@./.cursor/gsd-core/workflows/next.md
+@./.cursor/gsd-core/workflows/do.md
+@./.cursor/gsd-core/references/ui-brand.md
 </execution_context>
 
 <process>

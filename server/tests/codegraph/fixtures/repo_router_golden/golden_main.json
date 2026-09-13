@@ -2,7 +2,7 @@
   {
     "id": "gk-001-sample_service-tifen",
     "_notice": "真实事故用例（会话 sess-example-01 场景合成重写，待人工补充生产原文）：sample_web（62 子应用 monorepo）以命中广度碾压 sample_service_service。Phase 105 baseline 下 Top-1 为 sample_web（尺寸偏置未修）；Phase 106 已按 pivoted normalization 翻转（106-08）：Top-1 = sample_service_service，机制断言见 test_gk001_mechanism_*。repo_meta 数值依据 ROUTING-RANKING §2.4：N_r(sample_web)=620、N_r(sample_service_service)=30、n_bar=60；dense_cos_max 编码「6 个中等命中 vs 1 个 top 命中」（0.52 vs 0.62）。",
-    "query": "示例功能专项：面向高阶学生上线示例专项训练——前端学习产品新增专项入口与训练流程，联动课程内容服务与用户学情状态",
+    "query": "示例功能专项：面向目标用户上线示例专项训练——前端学习产品新增专项入口与训练流程，联动课程内容服务与用户学情状态",
     "label_source": "human",
     "cross_group": false,
     "expected_repos": ["sample_service_service", "sample_course_service", "sample_user_service"],

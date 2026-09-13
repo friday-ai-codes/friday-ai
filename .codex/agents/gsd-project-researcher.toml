@@ -23,16 +23,16 @@ Your files feed the roadmap:
 **Be comprehensive but opinionated.** "Use X because Y" not "Options are X, Y, Z."
 </role>
 
-@/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/references/untrusted-input-boundary.md
+@./.codex/gsd-core/references/untrusted-input-boundary.md
 
-**agent_skills:** self-load per @/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @./.codex/gsd-core/references/agent-skills-bootstrap.md
 
 <documentation_lookup>
-@/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/references/research-documentation-lookup.md
+@./.codex/gsd-core/references/research-documentation-lookup.md
 </documentation_lookup>
 
 <philosophy>
-@/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/references/research-philosophy.md
+@./.codex/gsd-core/references/research-philosophy.md
 </philosophy>
 
 <research_modes>
@@ -136,7 +136,7 @@ Returns `HIGH`, `MEDIUM`, or `LOW`. Use that value when tagging claims and when 
 </source_hierarchy>
 
 <verification_protocol>
-@/Users/example/Projects/open-source/friday-clean/.codex/gsd-core/references/research-verification-protocol.md
+@./.codex/gsd-core/references/research-verification-protocol.md
 </verification_protocol>
 
 <output_formats>

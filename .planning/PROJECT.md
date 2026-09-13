@@ -341,11 +341,11 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 **Backlog 候选（后续里程碑）：**
 
-- 项目进阶（v2 PROJX）：UI 稿多模态/figma 正文召回、结构化记忆 + 时效降权 + 矛盾消解、记忆全自动提炼（无人工确认）、Cursor 专用插件/hook 主动采集、项目级看板可视/燃尽/进度
+- 项目功能（v2 PROJX）：UI 稿多模态/figma 正文召回、结构化记忆 + 时效降权 + 矛盾消解、记忆全自动提炼（无人工确认）、Cursor 专用插件/hook 主动采集、项目级看板可视/燃尽/进度
 
-- 开放进阶（v2 OPENX）：标准双向 `tool_calls`（客户端自带工具回传执行）、Anthropic 端点工具/多模态 content block 全量对齐、飞书卡片交互组件/多卡片编排
-- 审计进阶（v2 AUDITX）：密码学级防篡改（hash chain / WORM）、实时告警 / SIEM / webhook 外发、审计保留/归档/自动清理策略
-- SDD 进阶（v2 SDDX）：openspec spec 内容 lint 深度校验、spec↔代码双向 drift 检测、非 openspec 的其他 SDD 框架适配
+- 开放功能（v2 OPENX）：标准双向 `tool_calls`（客户端自带工具回传执行）、Anthropic 端点工具/多模态 content block 全量对齐、飞书卡片交互组件/多卡片编排
+- 审计功能（v2 AUDITX）：密码学级防篡改（hash chain / WORM）、实时告警 / SIEM / webhook 外发、审计保留/归档/自动清理策略
+- SDD 功能（v2 SDDX）：openspec spec 内容 lint 深度校验、spec↔代码双向 drift 检测、非 openspec 的其他 SDD 框架适配
 - 编码中全自动 replan/回溯（v0.8 已用「抛 question 给人」HITL-01 过渡，全自动留后续）
 - chat 编码入口（`coding_session_service`）的跨仓 PR cross-ref / 遇阻 HITL 接线收尾（v0.8 优先 workflow wave 入口，helper 入口无关已就绪以便复用）
 - 多仓 wave 编码 / PR / HITL 的真实 runner+Docker 容器端到端验收（需真实环境）；Phase 26 遗留 `test_batch_pr.py` 5 例 stale patch target 修复
@@ -411,7 +411,7 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 | Cursor/Claude 双宿主官方事件配对；禁止把 Claude Stop 脚本拷到 Cursor | 宿主事件模型不同；避免 CoT / 错配 | ✓ Validated（v0.25.0） |
 | 仓库路由用分阶段决策漏斗，不推倒 `RepoRouterV2`（降为 shortlist 内细排） | feature list 场景需可解释门禁；V2 全库相似度会漂到语义巧合仓 | ✓ Validated（v0.23.0） |
 | D1/D3：蓝图/项目硬门禁；无团队 → clarify，禁止静默全库 primary | 避免 out_of_team / 无 Space 时裸路由 | ✓ Validated（v0.23.0） |
-| D2：高阶四基线角色级 primary 覆盖 + out_of_team=0（合成宇宙自动化） | 客观回归锚点；live_space 默认 skip 记 tech_debt | ✓ Validated（v0.23.0，合成）；真 Space抽验 deferred |
+| D2：目标四基线角色级 primary 覆盖 + out_of_team=0（合成宇宙自动化） | 客观回归锚点；live_space 默认 skip 记 tech_debt | ✓ Validated（v0.23.0，合成）；真 Space抽验 deferred |
 | D4：发布确认门独占 `auto_selected` | P0 未确认不可下游开工 | ✓ Validated（v0.23.0） |
 | D5：固定四角色枚举映射章程（主/辅/禁） | 放置默认约束可机读 | ✓ Validated（v0.23.0） |
 | 用"首次访问设置向导"替代启动期自动建管理员 | 自动建号的随机密码只在日志，用户进不去；让用户自设账号即时可用 | ✓ Validated（v0.1.0） |

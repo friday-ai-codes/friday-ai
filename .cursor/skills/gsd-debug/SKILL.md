@@ -45,7 +45,7 @@ Valid GSD subagent types (use exact names — do not fall back to 'general-purpo
 </available_agent_types>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/debug.md
+@./.cursor/gsd-core/workflows/debug.md
 </execution_context>
 
 <context>

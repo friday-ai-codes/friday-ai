@@ -43,11 +43,11 @@ Brownfield equivalent of new-project. Project exists, PROJECT.md has history. Ga
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/new-milestone.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/questioning.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ui-brand.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/project.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/requirements.md
+@./.cursor/gsd-core/workflows/new-milestone.md
+@./.cursor/gsd-core/references/questioning.md
+@./.cursor/gsd-core/references/ui-brand.md
+@./.cursor/gsd-core/templates/project.md
+@./.cursor/gsd-core/templates/requirements.md
 </execution_context>
 
 <context>

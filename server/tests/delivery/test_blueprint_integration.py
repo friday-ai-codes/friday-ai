@@ -169,7 +169,7 @@ async def test_add_version_block_diff_hits_exactly_changed_block() -> None:
 
     v2_content = copy.deepcopy(case["blueprint"])
     changed_block = v2_content["current_state_analysis"][0]["findings"][0]["text"][0]
-    changed_block["text"] = "进阶课占位入口已确认改造为示例功能专项入口（修订轮补充实证）。"
+    changed_block["text"] = "功能入口占位入口已确认改造为示例功能专项入口（修订轮补充实证）。"
     v2 = await ArtifactService().add_version(artifact, v2_content)
     assert v2.version_no == 2
     assert v2.supersedes_id == v1.id

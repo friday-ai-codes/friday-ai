@@ -19,8 +19,8 @@ Produces EVAL-REVIEW.md with score, verdict, gaps, and remediation plan.
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/eval-review.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/ai-evals.md
+@./.claude/gsd-core/workflows/eval-review.md
+@./.claude/gsd-core/references/ai-evals.md
 </execution_context>
 
 <context>

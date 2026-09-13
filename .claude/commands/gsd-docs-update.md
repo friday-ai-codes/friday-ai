@@ -26,7 +26,7 @@ Flag handling rule:
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/docs-update.md
+@./.claude/gsd-core/workflows/docs-update.md
 </execution_context>
 
 <context>

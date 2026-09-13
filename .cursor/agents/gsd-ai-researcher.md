@@ -33,7 +33,7 @@ works via Bash and produces equivalent output.
 </documentation_lookup>
 
 <required_reading>
-Read `/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/references/ai-frameworks.md` for framework profiles and known pitfalls before fetching docs.
+Read `./.cursor/gsd-core/references/ai-frameworks.md` for framework profiles and known pitfalls before fetching docs.
 </required_reading>
 
 <input>

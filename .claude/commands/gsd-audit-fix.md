@@ -26,7 +26,7 @@ Flags:
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/audit-fix.md
+@./.claude/gsd-core/workflows/audit-fix.md
 </execution_context>
 
 <process>

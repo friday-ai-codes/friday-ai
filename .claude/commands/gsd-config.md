@@ -32,9 +32,9 @@ Mode routing:
 </routing>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/settings.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/settings-advanced.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/settings-integrations.md
+@./.claude/gsd-core/workflows/settings.md
+@./.claude/gsd-core/workflows/settings-advanced.md
+@./.claude/gsd-core/workflows/settings-integrations.md
 </execution_context>
 
 <context>

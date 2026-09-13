@@ -21,8 +21,8 @@ Flow: Validate → Research UI → Verify UI-SPEC → Done
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/workflows/ui-phase.md
-@/Users/example/Projects/open-source/friday-clean/.claude/gsd-core/references/ui-brand.md
+@./.claude/gsd-core/workflows/ui-phase.md
+@./.claude/gsd-core/references/ui-brand.md
 </execution_context>
 
 <context>

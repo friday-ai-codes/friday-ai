@@ -154,7 +154,7 @@ async def test_record_answer_advances_to_answered_and_appends_message() -> None:
     )
 
     message = await service.record_answer(
-        thread, body="高阶学生", author=user, initiated_by_user_id=str(user.id)
+        thread, body="目标用户", author=user, initiated_by_user_id=str(user.id)
     )
 
     assert message.author_type == ThreadAuthorType.HUMAN

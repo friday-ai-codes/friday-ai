@@ -44,8 +44,8 @@ Clarify phase requirements through structured Socratic questioning with quantita
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/spec-phase.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/spec.md
+@./.cursor/gsd-core/workflows/spec-phase.md
+@./.cursor/gsd-core/templates/spec.md
 </execution_context>
 
 <runtime_note>

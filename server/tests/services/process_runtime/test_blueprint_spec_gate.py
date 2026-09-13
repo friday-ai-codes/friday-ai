@@ -70,7 +70,7 @@ def _scores(score: float, questions: list[dict[str, Any]] | None = None) -> dict
         else [
             {
                 "text": "目标用户是谁？",
-                "options": ["高阶学生", "初三学生"],
+                "options": ["目标用户", "初三学生"],
                 "citations": ["cit_repo_file"],
             }
         ],
@@ -150,7 +150,7 @@ async def test_high_score_opens_blocking_thread_with_options() -> None:
     assert thread.kind == ThreadKind.AI_CLARIFICATION
     assert thread.blocking is True
     assert thread.status == ThreadStatus.OPEN
-    assert thread.options[0]["options"] == ["高阶学生", "初三学生"]
+    assert thread.options[0]["options"] == ["目标用户", "初三学生"]
     assert thread.options[0]["citations"] == ["cit_repo_file"]
 
 
@@ -182,7 +182,7 @@ async def test_already_answered_question_is_not_asked_again() -> None:
     thread = await lifecycle.open_thread(
         artifact, kind=ThreadKind.AI_CLARIFICATION, blocking=True, question="目标用户是谁？"
     )
-    await lifecycle.record_answer(thread, body="高阶学生")
+    await lifecycle.record_answer(thread, body="目标用户")
     await lifecycle.resolve_thread(thread)
     session = await _make_session(artifact)
     scorer = AsyncMock(return_value=_scores(0.9))
@@ -207,13 +207,13 @@ async def test_prior_answers_feed_back_into_scoring_prompt() -> None:
     thread = await lifecycle.open_thread(
         artifact, kind=ThreadKind.AI_CLARIFICATION, blocking=True, question="目标用户是谁？"
     )
-    await lifecycle.record_answer(thread, body="高阶学生")
+    await lifecycle.record_answer(thread, body="目标用户")
     session = await _make_session(artifact)
     scorer = AsyncMock(return_value=_scores(0.05, questions=[]))
 
     await _adapter(scorer=scorer).run(session)
 
-    assert "高阶学生" in scorer.await_args.kwargs["prior_context"]
+    assert "目标用户" in scorer.await_args.kwargs["prior_context"]
 
 
 # ---- fail-closed：scorer 不可得 ----
@@ -275,7 +275,7 @@ async def test_two_consecutive_unavailable_rounds_stay_blocked() -> None:
 
     lifecycle = BlueprintLifecycleService()
     thread = await BlueprintThread.objects.aget(id=first["thread_id"])
-    await lifecycle.record_answer(thread, body="目标是提效，范围只做练习页")
+    await lifecycle.record_answer(thread, body="目标是优化，范围只做练习页")
     session.stage_state = first["stage_state"]
 
     second = await adapter.run(session)
@@ -294,7 +294,7 @@ async def test_max_ambiguity_never_releases_even_with_available_scorer() -> None
     thread = await lifecycle.open_thread(
         artifact, kind=ThreadKind.AI_CLARIFICATION, blocking=True, question="目标用户是谁？"
     )
-    await lifecycle.record_answer(thread, body="高阶学生")
+    await lifecycle.record_answer(thread, body="目标用户")
     await lifecycle.resolve_thread(thread)
     session = await _make_session(artifact)
 
@@ -385,7 +385,7 @@ async def test_decision_log_not_duplicated_across_runs() -> None:
     thread = await lifecycle.open_thread(
         artifact, kind=ThreadKind.AI_CLARIFICATION, blocking=True, question="目标用户是谁？"
     )
-    await lifecycle.record_answer(thread, body="高阶学生")
+    await lifecycle.record_answer(thread, body="目标用户")
     await lifecycle.resolve_thread(thread)
     session = await _make_session(artifact)
     adapter = _adapter(scorer=AsyncMock(return_value=_scores(0.05, questions=[])))

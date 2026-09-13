@@ -367,11 +367,11 @@ This annotation is consumed by downstream workflows (`new-project`, `progress`) 
 | 2. Name | 0/2 | Not started | - |
 ```
 
-Reference full template: `/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/roadmap.md`
+Reference full template: `./.cursor/gsd-core/templates/roadmap.md`
 
 ## STATE.md Structure
 
-Use template from `/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/state.md`.
+Use template from `./.cursor/gsd-core/templates/state.md`.
 
 Key sections:
 - Project Reference (core value, current focus)
