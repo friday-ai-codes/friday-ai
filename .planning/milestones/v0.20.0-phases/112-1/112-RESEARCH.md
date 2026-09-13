@@ -9,7 +9,7 @@
 本文档**只覆盖 4 个编排面主题**：stage graph 契约、`ProcessEngine.advance` 契约、`blueprint_schema` 加必填 `intent` 的影响面、`SystemSetting` 键注册与读取。
 analog 模块结构要点（`research_adapter` / `decompose_segments` / `repo_router_v2` 的内部范式）已由 `112-PATTERNS.md` 覆盖，**本文不重复**。
 
-所有路径相对 worktree 根 `/Users/example/Projects/open-source/friday-clean/.claude/worktrees/v0.20-blueprint`。
+所有路径相对 worktree 根 `/home/user/Projects/open-source/friday-clean/.claude/worktrees/v0.20-blueprint`。
 
 <user_constraints>
 ## User Constraints (from CONTEXT.md)

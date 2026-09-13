@@ -47,8 +47,8 @@ Output: 10 个前端文件的文案/校验消息修改，前端测试通过。
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/execute-plan.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/summary.md
+@/path/to/friday-ai/.cursor/gsd-core/workflows/execute-plan.md
+@/path/to/friday-ai/.cursor/gsd-core/templates/summary.md
 </execution_context>
 
 <context>

@@ -71,8 +71,8 @@ Output: prompts `0011` data migration + `builtin_contract` 单一来源 + `check
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.cursor/gsd-core/workflows/execute-plan.md
-@/Users/example/Projects/open-source/friday-clean/.cursor/gsd-core/templates/summary.md
+@/home/user/Projects/open-source/friday-clean/.cursor/gsd-core/workflows/execute-plan.md
+@/home/user/Projects/open-source/friday-clean/.cursor/gsd-core/templates/summary.md
 </execution_context>
 
 <context>

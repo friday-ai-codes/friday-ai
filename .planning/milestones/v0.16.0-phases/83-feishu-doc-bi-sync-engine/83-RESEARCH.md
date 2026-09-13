@@ -4,7 +4,7 @@
 **Domain:** 飞书 docx 双向同步（事件订阅 + 回拉 + block 级增量写 + block_id 结构化匹配 + 三方合并 + durable 串行队列 + 缓存 + 兜底轮询）
 **Confidence:** MEDIUM（代码地基与既有模式 HIGH 可信、已 grep 验证；飞书具体 API 请求体/事件结构需 live-Feishu UAT，标注为 ASSUMED/MEDIUM）
 
-> 说明：GSD 工件文案可能写 "friday-ai"，本仓真实根为 `/Users/example/Projects/open-source/friday-clean`，全部以 friday-clean 为准。
+> 说明：GSD 工件文案可能写 "friday-ai"，本仓真实根为 `/home/user/Projects/open-source/friday-clean`，全部以 friday-clean 为准。
 
 ---
 

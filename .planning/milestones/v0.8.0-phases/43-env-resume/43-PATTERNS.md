@@ -346,7 +346,7 @@ _PATCHES = (
 - **幂等 + fail-soft 已现成**：`amaybe_complete_research` status guard + `aall_research_tasks_terminal` 在途短路 + `BarrierManager.task_completed` 去重 + 独立 try/except swallow，四重守护复用即可。
 
 ### File Created
-`/Users/example/Projects/open-source/friday-clean/.planning/phases/43-env-resume/43-PATTERNS.md`
+`/home/user/Projects/open-source/friday-clean/.planning/phases/43-env-resume/43-PATTERNS.md`
 
 ### Ready for Planning
 Pattern mapping complete. Planner 可在 PLAN.md 的 action 段直接引用上述 analog 行号与代码摘录（PF-06 逐键映射表 + RESUME-01 三步接线 + 共享 helper 抽取），无需重新检索。

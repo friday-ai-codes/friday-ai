@@ -85,8 +85,8 @@ Output: `intent_router` 枚举与分类器 + `feature_solution_dispatch` + graph
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.cursor/gsd-core/workflows/execute-plan.md
-@/Users/example/Projects/open-source/friday-clean/.cursor/gsd-core/templates/summary.md
+@/home/user/Projects/open-source/friday-clean/.cursor/gsd-core/workflows/execute-plan.md
+@/home/user/Projects/open-source/friday-clean/.cursor/gsd-core/templates/summary.md
 </execution_context>
 
 <context>

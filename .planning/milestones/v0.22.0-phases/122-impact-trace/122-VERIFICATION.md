@@ -95,7 +95,7 @@ deferred:
 | Phase 122 作用域回归 | 见下方 pytest 命令 | 45 passed in ~94s | ✓ PASS |
 
 ```bash
-cd /Users/example/Projects/open-source/friday-ai/server && \
+cd /path/to/friday-ai/server && \
 GALAXY_CACHE_WARM_ON_STARTUP=False GRAPH_BUILD_ORPHAN_RECONCILE_ON_STARTUP=False \
 uv run pytest \
   tests/services/code_graph/test_symbol_resolve.py \

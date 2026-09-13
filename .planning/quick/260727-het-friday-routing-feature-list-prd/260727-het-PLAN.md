@@ -66,8 +66,8 @@ Output: 1 个新技能目录（2 个文件）+ 7 处接入面同步 + friday-cod
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-clean/.cursor/gsd-core/workflows/execute-plan.md
-@/Users/example/Projects/open-source/friday-clean/.cursor/gsd-core/templates/summary.md
+@/home/user/Projects/open-source/friday-clean/.cursor/gsd-core/workflows/execute-plan.md
+@/home/user/Projects/open-source/friday-clean/.cursor/gsd-core/templates/summary.md
 </execution_context>
 
 <context>

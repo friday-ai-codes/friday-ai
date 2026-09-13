@@ -73,8 +73,8 @@ Output: schema+intake+route+confirm_gate 机制修复与单测；**禁止 git co
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/execute-plan.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/summary.md
+@/path/to/friday-ai/.cursor/gsd-core/workflows/execute-plan.md
+@/path/to/friday-ai/.cursor/gsd-core/templates/summary.md
 
 ⚠️ **git 纪律（NON-NEGOTIABLE）**
 - **禁止** `git commit` / `git add` / stage。只改本计划 `files_modified` 内文件；工作树另有无关 dirty，勿触碰。

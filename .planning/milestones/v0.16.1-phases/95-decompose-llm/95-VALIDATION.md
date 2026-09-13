@@ -41,7 +41,7 @@ created: 2026-06-28
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | Status |
 |---------|------|------|-------------|-----------|-------------------|--------|
 | 95-01-T1 | 95-01 | 1 | DECOMP-01 | unit (enum) | `cd server && uv run python -c "from agents.call_source import CallSource; assert CallSource.PLAN_DECOMPOSE.value=='plan_decompose'; assert len(list(CallSource))==32; print('ok')"` | ⬜ pending |
-| 95-01-T2 | 95-01 | 1 | DECOMP-01 | doc check | `cd /Users/example/Projects/open-source/friday-ai && grep -F '\| \`plan_decompose\` \|' .planning/observability/LOGGING-SPEC.md && grep -F '\| \`plan_clarification\` \|' .planning/observability/LOGGING-SPEC.md` | ⬜ pending |
+| 95-01-T2 | 95-01 | 1 | DECOMP-01 | doc check | `cd /path/to/friday-ai && grep -F '\| \`plan_decompose\` \|' .planning/observability/LOGGING-SPEC.md && grep -F '\| \`plan_clarification\` \|' .planning/observability/LOGGING-SPEC.md` | ⬜ pending |
 | 95-02-T1 | 95-02 | 2 | DECOMP-01 | unit (pure fns) | `cd server && uv run pytest tests/services/test_decompose_segments.py -x` | ⬜ pending |
 | 95-02-T2 | 95-02 | 2 | DECOMP-01 | unit (async/fail-soft) | `cd server && uv run pytest tests/services/test_decompose_segments.py -x` | ⬜ pending |
 | 95-03-T1 | 95-03 | 3 | DECOMP-01 | unit (engine wiring) | `cd server && uv run pytest tests/services/test_plan_orchestration_engine.py -x` | ⬜ pending |

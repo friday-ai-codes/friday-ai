@@ -64,7 +64,7 @@ dify 源码参考已 clone 到 `/tmp/dify-canvas/web/app/components/workflow/`�
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/execute-plan.md
+@/path/to/friday-ai/.cursor/gsd-core/workflows/execute-plan.md
 </execution_context>
 
 <constraints>

@@ -82,7 +82,7 @@ audit_acknowledged:
 **Verified:** 2026-07-30T02:05:00Z
 **Status:** human_needed
 **Re-verification:** 否 —— 首次验证
-**验证仓:** `/Users/example/Projects/open-source/friday-clean/.claude/worktrees/v0.19-plan-trust`（worktree），分支 `milestone/v0.19.0-plan-trust`
+**验证仓:** `/home/user/Projects/open-source/friday-clean/.claude/worktrees/v0.19-plan-trust`（worktree），分支 `milestone/v0.19.0-plan-trust`
 
 > 本报告不采信 SUMMARY.md 的自述。所有结论来自实读源码 + 实跑测试 + verifier 独立复算。
 

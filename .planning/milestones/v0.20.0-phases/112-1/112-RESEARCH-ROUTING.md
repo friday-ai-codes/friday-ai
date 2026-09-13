@@ -5,7 +5,7 @@
 **Confidence:** HIGH（全部事实来自本仓源码直读，带文件:行号）
 **Scope:** 仅 5 个指定主题 + Pitfalls。analog 结构要点见 `112-PATTERNS.md`，本文不重复。
 
-> 所有路径相对 worktree 根 `/Users/example/Projects/open-source/friday-clean/.claude/worktrees/v0.20-blueprint/`。
+> 所有路径相对 worktree 根 `/home/user/Projects/open-source/friday-clean/.claude/worktrees/v0.20-blueprint/`。
 
 ---
 

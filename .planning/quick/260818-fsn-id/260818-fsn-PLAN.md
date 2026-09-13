@@ -81,8 +81,8 @@ Output: 幂等 gate refresh + repair 命令 + progress API + 前端过程明细/
 </objective>
 
 <execution_context>
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/workflows/execute-plan.md
-@/Users/example/Projects/open-source/friday-ai/.cursor/gsd-core/templates/summary.md
+@/path/to/friday-ai/.cursor/gsd-core/workflows/execute-plan.md
+@/path/to/friday-ai/.cursor/gsd-core/templates/summary.md
 
 ⚠️ **git 纪律（NON-NEGOTIABLE）**
 - **禁止** `git commit` / `git add` / stage。只改本计划 `files_modified` 内文件；勿触碰无关在途改动。
@@ -155,7 +155,7 @@ Output: 幂等 gate refresh + repair 命令 + progress API + 前端过程明细/
   5. 观测：`blueprint_confirm_gate_refreshed` / `_noop` / `_failed`：kv 含 session_id/artifact_id/thread_id/repo_count/changed/duration_ms；禁止日志打印 options 全文或凭证。
   </action>
   <verify>
-    <automated>cd /Users/example/Projects/open-source/friday-ai/server && uv run pytest tests/services/process_runtime/test_blueprint_confirm_gate.py tests/services/process_runtime/test_blueprint_process_graph.py -q --tb=short -k "open_gate or refresh or resume_short or pending"</automated>
+    <automated>cd /path/to/friday-ai/server && uv run pytest tests/services/process_runtime/test_blueprint_confirm_gate.py tests/services/process_runtime/test_blueprint_process_graph.py -q --tb=short -k "open_gate or refresh or resume_short or pending"</automated>
   </verify>
   <done>
   重调研终态后确认门快照不再卡在 failed；repair 可对目标 artifact 执行；相关单测绿；无 git commit。
@@ -177,7 +177,7 @@ Output: 幂等 gate refresh + repair 命令 + progress API + 前端过程明细/
   3. 测试：空会话；有日志 cursor 递增；secrets 脱敏；noise 过滤；limit clamp；鉴权回归（复用 doc_views 既有 auth 表驱动风格）。
   </action>
   <verify>
-    <automated>cd /Users/example/Projects/open-source/friday-ai/server && uv run pytest tests/delivery/test_blueprint_doc_views.py -q --tb=short -k "research_progress or research_detail"</automated>
+    <automated>cd /path/to/friday-ai/server && uv run pytest tests/delivery/test_blueprint_doc_views.py -q --tb=short -k "research_progress or research_detail"</automated>
   </verify>
   <done>
   轻量 progress 端点可测且绿；research-detail 零回归；无 git commit。
@@ -202,7 +202,7 @@ Output: 幂等 gate refresh + repair 命令 + progress API + 前端过程明细/
   6. 单测：activity 隐藏字段 + 分组；stepper 分组 DOM；live composable 不请求 research-detail。
   </action>
   <verify>
-    <automated>cd /Users/example/Projects/open-source/friday-ai/web && pnpm exec vitest run src/utils/__tests__/blueprintActivity.spec.ts src/components/blueprint/__tests__/stageStepper.spec.ts src/composables/__tests__/useBlueprintLive.spec.ts --reporter=dot</automated>
+    <automated>cd /path/to/friday-ai/web && pnpm exec vitest run src/utils/__tests__/blueprintActivity.spec.ts src/components/blueprint/__tests__/stageStepper.spec.ts src/composables/__tests__/useBlueprintLive.spec.ts --reporter=dot</automated>
   </verify>
   <done>
   过程明细按仓可读、标题/摘要正确、隐藏字段生效、直播走轻量端点；抽屉保留；无 git commit。
