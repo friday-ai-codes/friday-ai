@@ -125,7 +125,7 @@ def test_stub_omits_token_stack_and_abs_paths() -> None:
     （Req: TAINT-03, 决策: D-09；威胁: T-127-01）
     """
     fake_token = "sgp_live_ABCDEFG1234567890secret"
-    abs_path = "/Users/example/Projects/secret/repo/src/a.py"
+    abs_path = "/path/to/secret/repo/src/a.py"
     # 即使传入脏 error_code，stub 也只保留稳定短码
     section = stub_security_scan_section(
         f"timeout token={fake_token} path={abs_path}\nTraceback (most recent call last):\n  File ..."

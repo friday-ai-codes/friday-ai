@@ -354,7 +354,7 @@ async def test_stub_omits_stack_and_secrets() -> None:
     from services.code_graph.impact_report import build_impact_report_section
 
     secret = "sk-live-ABCDEFG1234567890"
-    abs_path = "/Users/example/Projects/secret/repo/src/a.py"
+    abs_path = "/path/to/secret/repo/src/a.py"
     with capture_logs() as events:
         with mock.patch(
             "services.code_graph.impact_report.run_detect_changes",

@@ -114,11 +114,29 @@ class TestRedactSecretsInText:
             ("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", "eyJhbGciOiJIUzI1NiI"),
             # Friday Access Token 明文前缀也必须脱敏（与 sk-ant 并列）
             ("leaked friday_pat_ABCDEFGHIJKLMNOPQRSTUVWX token", "friday_pat_ABCD"),
+            # DB / 缓存连接串（含密码）必须整段脱敏
+            (
+                "OperationalError: connection to postgres://app:s3cr3t@10.0.0.1:5432/friday failed",
+                "s3cr3t",
+            ),
+            (
+                "redis://:cache-pass-xyz@127.0.0.1:6379/0 timeout",
+                "cache-pass-xyz",
+            ),
         ],
     )
     def test_redact_common_provider_keys(self, input_text: str, must_not_contain: str) -> None:
         result = redact_secrets_in_text(input_text)
         assert must_not_contain not in result
+        assert REDACTED in result
+
+    def test_redact_database_url_preserves_surrounding_text(self) -> None:
+        text = "connect failed: postgresql://user:p@ssw0rd@db.internal:5432/app retrying"
+        result = redact_secrets_in_text(text)
+        assert "p@ssw0rd" not in result
+        assert "postgresql://user:p@ssw0rd@db.internal:5432/app" not in result
+        assert result.startswith("connect failed: ")
+        assert result.endswith(" retrying")
         assert REDACTED in result
 
     def test_redact_pem_private_key(self) -> None:

@@ -46,6 +46,9 @@ SENSITIVE_VALUE_PATTERN = re.compile(
     r"|AIza[A-Za-z0-9_\-]{20,}"  # Google: AIza...
     r"|Bearer\s+[A-Za-z0-9._\-]{20,}"  # Bearer token
     r"|friday_pat_[A-Za-z0-9_\-]{20,}"  # Friday Access Token: friday_pat_... (implementation)
+    # DB / 缓存连接串：scheme://user:password@host — 整段替换，避免密码落日志
+    r"|(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqp|amqps)"
+    r"://[^\s\"']+"
     r"|-----BEGIN\s+(?:RSA\s+|EC\s+)?PRIVATE\s+KEY-----[\s\S]+?"
     r"-----END\s+(?:RSA\s+|EC\s+)?PRIVATE\s+KEY-----)"
 )
