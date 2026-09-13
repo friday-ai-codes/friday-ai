@@ -147,6 +147,7 @@ async def test_pull_conflict_capture_content_redacted(
     await _set_system_feishu_creds()
     doc = await project_doc_factory(doc_type=DocType.STATE, feishu_document_id="doxRED")
     # ours 含一段疑似密钥 → 入库应被脱敏（与 ProjectDocService.capture_block_revision 一致）。
+    # 分段构造测试 token，避免 GitHub Secret Scanning 将合成夹具误报为真实 OpenAI key。
     secret = "sk-" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcd"
     api = await _create_state_api(doc.project_id, "GET", f"/k/{secret}")
     rendered = f"GET /k/{secret} — planned"
