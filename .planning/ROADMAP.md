@@ -58,13 +58,15 @@
   2. 每个成功响应都有可按 `outputSchema` 校验的 `structuredContent`，失败可按稳定机器码处理而不解析中文文本。
   3. 契约生成 `--check` 在干净树无差异，且 CI 在 `mcp/` 缺失、删工具/字段、新增 required 或收窄 enum 时明确失败。
   4. Doctor 能准确报告 npm/client 与 server 的版本、manifest hash 和具体差异，且 `SERVER_VERSION` 与 `package.json` 一致。
-**Plans**: 4 plans
+**Plans**: 6 plans
 
 Plans:
 - [ ] 146-01-PLAN.md — 建立 canonical registry、完整 schema/manifest 与独立 compatibility baseline
-- [ ] 146-02-PLAN.md — 生成 URL/snapshot/npm catalog，并开放全部 55 个 stdio 工具
-- [ ] 146-03-PLAN.md — 统一 outputSchema、structuredContent 与稳定机器错误
-- [ ] 146-04-PLAN.md — 补齐 manifest doctor、版本、CI/publish 门禁与文档
+- [ ] 146-02-PLAN.md — 生成 canonical JSON/snapshot/TS catalog，并提供严格只读 `--check`
+- [ ] 146-03-PLAN.md — 切换 registry URL 与 npm 55-tool catalog，同时保留 handoff 工作
+- [ ] 146-04-PLAN.md — 统一 outputSchema、structuredContent 与稳定机器错误
+- [ ] 146-05-PLAN.md — 发布 manifest identity 并对齐 package version 与 doctor
+- [ ] 146-06-PLAN.md — 接入 CI/publish 硬门与版本钉扎文档
 
 ### Phase 147: 共享服务与安全边界
 **Goal**: REST 与 MCP 通过同一 canonical 应用服务安全读写蓝图，调用者无法伪造范围或从错误差异探测资源。
@@ -151,7 +153,7 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 146. 契约注册表与生成目录 | 0/4 | Planned | - |
+| 146. 契约注册表与生成目录 | 0/6 | Planned | - |
 | 147. 共享服务与安全边界 | 0/TBD | Not started | - |
 | 148. Operation 与幂等控制面 | 0/TBD | Not started | - |
 | 149. 全链状态、产物与诊断 | 0/TBD | Not started | - |
