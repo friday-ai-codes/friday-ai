@@ -32,6 +32,9 @@ vi.mock('~/composables/useErrorHandler', () => ({
 }))
 
 const ProviderSettings = (await import('~/components/providers/ProviderSettings.vue')).default
+const ProviderCredentialListTable = (
+  await import('~/components/providers/ProviderCredentialListTable.vue')
+).default
 
 function makeCred(overrides: Partial<ProviderCredentialDto> = {}): ProviderCredentialDto {
   return {
@@ -75,6 +78,7 @@ describe('providerSettings — Claude Code 凭证指针提示', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     sessionStorage.clear()
+    document.body.innerHTML = ''
     vi.clearAllMocks()
     listProviderTypesMock.mockResolvedValue([])
     listMock.mockResolvedValue([
@@ -106,5 +110,18 @@ describe('providerSettings — Claude Code 凭证指针提示', () => {
 
     expect(wrapper.findAll('tbody tr')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('Claude Code 使用中')
+  })
+
+  it('编辑非当前凭证时明示不会影响 Claude Code 编码容器', async () => {
+    const wrapper = mountSettings()
+    await flushPromises()
+    const table = wrapper.findComponent(ProviderCredentialListTable)
+
+    table.vm.$emit('edit', makeCred({ id: 'cred-a', name: 'anthropic-a' }))
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('Claude Code 编码容器当前使用的是')
+    expect(document.body.textContent).toContain('anthropic-b')
+    expect(document.body.textContent).toContain('改这里不会影响编码容器')
   })
 })

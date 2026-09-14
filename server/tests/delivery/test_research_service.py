@@ -7,8 +7,10 @@ retry 单仓隔离（RESEARCH-02）/ 非 failed retry raise / invalidate stale�
 from __future__ import annotations
 
 import uuid
+from io import StringIO
 
 import pytest
+from django.core.management import call_command
 
 from agents.models import AgentSession
 from delivery.models import (
@@ -509,6 +511,30 @@ async def test_reset_attempts_can_keep_failed_terminal() -> None:
     assert counts == {"reset": 1, "revived": 0}
     task = await RepoResearchTask.objects.aget(session=session)
     assert (task.status, task.attempt) == (RepoResearchTaskStatus.FAILED, 0)
+
+
+def test_reset_research_attempts_command_revives_failed_tasks() -> None:
+    """运维命令必须真正委托 service 清零预算并复活 failed 任务。"""
+    session = ConvergenceSession.objects.create(
+        process_type="technical_blueprint",
+        entrypoint=ConvergenceSessionEntrypoint.CHAT,
+        current_stage="repo_research",
+        status=ConvergenceSessionStatus.WAITING_EVENT,
+    )
+    repo = _make_repo()
+    task = RepoResearchTask.objects.create(
+        session=session,
+        repository=repo,
+        status=RepoResearchTaskStatus.FAILED,
+        attempt=2,
+    )
+    stdout = StringIO()
+
+    call_command("reset_research_attempts", session_id=str(session.id), stdout=stdout)
+
+    task.refresh_from_db()
+    assert (task.status, task.attempt) == (RepoResearchTaskStatus.PENDING, 0)
+    assert "reset=1 revived=1" in stdout.getvalue()
 
 
 async def _make_session_async() -> ConvergenceSession:

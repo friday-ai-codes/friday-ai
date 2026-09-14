@@ -371,6 +371,36 @@ def test_confirm_locks_associations_and_registers_reviewer(
     assert thread.status == ThreadStatus.RESOLVED
 
 
+def test_confirm_response_surfaces_machine_removed_repository_ids(
+    authenticated_client, user, monkeypatch
+) -> None:
+    """确认端点必须明示被机器自动移除的仓，不能只返回变小后的仓数量。"""
+    _stub_resume(monkeypatch)
+    artifact_id = uuid.uuid4()
+    removed_id = str(uuid.uuid4())
+    session = SimpleNamespace(id=uuid.uuid4())
+    monkeypatch.setattr(
+        "delivery.api.blueprint_gate_views._aapply_action",
+        AsyncMock(return_value=(None, {}, session)),
+    )
+    monkeypatch.setattr(
+        BlueprintConfirmGateAdapter,
+        "alock",
+        AsyncMock(
+            return_value={
+                "event": "confirmed",
+                "repo_count": 1,
+                "auto_removed_repository_ids": [removed_id],
+            }
+        ),
+    )
+
+    resp = authenticated_client.post(CONFIRM_URL.format(aid=artifact_id))
+
+    assert resp.status_code == 200
+    assert resp.json()["auto_removed_repository_ids"] == [removed_id]
+
+
 def test_confirm_after_add_repo_never_silently_drops_the_new_repo(
     authenticated_client, user, monkeypatch
 ) -> None:

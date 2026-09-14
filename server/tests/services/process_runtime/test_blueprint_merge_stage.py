@@ -866,6 +866,50 @@ def test_extract_ignored_support_aliases_requires_named_repo_and_exclusion_inten
     )
 
 
+async def test_merge_answer_records_ignored_support_alias_in_session_state():
+    """融合裁决作答的生产写入口必须把明确排除的协作仓落进会话状态。"""
+    from delivery.services.blueprint_answer_action import _arecord_ignored_support_aliases
+
+    rid_a = _repo_id("a")
+    session, artifact = await _make_locked_session(_association(rid_a))
+    version = await ArtifactVersion.objects.aget(id=artifact.current_version_id)
+    content = dict(version.content)
+    content["api_contracts"] = [
+        {
+            "id": "contract_external",
+            "name": "GetTrainingTreeByCvs",
+            "direction": "consumed",
+            "repository_id": rid_a,
+            "data_source": {
+                "availability": "needs_support",
+                "support_repository_id": "backend/sample-business",
+            },
+        }
+    ]
+    version.content = content
+    await version.asave(update_fields=["content"])
+    thread = await BlueprintThread.objects.acreate(
+        artifact=artifact,
+        created_on_version=version,
+        kind=ThreadKind.AI_CLARIFICATION,
+        blocking=True,
+        return_stage="merge",
+    )
+
+    await _arecord_ignored_support_aliases(
+        artifact,
+        thread,
+        session,
+        "sample-business 是现有外部依赖，只读复用，本次不纳入",
+        "user-1",
+    )
+
+    await session.arefresh_from_db()
+    assert session.stage_state["merge"]["ignored_support_aliases"] == [
+        "backend/sample-business"
+    ]
+
+
 async def test_ignored_support_aliases_skip_missing_repo_clarification():
     """操作员排除未登记协作仓后，融合不再为同一缺口开阻塞澄清。"""
     rid_a = _repo_id("a")
