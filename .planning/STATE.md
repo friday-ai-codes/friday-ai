@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.25.0
-milestone_name: milestone
-status: Awaiting next milestone
-stopped_at: Phase 145 complete — all phases complete
-last_updated: "2026-09-11T18:10:41.576Z"
-last_activity: "2026-09-09 - Completed quick task 260909-gpx: 示例功能专项 V2 路径合并"
+milestone: v0.26.0
+milestone_name: MCP 全链路开放与稳定性
+status: planning
+last_updated: "2026-09-14T01:10:26.053Z"
+last_activity: 2026-09-14
 progress:
   total_phases: 0
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md（updated 2026-08-31，v0.25.0 已归档）。归档�
 
 ## Current Position
 
-Phase: Milestone v0.25.0 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-09-09 - Completed quick task 260909-gpx: 示例功能专项 V2 路径合并
+Status: Defining requirements
+Last activity: 2026-09-14 — Milestone v0.26.0 started
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — ✅ ARCHIVED 2026-08-31，审计 tech_debt，未打 tag)
 
@@ -1054,6 +1054,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260907-erf | 蓝图流水线七个平台问题复核完成并补齐四个边界回归测试 | 2026-09-13 | 未提交 | [260907-erf-blueprint-pipeline-fixes](./quick/260907-erf-blueprint-pipeline-fixes/) |
 | 260909-qv4 | 交付小队角色名册与三份指令能力介绍改写 | 2026-09-09 | 未提交 | [260909-qv4-workflow_suite-squad-role-intro](./quick/260909-qv4-workflow_suite-squad-role-intro/) |
 | 260909-nc9 | 交付小队人类可读输出合同，标题、简介与回执分两层写 | 2026-09-09 | 未提交 | [260909-nc9-human-writing-agent-loop](./quick/260909-nc9-human-writing-agent-loop/) |
 | 260909-gpx | sample_service_service Agent 应用与 sample_web 跳转迁移到独立 V2 路径并合入 develop | 2026-09-09 | 83b0e56d2 / 8d99c27c3e | [260909-gpx-sample_service_service-agent-learn-rapid-score-b](./quick/260909-gpx-sample_service_service-agent-learn-rapid-score-b/) |
@@ -1347,8 +1348,8 @@ v0.8.0 follow-up（已记 PROJECT.md Backlog）：chat 编码入口（`coding_se
 
 ## Session Continuity
 
-Last session: 2026-09-11T18:10:41.568Z
-Stopped at: Phase 145 complete — all phases complete
+Last session: 2026-09-13T14:06:00+08:00
+Stopped at: Quick 260907-erf complete — seven production fixes verified and regression coverage closed
 Resume file: None
 Earlier: 2026-08-14T07:05:57.438Z — Phase 132 VERIFICATION passed（--no-transition）
 Earlier: 2026-08-09T22:38:46.022Z — Completed 127-05-PLAN.md（v0.22.0 收官）

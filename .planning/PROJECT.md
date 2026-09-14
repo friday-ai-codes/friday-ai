@@ -12,13 +12,26 @@ Friday AI 是一个 AI 驱动的敏捷开发自动化系统：它把飞书（Lar
 
 ## Current Milestone
 
-（无活跃里程碑 — v0.25.0 已于 2026-08-31 归档。下一里程碑用 `$gsd-new-milestone` 立项。）
+**v0.26.0 MCP 全链路开放与稳定性**
+
+**Goal:** 让外部 Agent 仅通过公开 MCP 即可稳定完成需求规格、仓库查询与路由、仓库调研、
+分仓方案生成与合成、全部 HITL 门、最终确认和交接，并能诊断及恢复长任务。
+
+**Target features:**
+
+- 服务端 snapshot、HTTP URL 与 npm stdio 工具名及字段契约完全对齐，消除静态白名单漂移。
+- 补齐仓库确认门、AI review finding 处置、最终审批与退回的公开 MCP 控制面。
+- 补齐分仓计划与合成的发起、查询、重试和产物读取能力。
+- 提供蓝图阶段、逐仓任务、回调、重试与恢复状态的 MCP 诊断面。
+- 长任务采用稳定的异步 job/轮询/幂等恢复契约，避免固定超时制造未知结果。
+- 以真实 Qdrant、runner、容器回调、飞书交互和最终交接 canary 验证完整链路。
 
 ## Current State
 
 **Latest shipped:** v0.25.0 Cursor / Claude Code 会话知识回写（2026-08-31，审计 **tech_debt**，27/27 requirements 满足，Phases 141–145，25 plans，**未打 tag**）。此前为 v0.24.0 单仓图查询对齐 GitNexus。里程碑 v0.1.0–v0.25.0（Phases 1–145）均已交付，详见 `.planning/MILESTONES.md` 与 `.planning/milestones/`。
 
-**当前在建：** 无。v0.18.0 是发布轨已占用的版本号，不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
+**当前在建：** v0.26.0 MCP 全链路开放与稳定性。v0.18.0 是发布轨已占用的版本号，
+不对应任何 GSD 里程碑，也不占相位号；GSD 里程碑归档**不打**发布轨 tag。
 
 里程碑演进：v0.7.0 方案编排（需求 → 主方案）→ v0.8.0 多仓串行编码 → 融合 PR → v0.9.0 SDD / OpenSpec 支持 → v0.10.0 操作审计治理 → v0.11.0 开放与协作。近六个里程碑要点：
 
