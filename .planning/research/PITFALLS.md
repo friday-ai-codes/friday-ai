@@ -1,222 +1,268 @@
 # Pitfalls Research
 
-**Domain:** 在既有 Friday MCP / skills / 项目记忆 / 交付知识 RAG 上叠加 IDE 问答 Capture、价值评估与可召回精华（v0.25.0）
-**Researched:** 2026-08-28
-**Confidence:** HIGH（陷阱均对照本仓现行实现与锁定决策；Cursor `beforeSubmitPrompt` 能力以本仓 `ide_hook_assets.py` 注释为准）
+**Domain:** 公开 MCP 全链路开放与长任务稳定性（Friday AI v0.26.0）
+**Researched:** 2026-09-14
+**Confidence:** HIGH（本仓现行实现 + 里程碑已知债 + MCP 规范/生产运维共识交叉；npm 已发布版本与本 worktree 是否同步属 MEDIUM，须以 registry 实查为准）
 
-> 相位代号仅用于 roadmap 编排，按依赖建议为：**P1 MCP 契约与仓库挂钩**（MCP-01/02）→ **P2 Skills/hooks 采集**（SKILL-01）→ **P3 Capture 账本**（STORE-01）→ **P4 价值评估与 RAG 入图**（EVAL-01）→ **P5 召回、回放与观测收口**。下文「Phase to address」对应该序，不预占具体相位号。
+> 相位代号仅供 roadmap 编排，不预占具体相位号。建议依赖序：
+> **P1 契约三面对齐** → **P2 公开 HITL 控制面** → **P3 分仓方案/合成 MCP** → **P4 长任务异步 job / 未知结果** → **P5 诊断、回调与恢复** → **P6 范围闸 / 预言机 / 密钥** → **P7 真依赖 canary 与发版钉扎**。
+> 「Phase to address」对应此序。
 
-本文只谈**往现有系统上加这些能力时**会踩的坑，不复述通用 Web/LLM 常识。
+本文只谈**把内部已齐备的蓝图/编排链当成「外部 Agent 仅靠公开 MCP 即可跑完」时**会让链路看起来完整、实际不安全、不可观测、非幂等或不可恢复的坑。不复述通用 Web 安全清单。
 
 ## Critical Pitfalls
 
-### Pitfall 1: 把 `branch_unresolved` fail-soft 当成「成功跳过」并沿用到 Capture
+### Pitfall 1: 静态白名单漂移 —— 服务端 55、npm 43、测试还锁「一致」
 
 **What goes wrong:**
-`report_project_knowledge` 在 `_resolve_report_project_id` 拿不到唯一项目时返回 HTTP 200、`accepted=false`、`reason=branch_unresolved`，**不写库、不报错、不阻断编码**。Stop hook 再包一层 `fail_soft()`（任何异常 `exit 0`）。新 Capture 若仍走这条链，零散问答在未绑项目的 `main` / 多命中分支上会**静默丢数据**，仪表盘看起来「工具调通了」。
+HTTP `/api/mcp/tools/<name>/` 与 `TOOL_SCHEMA_SNAPSHOT` 已注册约 **55** 个工具（含 `graph_query`、impact/detect/process 族、`report_session_knowledge`、`approve_technical_blueprint` / `request_technical_blueprint_changes` 等）。`mcp/src/tools.ts` 的 `FRIDAY_TOOLS` 是**静态白名单**，未知名直接 `未知工具` 拒绝；当前清单 **43** 个。`mcp/tests/server.test.ts` 仍断言「定义了与服务端一致的 43 个工具」。结果：Cursor / Claude Code 经 `npx -y @friday-ai-codes/mcp` **调不到**终审、图查询、会话知识回写等；直打 HTTP 的容器/内部 Agent 却能调。产品口径「MCP 全链路开放」在 stdio 面上是假的。
 
 **Why it happens:**
-v0.15/v0.16 的纪律是「hook 绝不阻断编码」。测试 `test_report_project_knowledge.py` 还**正向断言**未绑分支 → `branch_unresolved` 且不入库。实现者会复制 `_resolve_report_project_id` + 200 skip，误以为 MCP-02「解析失败不得静默丢弃」已被覆盖。
+历史上 `test_skills_snapshot_guard` 只验 SKILL.md ⊆ snapshot；`test_mcp_package_alignment` 才验包名 == snapshot，但 **mcp 子模块未 checkout 时 pytest.skip**（v0.20.0 审计已坐实：全里程碑空跑后首次实跑转红）。npm 测试把「43」写成成功契约，后续加服务端工具时实现者只改 Django + snapshot，以为对齐守卫会拦。字段级对齐目前只锁少数新工具（如 session knowledge 三件套），其余工具 properties 可静默漂。
 
 **How to avoid:**
-新工具把「挂钩」与「项目」拆开：仓库（`repository_id` / remote URL / 仓名）足够则**必须落 Capture**；项目是可选增强。`branch_unresolved` 只能表示「未挂项目」，不得表示「未收」。无仓无项目时返回显式原因码（如 `unanchored`）并仍落匿名/用户级队列，或 fail-loud 给 skill 重试——禁止 200 + 空写入冒充成功。旧 `report_project_knowledge` 行为可保留给 MEMORY 路径，Capture **不要**复用同一 skip 语义。
+单一事实源：注册表（`urls.py`）== `TOOL_SCHEMA_SNAPSHOT` == `FRIDAY_TOOLS` == annotations 键集，**CI 无 skip 后门**。禁止「43」这类绝对计数当绿；改成集合差断言。新工具同一 PR 必须带：serializer、snapshot 字面量（`test_schema_snapshot` 独立字面量，不得从源码再 import 比较）、npm `name`+`inputSchema.properties`+`TOOL_ANNOTATIONS`、skills 文档子集。HTTP 直打与 stdio 不得成为两套产品面。
 
 **Warning signs:**
-- 新视图仍 `if resolved_pid is None: return 200 accepted=false`。
-- 测试把「无 `project_id`」当成拒收而不是入库。
-- hook 日志只有 `exit 0`，DB 无 Capture 行。
+- `test_mcp_package_alignment` skip / `TOOLS_TS.exists()` 为假仍判绿。
+- npm 测试 `toHaveLength(43)` 仍在，而 snapshot 键已 >43。
+- skills/`SKILL.md` 写了 `approve_technical_blueprint` 但 `FRIDAY_TOOLS` 无该项。
+- 演示走 HTTP curl 绿、Cursor 调同名工具红。
 
 **Phase to address:**
-P1 MCP 契约（MCP-01/02）。P2 不得先接线旧 skip。
+P1 契约三面对齐。P2/P3 新工具若先只落服务端，会立刻再漂一次。
 
 ---
 
-### Pitfall 2: Stop hook 只报 `git diff --stat`，把「无改动」当成「无知识」
+### Pitfall 2: 固定 120s 客户端超时把「进行中」变成「失败」，Agent 盲目重试
 
 **What goes wrong:**
-现行 `skills/hooks/stop`：无分支/`HEAD` 跳过；`diff --stat` 为空则跳过（注释写明只读会话会刷「最近提交」噪音）；再加 300s 间隔与内容指纹。里程碑目标是**无 git 改动的纯问答也回写**。沿用 stop + diff 门，Capture 永远收不到 Q&A。
+`mcp/src/server.ts` `REQUEST_TIMEOUT_MS = 120_000`，`AbortSignal.timeout` 切断的是 **stdio 进程的等待**，不是 Django 视图、durable job、runner 容器。`execute_coding_plan` / `execute_work_item_repo_tasks` 的 schema 允许 `timeout_seconds` 60–21600、默认 **3600**。调研/融合/编码经常 >120s。Agent 收到 `Friday 请求失败（网络 / 超时）` + `isError: true`，按 MCP 规范会把 tool execution error 交给模型自纠 —— 典型动作是**再调一次写工具**。服务端可能已经 dispatch 成功。这是「未知结果（unknown outcome）」而不是失败。
 
 **Why it happens:**
-防噪音是真实踩过的坑（hook 注释）。实现者会「只放宽质量门槛」却不改触发条件。
+MCP 规范（2026-07-28 tools）要求客户端实现超时；取消是 best-effort，接收方可以忽略。实现者把「别把 stdio 挂死」做成全局 120s，没有按工具分级，也没有「超时 = unknown，先查 job」协议。编排侧 `delegate_process_runtime` 在 MCP 入口甚至 `skip_clarification=True` 同步 `adrive` 到终态，把分钟级工作塞进一次 `tools/call`。
 
 **How to avoid:**
-采集触发与「是否有工作区 diff」解耦。Stop 仍可附带 diff 摘要作**可选上下文**；问答正文来自会话抽取（skill / 工具参数），无 diff 也提交。本地去重键改为 `(session_id, question_hash, answer_hash)`，不要用 diff 指纹挡住对话。300s 节流只用于「同一 diff 摘要」，不要套到每条 Q&A。
+写工具（生成/执行/确认）**禁止**依赖同步跑完：立即返回 `job_id`/`session_id` + `status=accepted|running`，配套只读 `get_*` 为权威结果。stdio 超时后返回稳定机器码 `outcome_unknown`（不要伪装成业务失败），并提示用同一 idempotency key / job_id 查询。读工具可保留短超时。取消不得假定副作用已回滚。
 
 **Warning signs:**
-- 新 hook 仍 `if not changes: fail_soft()`。
-- payload 只有「本次会话改动摘要」没有 `question`/`answer`。
-- 验收用例全是「改了代码再停」。
+- 新 MCP 写工具没有配对的 get/status。
+- 日志出现同一 `idempotency_key` 未命中却连续 `create_*` / `execute_*`。
+- 容器/会话已 running，Agent 对话里却是「工具超时失败，我再试一次」。
+- 单测只 mock 200 JSON，从不模拟 abort 后的权威查询。
 
 **Phase to address:**
-P2 Skills/hooks（SKILL-01）。P1 契约必须先有 Q&A 字段，否则 hook 只能塞进 `content` 自由文本。
+P4 长任务异步契约。P1 可先给超时错误码，但若仍同步跑编排，P2/P3 的 HITL 会在 120s 墙外不可达。
 
 ---
 
-### Pitfall 3: 假设 Cursor 能在 `beforeSubmitPrompt` 注入上下文或对称采集
+### Pitfall 3: 幂等键缺失或「键相同参数不同」—— 重复 MR、重复调研、重复审查
 
 **What goes wrong:**
-本仓已写死：Cursor `beforeSubmitPrompt` **只能放行/拦截，不能注入上下文**（`ide_hook_assets.py`）。读路径 Cursor 只靠 always-on 规则 + MCP。写路径若照抄 Claude Code `UserPromptSubmit`/`Stop` 注册到 Cursor，采集器根本跑不起来或只能拦截提交。
+`create_feishu_technical_plan` 已有 `idempotency_key`（唯一约束 + pending/conflict/cancelled 态）。多数公开写工具没有：`create_merge_request`、`execute_coding_plan`、`apply_repo_association`、`start_repo_research`、确认门动作。超时重试或 Agent 换措辞重试会建第二份 PR、第二波容器。即便有键：第二次请求参数不同却复用键，若实现「覆盖旧意图」或「返回第一次失败缓存」，会把错误结果锁死；若第一次仍 pending 时第二次 409 提前返回，调用方停止重试而第一次随后失败 —— 消息丢失（业界幂等经典坑）。
 
 **Why it happens:**
-三家 IDE 被当成同一 hook 模型；skills 安装器会把 Claude 专属 hook 拷进 Cursor 目录。
+MCP annotations 把生成类标 `idempotentHint: false`，执行类同样。实现者理解为「不用做幂等」。驱动多入口（durable worker、回调 barrier、确认门、僵尸扫描）叠加后，`ProcessEngine.advance` 曾经只在写回瞬间 CAS —— **handler 本体跑了 N 遍**（本仓实证：AI 审查并发 7 次、token 烧掉、BLOCKER 线程翻倍）。`drive_lease` 是补丁；其 DB 异常还 **fail-open「当作抢到了」**，抖动时仍会重复跑。
 
 **How to avoid:**
-采集主链必须是 **MCP 工具由 agent/skill 显式调用**（会话结束或 skill 步骤），hooks 只作 Claude Code 增强。Cursor：规则 + skill 强制调新 Capture 工具；不要做注入 hook。Codex 同样「仅 MCP + rules」。资产 `notes` 继续声明限制；加守卫测试：Cursor 资产树**零** `UserPromptSubmit` / `beforeSubmitPrompt` 注入脚本。
+所有有外部副作用或贵 LLM 的 MCP 写工具：调用方或服务端稳定 `idempotency_key`（或确定性业务键：work_item × repo × wave）。原子插入 reservation；pending 返回 in-progress 而非「失败」；完成则回放原响应；键+参数哈希不一致 → 稳定 conflict，不覆盖。Git/飞书侧用 provider 去重查询做对账。测试必须含：超时切断响应路径后同键重试 ⇒ 副作用仍为 1。
 
 **Warning signs:**
-- Cursor 产物出现 `hooks.json` 的 `UserPromptSubmit`。
-- 设计文档写「三家 hook 对称」。
-- 验收只在 Claude Code 插件形态演示。
+- 同一 work item 两条 `McpWorkItemTechnicalPlan` / 两个 MR URL。
+- `drive_lease` 日志 `fail-open` 后审查线程数倍增。
+- 幂等测试只覆盖「第二次 200 同结果」，没有「pending 时并发」和「参数漂移 409」。
 
 **Phase to address:**
-P2 Skills/hooks。与 P1 工具面并行设计，避免 hook-only 方案。
+P4（job 与键）必须先于把更多写工具公开到 npm。P5 的回调重入会放大无键工具。
 
 ---
 
-### Pitfall 4: `lookup_project_by_branch` 在通用 `main` 上假命中，污染读写两侧
+### Pitfall 4: 回调丢失与电平 barrier —— 任务「完成了」编排仍 running，或完成一次驱动七次
 
 **What goes wrong:**
-lookup 第三源：分支两源皆空且传了 `repository_id` 时，用 `RepoAssociation`（confirmed/verifying/verified）反查项目；**唯一命中即 `matched=true` 并注入 context**。开发者日常在仓默认分支 `main`/`master`/`develop` 提问时，会把**该仓关联的任意一个项目**当成「当前项目」。debug 会话已记录：`Friday branch lookup matched an unrelated project solely through generic main`。`_resolve_report_project_id` **没有**第三源，只走 work_item 解析 + `ProjectBranch`——读注入了项目 A，写回却 `branch_unresolved`。或反过来：有人给 `main` 做了 `ProjectBranch` 绑定，写回进错误项目记忆。
+容器终态有 Runner 事件，但 structured business callback 丢了（网络、5xx 禁令导致 handler 吞错、callback_url 打到 runner 中转 404）。`areconcile_stalled_blueprint_research_tasks` 已识别 `completed_without_structured_result_callback`，用 Runner 终态把调研 task 标失败/完成 —— **这是恢复，不是主路径**。主路径若仍等 callback，MCP 的 `get_repo_research` / 蓝图 get 会永远 `running`。反面：barrier 是电平（「都产出了吗」一旦真就恒真），每个后到的 callback 再入队续驱 → 与 Pitfall 3 叠加。编码节点注释已记：错用 runner `callback_url` 会 404。INGEST-02 纪律：完成锚点不能挂在「绝不能 5xx」的容器回调上。
 
 **Why it happens:**
-quick-260723 用仓库兜底覆盖人工命名 feat 分支，未把默认分支排除。`parse_work_item_id_from_branch("main")` 为 `None`，于是直接掉进 RepoAssociation。
+跨进程契约（server ↔ runner ↔ task）三套代码；测试用 mock callback 直调 service，不模拟「Runner 已 TASK_COMPLETED、业务 callback 未到」。MCP 诊断面缺失时，外部 Agent 只能盲轮询或重派。
 
 **How to avoid:**
-默认分支名（仓 `default_branch` 或闭集 `main`/`master`/`develop`/`trunk`）**禁止**作为唯一项目信号。lookup：默认分支上第三源不注入 context（`matched=false`，可回候选）；仅 `ProjectBranch` 显式绑定或 feat/`-m{id}-` 形态才 `matched=true`。Capture 挂钩以仓库为准，**不要**为了「有项目」去调用 lookup 的第三源。读写解析函数必须同源或明确分表，禁止「读有第三源、写没有」。
+公开诊断工具：按 `session_id` / `task_id` 返回 stage、逐仓 task、最后 RunnerEvent、callback 是否落地、lease 持有者、可安全 `retry`/`recover` 的动作。恢复扫描必须可被 MCP 触发或至少可观测（计数进 gauge）。新回调路径 AST/契约测试：禁止 runner 中转 URL。主完成锚点继续放在 MR 已知/业务状态机，callback 只是加速。
 
 **Warning signs:**
-- 在 `main` 上 `matched=true` 且 `binding_source=repo_association`。
-- Capture 或 MEMORY 出现与当前问答无关的项目记忆。
-- 同一 `branch_name` lookup 命中、report skip。
+- `RepoResearchTask` RUNNING 且已有 `TASK_COMPLETED`。
+- 无 `completed_without_callback` 指标却有僵尸会话。
+- MCP 只有 `start_*` 没有「为何卡住」。
 
 **Phase to address:**
-P1 解析策略（与 MCP-02 同批）。P5 回归：`main` + 唯一 RepoAssociation 不得注入、不得当项目主键写 Capture。
+P5 诊断与恢复。P7 canary 必须包含「杀掉业务 callback、仍能靠 Runner 事件收敛」。
 
 ---
 
-### Pitfall 5: 把 Interaction Ledger（或 MCP `run` 记录）当 RAG 正文
+### Pitfall 5: CAS 只挡住写坏，挡不住「看起来失败其实已确认」
 
 **What goes wrong:**
-MCP 工具已 `begin_interaction_run` + `arecord_event` / `arecord_retrieval_trace`。实现者会觉得「问答已经在 Ledger 里了」，对 `InteractionEvent` payload 做 embedding，或让 `DeliveryKnowledgeSearchService` 扫 ledger 表。v0.17 已锁定 **Ledger 反哺检索为 Out of Scope**；v0.25 决策：Capture / 提炼知识 / Ledger **三层分离**。Ledger 含工具 I/O、可能含未脱敏片段与用量字段，入向量会把审计垃圾和密钥形态带进召回。
+蓝图生命周期、`SddSpec`、确认门快照都用条件更新。REST 确认后若续驱失败，视图纪律是 **动作已落库、响应仍成功、续驱失败只打日志**（`_aresume`）。MCP 若把续驱失败映射成 tool error，Agent 会再点确认；第二次因已锁定走 stub `{"repos": []}`（v0.20 tech_debt：锁定后 stage_state 回退恒空）。反过来：Agent 超时发生在 CAS 成功之后，查询若只看 HTTP 错误会以为未确认。`expected_version` / `content_hash` 若不随公开 MCP 暴露，终审会覆盖人工块或打到过期版本。
 
 **Why it happens:**
-「少一张表」；`redact_for_ledger` 被误读成「已可检索」。
+「服务端状态机很严」被当成「客户端不必处理 409」。MCP 工具常省略 version 参数以「简化 Agent」。
 
 **How to avoid:**
-Ledger 只服务审计/用量/回放索引（可存 `capture_id` 外键）。RAG 只吃 **P4 提炼后的精华**（中高价值），经 `aschedule_ingestion` + `delivery_knowledge`。原始问答只在 Capture 账本。加 AST/grep 守卫：`DeliveryKnowledgeSearchService` / normalizer / `ingest_events` 不得 import `interactions.models` 当语料。评测回放读 Capture，不读 Ledger 全文。
+公开确认/审批/finding 处置一律带 CAS 令牌（`artifact_version_id` + `content_hash` 或 `updated_at`）。冲突返回 409 + 当前观察，**禁止当 400 让模型改参数重放同一变迁**。get 工具必须能回答「门是否已过、锁是否已落、续驱是否还在跑」。动作成功与编排推进分成两个字段，避免「确认了但 stage 没动」被当成失败。
 
 **Warning signs:**
-- normalizer `source_kind` 叫 `interaction_run` / `mcp_tool_call`。
-- 检索测试 fixture 从 `InteractionEvent` 取 text。
-- 需求写成「复用 Ledger 免建表」。
+- `approve_technical_blueprint` 无 version 字段。
+- 确认后门的 `dispatch_plans` 归零并开阻塞线程（回退分支失效的可见态）。
+- 测试只断言状态码，不断言第二次确认是 no-op/conflict。
 
 **Phase to address:**
-P3 Capture 账本立表时焊死。P4 入图白名单不含 Ledger。
+P2 HITL 控制面与 P4 未知结果协议一起做。不要在 P2 先公开无版本的 approve。
 
 ---
 
-### Pitfall 6: 扩大 `writeback_mode=active`，用项目记忆冒充会话知识（MEM-04 / INV-6）
+### Pitfall 6: 跳过仓库确认门 / finding 走错通道 / 无最终审批 —— 编码吃未审蓝图
 
 **What goes wrong:**
-`MemoryService` INV-6：LLM 只 `create_draft`，人工 `confirm_draft` 才 active（MEM-04）。例外是 2026-06-26 **用户授权、范围极窄**的 `record_hook_writeback`（stop hook + 质量门槛 + 脱敏 + 非成员静默跳过）。把 IDE Q&A 再打进 `writeback_mode=active` → `ProjectMemory`，等于把 MEM-04 例外变成默认通道：共享项目记忆被会话噪音淹没，且与「Memory 只承载可召回精华」决策冲突。旁路 `ProjectMemory.objects.create` 还会红掉 `test_memory_inv6_guard`。
+阶段 1 出口硬门、AI review finding 的 `resolve`/`dismiss`（**禁止作答通道**）、人类终审，是 RELY-01 / FLOW 的安全内核。当前公开 MCP 有澄清作答与（服务端）`approve`/`request_changes`，**缺仓库确认门与 finding 处置**；分仓 `RepoPlan` 发起/查询/重试/读产物仍偏内部 REST。Agent 会：用 `answer_blueprint_clarification` 把 BLOCKER 推到 `answered`（绕开 `reason` 与留痕）；或走 `create_coding_plan` 旧执行桥在蓝图未 `confirmed` 时开工；或只跑 sandbox `apply_repo_association` 当「确认门」。npm 连已有的 approve 都调不到（Pitfall 1）。看起来链路工具很多，安全门全在 SPA。
 
 **Why it happens:**
-现成 MCP 工具、现成 hook、现成质量门槛，看起来「加字段就能交差」。
+v0.20 把 HITL 做在 REST + 前端；MCP 先做「能建会话和澄清」。GATE-01 曾把 `DONE` 映射成 completed 喂 `ai_coding`。实现者复制 clarifications 通道给 finding。
 
 **How to avoid:**
-Capture **新写模型 + 新 Service 单一入口**（INV-6）。默认不要写 `ProjectMemory`。若中高价值要进「项目可召回」，走知识摄取（`source_kind` 新行 + 既有 kind），或经 `create_draft` 等人审——**禁止**把 Capture 评估器接到 `record_hook_writeback`。active 例外白名单保持「仅 git diff 摘要类 stop hook」，测试锁定：新 Q&A 工具即使 `writeback_mode=active` 也不得增加 `ProjectMemory` 行。
+公开 MCP 最小闭集：`confirm_blueprint_repos`（硬门）、`resolve|dismiss_blueprint_finding`、`approve|request_changes`（CAS）、只读 `get` 含 pending gates。编码/MR 工具 fail-closed：未确认蓝图 → 稳定机器码，零写入。守卫测试：finding 不得出现在 `answer_*` 可接受的 thread 类型里。分仓计划工具与 HITL 同里程碑公开，否则 Agent 在确认后仍卡在内部 API。
 
 **Warning signs:**
-- 新 serializer 复用 `ReportProjectKnowledgeRequestSerializer`。
-- Capture 完成回调调用 `MemoryService.append`。
-- 方案写「沿用 HOOK-02 accepted deviation」。
+- Agent trace 里 `create_coding_plan` 早于 `confirmed`。
+- finding 行 `status=answered` 且无 `dismiss/resolve` actor。
+- 文档写「MCP 可完成交接」但工具列表无 repo confirmation。
 
 **Phase to address:**
-P3 账本 + Memory 边界。P4 入项目 RAG 另开摄取，不经 MEMORY active。
+P2 控制面；P3 分仓方案/合成。二者缺一则「全链路」仍断。
 
 ---
 
-### Pitfall 7: 新增 `EntityKind` 或改 kind 字面值，造成 uuid5 实体身份漂移
+### Pitfall 7: 信息预言机与角色/项目范围 —— 404/400 分裂、仓库 ACL 名存实亡
 
 **What goes wrong:**
-`generate_entity_id(kind, source_kind, source_id)` 拼接 `f"{kind}:{source_kind}:{source_id}"`。kind 进 uuid5：**先**按 `document` 入图、**再**改成新 kind，会生成另一 PK，旧点不 tombstone → 双实体。改已有 kind 字面值 = 全量迁移。`kentity_kind_valid` CheckConstraint + 枚举锁定。历史惯例（Phase 100/116）：MCP plan/蓝图 **复用** `tech_plan`/`document`/`code_change`，用 `source_kind` 分子类，**不**为每个产品概念加 EntityKind。
+蓝图闸 `_aassert_project_scope`：越权中性 **404**；`meta.project_id` 非空但非法 **400**（v0.20 明确记为存在性预言机：攻击者可区分「坏 UUID 格式的项目绑定」与「没有这份蓝图」）。MCP 复用同源闸，暴露面从 REST 扩到 PAT 自动化调用，枚举成本下降。平台级 `RepositoryPermission` 是「任意登录用户可读任意存在的仓库」，MCP `search_rag_chunks` / `grep_repository` / `get_repository_file` 继承该口径 —— 外部 Agent 的 PAT 只要是登录用户，即可当全库 oracle。跨仓 impact 曾把无权仓的计数当规模预言机（已在图工具侧折叠，MCP 新工具容易再引入）。exclusion 路径必须与「不存在」同出口，否则成敏感文件预言机。
 
 **Why it happens:**
-「会话知识」看起来像新类型；过滤想 `entity_kinds=["ide_capture"]`。
+400 对调试更友好；实现者在 MCP 上返回 serializer 校验细节。PAT = 用户全量 RBAC（v0.2 刻意不做细 scope）。
 
 **How to avoid:**
-默认：操作态 Capture 表 + 入图用既有 kind（优先 `document` 或 `learning_case`）+ **新 `source_kind`**（如 `ide_session_capture`）写进 `generate_entity_id` docstring 规则表。确需新 kind 时：一次性 migration 改约束、**禁止**对已入图行改 kind、检索 filter 用 `source_kind` 而非发明平行 collection。禁止在 normalizer/测试里手写 `uuid5(KNOWLEDGE_NAMESPACE, ...)`。
+四语义契约整体改版（不存在 / 无权限 / 非法 id / 校验失败）在 REST+MCP **同一套状态码**，非法 project_id 也走中性 404。新 MCP 读工具：项目绑定对象按 ProjectMember fail-closed；全库 grep 保持显式 opt-in 且审计。不要在本里程碑假装做出仓库 ACL；但文档与 canary 必须写明威胁模型。exclusion 测试继续锁「同出口」。
 
 **Warning signs:**
-- PR 改 `EntityKind` 却无「零存量行」证明。
-- 同 `source_id` 出现两个 `KnowledgeEntity`。
-- 前端/MCP 复制 uuid5 公式。
+- 同一 UUID 对非成员 400、对成员 200。
+- 新工具错误体含 `project_id is not a valid UUID` vs `not found` 分流。
+- PAT 文档承诺「项目级隔离」但实现只 `IsAuthenticated`。
 
 **Phase to address:**
-P4 入图设计（EVAL-01）。P3 不要提前把 Capture UUID 当成 knowledge PK。
+P6。P2 每加一个写门都必须走同源闸，禁止复制第四份。
 
 ---
 
-### Pitfall 8: Capture 入 RAG 走 `aschedule_ingestion` → `background_runner`，重启丢向量
+### Pitfall 8: 密钥与交接包泄漏 —— PAT、handoff 文件、error=str(exc)
 
 **What goes wrong:**
-`aschedule_ingestion`：`transaction.on_commit` + `run_in_background(ingest)`。`background_runner` 自 v0.12 **定位为进程内、重启即丢**；生产长任务应走 durable。HTTP 200「已接受 Capture」后 worker 未跑完就重启 → PG 有 Capture、Qdrant 无点，召回空。现有 learning_case 已有此窗口；高频 IDE 回写会放大。
+stdio 层纪律：PAT 不进返回文本/日志；401 文案也不回显 token。但仍有洞：`get_confirmed_blueprint_handoff` 把完整 JSON 写到 `tmpdir/friday-mcp-handoffs/`（mode 0o600），Agent 若把 `handoff_file` 路径贴进对话或再 `read_file` 进模型上下文，等于把方案+可能的内部引用送进 LLM。HTTP 错误体 `bodyText.slice(0, 2000)` 可能含上游异常；平台债 `redact_secrets_in_text` 不覆盖数据库连接串，`error=str(exc)` 二十余处仍在。容器总线 `report_blueprint_context` 依赖 service 脱敏，schema 漂移时原文可进总线。`npx` 配置文件里的 PAT 与 Cursor mcp.json 是本机新泄漏面。
 
 **Why it happens:**
-「与 Phase 13 完全一致」被当成生产语义；测试里 runner 立即执行，绿不到丢任务。
+交接包为防模型改写正文而落地文件，是正确动机；未定义「文件不得再被模型ingest」。观测 best-effort 与「异常原文方便排障」冲突。
 
 **How to avoid:**
-Capture 行是真相，状态机至少 `captured → grading → ingest_pending → ingested|ingest_failed`（低价值停在 captured，不向量化）。入图投递：**durable 队列**（与 index/graph 同底座）或可重试 outbox；禁止把「唯一投递」交给 `run_in_background`。启动/rescue 扫描 `ingest_pending`。`aschedule_ingestion` 可保留给低频产物，但 IDE 路径要可观察积压（LOGGING-SPEC `task_backlog`）。
+handoff 工具响应只给路径+hash+任务摘要，skills 明确禁止把文件内容贴回对话。错误体继续脱敏；MCP view 出站统一 `redact_secrets_in_text`。新增工具的异常测试用带 `postgres://` / `sk-` 的假异常，断言日志与 tool 文本已打码。PAT 轮换路径写进 doctor。
 
 **Warning signs:**
-- 新 ingest 只 `run_in_background`，无 durable job id。
-- 无 `ingest_pending` 对账命令。
-- 单测 mock 掉 ingest 且无失败重放测。
+- tool result 含 `friday_pat_` 或完整 markdown 蓝图。
+- canary 日志能 grep 到连接串。
+- 交接测试断言「返回完整 content」而非「落盘+摘要」。
 
 **Phase to address:**
-P4 入图投递。P3 状态字段先留好，避免 P4 再迁一次。
+P6；P1 改 handoff 客户端时不要为「方便」改回内联全文。
 
 ---
 
-### Pitfall 9: 价值评估 LLM 未赋 `call_source`，或与 `llm_grader` 检索分级混用
+### Pitfall 9: 轮询风暴 —— get 当 busy-loop，打穿编排与 Qdrant
 
 **What goes wrong:**
-`knowledge/llm_grader.py` 的 `grade_search_results` 做检索 **duplicate/related/unrelated**，`ainvoke` **没有** `use_call_source`；枚举里已有 `aux_knowledge_grader` 却未接线；失败日志 `error=str(exc)` 未走 `redact_secrets_in_text`。新「高/中/低价值」若复用该模块或同样裸 `ainvoke`：用量进 `unknown`、与检索分级词表冲突、路由 `confidence` 被误当成知识价值（PROJECT 已否决）。
+`get_feature_tech_plan`、`get_repo_research`、`get_technical_blueprint`、`get_coding_execution` 被设计成轮询点。Agent 在 120s 墙内每 1s 打一次；多会话 × 多仓调研会把 `adrive`、lease 心跳、Qdrant 检索打满。读工具若内部触发「顺便续驱」或重算路由，轮询变成写放大。`grep_repository all_repositories=true` 被 Agent 当探活。
 
 **Why it happens:**
-「已经有 grader」；复制 `llm_grader` 最快。
+没有 `Retry-After` / `poll_after_ms` 字段；也没有 MCP 级 rate limit（规范要求服务端限流，本仓工具面基本未做）。
 
 **How to avoid:**
-新评估器独立模块 + 新 `CallSource`（先改 `call_source.py` 与 LOGGING-SPEC §4.1 再写业务）。`use_call_source` 包住整次 LLM。词表锁定 `high|medium|low`，禁止 `related/duplicate`。失败 fail-soft：Capture 仍保存，grade=`unevaluated`，不丢原文。不要用 `evaluate_writeback_quality`（过短/Jaccard）代替价值等级——那是防噪音，不是评测。补修既有 `llm_grader` 的 `call_source`/脱敏可作为同相位卫生项，但不要把它改成价值评估。
+所有长任务 get 返回 `status` + `poll_after_ms`（随 age 指数退避）+ `terminal` 布尔。文档/skill 写死最小间隔。get **纯读**，续驱只走 callback/worker/显式 recover 工具。限流按 PAT + tool 维度，超限 429 且不可用「换个参数」绕过。高频路径 `category=sampling`，禁止 INFO 刷屏。
 
 **Warning signs:**
-- 评估 prompt 输出 `related`。
-- `ModelUsageRecord` 无新 call_source。
-- 用 RepoRouter confidence 过滤是否入 RAG。
+- 单会话每秒多次 `get_technical_blueprint`。
+- get 处理函数里调用 `adrive` / `dispatch`。
+- 没有 429 测试。
 
 **Phase to address:**
-P4 评估。观测清单与 EVAL-01 同门禁。
+P4 契约带 poll 字段；P5 诊断工具同样要退避。P7 canary 盯 QPS。
 
 ---
 
-### Pitfall 10: MCP 服务端新了工具，npm `mcp` 包 / skills 快照 / 容器白名单未齐
+### Pitfall 10: 合成测试绿、真依赖 canary 缺席 —— 发布后才发现回调/飞书/Qdrant 洞
 
 **What goes wrong:**
-v0.20/v0.22 反复出现：Django MCP 已有工具，`mcp` npm 客户端缺工具 → `test_mcp_package_alignment` 红或生产 IDE 调不到。skills 快照守卫曾只检查反引号工具名子集，不检查协议语义（debug：缺 `approve_`/`request_` 前缀仍绿）。容器知识 MCP 是白名单子集。只改 `views.py` 时 Cursor 用户永远调不到新 Capture 工具。
+v0.19–v0.23 反复：27 项人工验收零执行、`live_space` 默认 skip、IMPACT-03 无生产跨仓样本、多仓 wave 真容器 E2E 挂账、飞书导出只验 markdown 不验 `markdown_to_blocks`。MCP「全链路」若仍用 mock runner + 空 Qdrant + 无飞书交互，会漏：索引为空时路由恒降级、callback 签名、CardKit 交互、handoff 文件、PAT 真鉴权。更糟的是把 skip 的 live 标记当「已覆盖」。
 
 **Why it happens:**
-三仓/三发布面（server / mcp submodule / skills）节奏不同；安装器缓存旧 skill。
+CI 无凭证/无 Docker socket 策略；Nyquist VALIDATION 长期 draft。实现者用「结构断言 + vitest」代替挂载宿主上的真实点击（v0.19 教训：`RoutingDecisionPanel` 零挂载仍判绿）。
 
 **How to avoid:**
-同一里程碑把 **serializer + url + TOOL_SCHEMA_SNAPSHOT + npm tools.ts + skills SKILL.md + 容器 `KNOWLEDGE_TOOL_SCHEMAS`（若容器也要写）** 列为同一验收。对齐测试必须含新工具名。skills 守卫覆盖协议字段（`question`/`answer`/`repository`），不能只做 token 子集。文档写明：未发 npm 则 IDE 不可达。
+本里程碑 canary **显式、默认可 skip，但 skip 不得叫 passed**：真实 Qdrant 检索、runner 起容器、**故意丢掉一次业务 callback**、飞书一次交互、最终 `get_confirmed_blueprint_handoff` 落盘校验 hash。报告分 `synthetic` / `live` 两栏。禁止用叶子组件测试冒充 Agent 工具链。
 
 **Warning signs:**
-- 仅 server 测试绿。
-- skill 仍教 `report_project_knowledge` 作为问答回写。
-- 容器 agent 无新工具但产品宣称「编码容器也能沉淀会话」。
+- `@pytest.mark.live_*` 全 skip 且审计写 Complete。
+- canary 不包含 timeout→get 对账、callback loss、跨 npm/HTTP 同一工具名。
+- 只 curl 内部 URL，不经 stdio `CallTool`。
 
 **Phase to address:**
-P1 工具面（server+npm）。P2 skill 文案。容器写入若做，放 P2 末或明确 Out of Scope。
+P7。P1–P6 的自动化仍要绿；P7 是发布门，不是「有空再跑」。
+
+---
+
+### Pitfall 11: 发版与版本谎言 —— `npx -y` 拉最新、SERVER_VERSION 0.2.0、包 0.6.0、实例 API 另一代
+
+**What goes wrong:**
+`register.ts` 默认 `npx -y @friday-ai-codes/mcp`（**永远最新**）。本仓 `mcp/package.json` version `0.6.0`，stdio `SERVER_VERSION = '0.2.0'`。用户 Friday 实例可能停在旧 snapshot。新客户端调未部署的 `approve_*` → HTTP 404；旧客户端对已部署实例则看不到新工具。skills 文档与 snapshot 对齐但用户装的是 registry 旧 tarball。子模块指针、npm publish、server 镜像 **三轨版本号** 无人钉扎。GSD 里程碑刻意不打 git tag（发布轨 `v*`），更容易让「v0.26.0 研究」与用户装的包对不上。
+
+**Why it happens:**
+stdio 版本忘随包 bump；文档推荐 `-y` 图省事；对齐测试只跑 worktree 源码不跑 published dist。
+
+**How to avoid:**
+`SERVER_VERSION` == `package.json` version；`doctor` 调实例 `schema`/`health` 比对工具名集合，打印 diff。文档给 **版本钉扎**（`npx -y @friday-ai-codes/mcp@<ver>`）与「server 最低版本」。CI：alignment 在 submodule 必 checkout；publish 作业跑同一守卫。HTTP 404 工具名要回「实例过旧或客户端过新」而不是泛失败。
+
+**Warning signs:**
+- doctor 只测 `/health` 200。
+- changelog 写 55 工具，npm latest 仍 43。
+- `SERVER_VERSION` 与 `package.json` 不一致（现状即是）。
+
+**Phase to address:**
+P1 修谎言计数与 SERVER_VERSION；P7 把 doctor/canary 当发布门。
+
+---
+
+### Pitfall 12: 「结构合法、语义为空」的静默降级 —— Agent 以为拿到了方案
+
+**What goes wrong:**
+G3 类事故：MCP 映射读 `content['execution_plan']`，blueprint/v1 无该顶层键 → `repository_tasks: []`，HTTP 200。markdown 用 v0 渲染器得到空文档仍回写飞书。`get_confirmed_blueprint_handoff` 若在未确认状态返回带水印或不返回，客户端若只看 `current_status` 字符串 loosely 匹配会交错误包。`partial` + 空 `content` 被模型当成「没有仓库」。这比硬错误更危险：不可观测、Agent 继续往下编码。
+
+**Why it happens:**
+「兼容旧键 / fail-soft 渲染」没有 `truncated`/`empty_reason`/`schema_version` 守卫。测试断言键集合 ⊆ snapshot，不断言「确认后 tasks 非空」。
+
+**How to avoid:**
+响应加 `schema_version` + `completeness`（empty/partial/complete）+ 空时必填 `empty_reason`。snapshot 测试加语义：confirmed handoff 在 fixture 下 `repository_tasks` 长度与蓝图仓集一致。禁止 200 + 空主载荷表示失败。
+
+**Warning signs:**
+- 200 且 `repository_tasks == []` 同时 `status=completed`。
+- 飞书文档只有水印没有六段。
+- 映射函数仍 `content.get("execution_plan")` 无 blueprint 分支。
+
+**Phase to address:**
+P1 载荷映射；P2/P3 每个新 get 都要 completeness。P7 交接 canary 锁 hash 与 task 数。
 
 ---
 
@@ -224,126 +270,122 @@ P1 工具面（server+npm）。P2 skill 文案。容器写入若做，放 P2 末
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| 复用 `report_project_knowledge` 塞 Q&A 进 `content` | 零新端点 | 无结构、无法评测回放、继续 `branch_unresolved` 丢数 | never（与 MCP-01 冲突） |
-| Capture 行直接 `objects.create` | 少一个 Service | INV-6 失守、无脱敏/审计/成员口径 | never |
-| 入图继续只走 `background_runner` | 少接 durable | 重启丢向量、无法积压告警 | 仅本地 SQLite/pytest；生产 never |
-| 中高价值自动 `record_hook_writeback` | 项目工作台立刻能看见 | 永久破坏 MEM-04；记忆变会话垃圾桶 | never |
-| 新 EntityKind `ide_qa` | 检索 filter 好看 | uuid5 空间膨胀、约束迁移、与 Phase 100 惯例分裂 | 仅当 `source_kind` 过滤被证明不够，且无存量点 |
-| Claude Code hook 先做、Cursor 后补 | 演示快 | Cursor 是主用户；hook 方案不可移植 | MVP 可先 CC 增强，但 **MCP 主链必须同时支持 Cursor** |
-| 低价值不落库 | 省存储 | 无评测样本，EVAL 闭环断裂 | never（STORE/EVAL：低价值留样本、不向量化） |
-| 客户端猜模型名/token | 报表好看 | 假数据进评测 | never；缺省 `unknown` |
+| mcp 子模块未 checkout 则 skip 对齐测试 | 本地少 git submodule | 全里程碑假绿，npm 永久漂 | **never**（CI 必须 fail；本地 skip 需显式 env） |
+| 把工具数写死为 43 | 测试好写 | 与 snapshot 脱钩后仍绿 | **never** |
+| 全局 120s fetch timeout | stdio 不挂死 | 所有长写变 unknown + 重试放大 | 仅只读探活；写路径必须 job |
+| `drive_lease` fail-open | DB 抖动编排不停 | 重复 LLM/重复线程 | 可保留，但必须有重复度量与 MCP 可见 |
+| finding 复用 clarifications 通道 | 少一个工具 | 绕开 reason/CAS，确认门失效 | **never** |
+| live_* 默认 skip 当 Complete | CI 稳定 | 生产洞进审计 passed | skip 可以，status 必须 live_unrun |
+| `npx -y` 不钉版本 | 安装短 | 实例/客户端交叉 404 | 文档与 register 必须钉或 doctor 比对 |
+| 同步 `adrive` 塞进一次 tools/call | Agent 一次拿终稿 | 必撞 120s | 仅本地 debug 开关，默认异步 |
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| `report_project_knowledge` | Capture 复用 `_resolve_report_project_id` skip | 新工具；无项目仍收；旧工具保持 MEMORY 语义以免回归 |
-| `lookup_project_by_branch` | 用其 `project_id` 当 Capture 主键 | 仓为主；lookup 仅可选 enrich；默认分支假命中丢弃 |
-| `MemoryService` / MEM-04 | Q&A active 直写记忆 | Capture Service；精华入 `delivery_knowledge` |
-| `aschedule_ingestion` | 当 exactly-once | Capture 先提交；durable/outbox；对账 `ingest_pending` |
-| `generate_entity_id` | 新 kind 或手写 uuid5 | 新 `source_kind` + docstring 表；唯一入口 |
-| `llm_grader.py` | 当价值评估或继续无 call_source | 独立评估器 + 新 CallSource；卫生项再补 grader |
-| Interaction Ledger | payload 进 Qdrant | 只链 `capture_id`；检索禁读 ledger |
-| skills Stop hook | 无 diff 不报 | Q&A 与 diff 解耦；fail-soft 不得吞「未发送」 |
-| Cursor hooks | 注册注入型 hook | 规则 + MCP；声明 `beforeSubmitPrompt` 不能注入 |
-| npm `@friday-ai-codes/mcp` | 只改 Django | 同步 tools、snapshot、发版说明 |
-| 容器 MCP 白名单 | 默认「全工具」 | 写路径显式加白或本里程碑不做容器写 |
-| `evaluate_writeback_quality` | 当 high/medium/low | 仅防空/短/重复；价值另 LLM |
-| Provider / `initiated_by_user_id` | 后台评估记 `system` | PAT 用户透传；`bind_task_context` |
-| 排除文件 / 脱敏 | 把 `.env` 内容当答案 | `redact_secrets_in_text` 入库前；排除路径不进 Capture 附件 |
+| npm stdio MCP | 只改服务端 + snapshot | 同步 `FRIDAY_TOOLS` + annotations + 禁止 skip 的集合差测试 |
+| HTTP `/api/mcp/tools/*/` | 当成「完整产品面」验收 | 外部 Agent 主路径是 stdio；HTTP 是容器/内部。两面工具名必须相等 |
+| Runner / task callback | 完成挂在 callback；失败返回 5xx | 业务状态机 + RunnerEvent 对账；callback 加速；永不 5xx 风暴 |
+| 飞书 CardKit / 工作项 | 只测聚合读，不测交互回调 | canary 含一次真实或录制回放的门动作 |
+| Qdrant | mock 空集合当「无结果」 | live canary 断言 ranked_repos / chunks 非空（已知索引仓） |
+| GitHub/GitLab MR | 超时后重调 `create_merge_request` | idempotency + 按 branch 查询已有 MR |
+| PAT | 工具错误回显 Authorization | 401 固定文案；doctor 只显示指纹 |
+| skills 文档 | ⊆ snapshot 但 ⊈ npm | 文档工具名必须 ⊆ **已发布** 客户端白名单 |
+| durable / Procrastinate | 当 exactly-once | at-least-once + 幂等；MCP job 同样 |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| 每条 Stop/每条消息全量 embed | 索引延迟、embedding 配额 | 仅中高价值向量化；低价值不进 Qdrant | 团队日均数百次 IDE 回写 |
-| 同步 LLM 评估挡 MCP 响应 | IDE 超时、hook 10s 不够 | Capture 先 202/200 落库；评估异步 | 评估 > 数秒即拖垮 hook |
-| lookup 在 `main` 打包整个项目 context | 上下文爆炸、错误项目 | 默认分支不注入；Capture 不依赖 lookup 正文 | 大项目 packer 已很重 |
-| 原始问答全文进 delivery_knowledge | 召回被闲聊占据 | 只索引提炼精华；原文仅 Capture | 数周后检索质量塌 |
-| 无幂等键（session+turn） | 重复点、重复记忆 | `(user, session_id, turn_id)` 或内容 hash upsert | hook 重试 / agent 连点 |
+| Agent 1s 轮询 get_* | worker CPU、lease 心跳写放大 | `poll_after_ms` + 429 | 十几个并行蓝图会话即卡 scheduler |
+| 超时同步编排 | 连接占满、无进度 | 立即 accepted + 后台 drive | 单次调研 >120s 必现 |
+| `all_repositories` grep/RAG | Qdrant/磁盘打满 | 默认单仓；跨仓 opt-in + max_repos | 数百仓实例 |
+| 电平 barrier 重复 drive | 审查跑 7 遍 | lease + 边沿触发 + 幂等落库 | 多仓并行回调汇聚时 |
+| 交接包塞进 tool JSON | 上下文爆、模型改写 | 落盘 + 摘要 | 六段蓝图 + execution_plan 已超上下文 |
 
 ## Security Mistakes
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| hook/skill 上报完整隐藏思维链或工具原始 I/O | 密钥、内部 URL、PAT 进 Capture/RAG | 客户端只抽精华；服务端再 `redact_secrets_in_text`；禁止 CoT 字段 |
-| 日志打印 question/answer 全文 | 凭证进系统日志 | kv 只记长度/hash；正文不进 INFO |
-| `error=str(exc)` 评估失败 | 上游响应泄漏（`llm_grader` 已有此形态） | `redact_secrets_in_text` |
-| 无成员校验的项目 RAG 命中 | 非成员召回他项目会话 | 入图带 `project_id`/`repository_id`；检索沿用 fail-closed access_scope |
-| 未认证 hook 打到「匿名 Capture」 | 投毒知识库 | PAT/JWT 必填；无凭证 fail-soft **且不写** |
-| 把 Ledger 当语料 | 审计库扩大攻击面 | 物理隔离；检索禁 import |
+| 非法 `project_id` 返回 400 | 蓝图/项目存在性预言机 | 与越权同一中性 404 |
+| PAT=全仓库可读当「项目 MCP」 | 跨组代码与需求泄漏 | 文档威胁模型；绑定项目的对象强制成员；全库检索审计 |
+| finding 经 answer 通道 | 未审 BLOCKER 当已处理 → 编码 | 通道拆分 + 测试锁 thread type |
+| 未确认蓝图可 `execute_*` / 建 MR | 违反 RELY-01 | fail-closed 机器码 + 零写入 |
+| 超时后重放写工具 | 重复 PR/飞书文档/容器 | 幂等键 + unknown 协议 |
+| 错误体/日志带 secret | PAT、DB URL、Git token | 出站统一 redact；连接串纳入规则 |
+| handoff 文件被模型回读 | 敏感引用进第三方模型 | skill 禁止；响应不内联正文 |
+| MCP 限流缺失 | PAT 被盗后自动化枚举 | 每 token QPS；写工具更严 |
 
 ## UX Pitfalls
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| 工具 200 + `accepted=false` | 用户以为已沉淀 | Capture：明确 `stored=true/false`；skip 与 stored 分字段 |
-| 只在 Claude Code 自动、Cursor 全靠自觉 | Cursor 用户零回写 | skill 强制步骤 + 规则；不依赖注入 hook |
-| 默认分支注入错误项目上下文 | 编码按错需求 | 默认分支不 `matched` 注入 |
-| 低价值「消失」 | 无法做评测、无法申诉 | 工作台可筛选 grade；低价值只是不进 RAG |
-| 自动写进项目记忆时间线 | 成员被 diff 摘要刷屏 | 记忆保持人审；会话知识走知识库/Capture UI |
+| Cursor 报未知工具，HTTP 却通 | 「MCP 坏了」与「其实没装齐」分不清 | doctor 打印三方 diff；安装钉版本 |
+| 超时 isError 无下一步 | Agent 编造失败原因或狂重试 | `outcome_unknown` + 查询指令 |
+| 确认成功但流程不走 | 用户连点确认，第二次空仓 | 响应区分 action_committed vs drive_pending |
+| 空 `repository_tasks` 当完成 | 下游空编码 | completeness + 空原因 |
+| 43 vs 55 无用户可见说明 | 技能文档教了调不到的工具 | 文档只列出客户端真实白名单 |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **MCP-02：** 无 `project_id` 仍有 Capture 行 — 用未绑 `main` 打工具，断言 DB insert 而非 `branch_unresolved`
-- [ ] **SKILL-01：** 无 git diff 的问答 — 干净工作树停会话，仍有 Q&A payload
-- [ ] **Cursor：** 无注入 hook，有 skill/规则调新工具 — 资产测试禁止 CC 专属 hook 出现在 Cursor 树
-- [ ] **默认分支：** `lookup` 在唯一 RepoAssociation + `main` 上 `matched=false`（无显式 `ProjectBranch`）
-- [ ] **STORE-01：** Capture 表 ≠ Ledger ≠ `ProjectMemory` — grep 入图路径无 `interactions.models` 语料
-- [ ] **MEM-04：** 新 Q&A 路径零新增 active `ProjectMemory`（除非单独人审草稿）
-- [ ] **INV-6：** Capture 仅经 `*Service`；有 grep 守卫
-- [ ] **uuid5：** 无新 kind 或有迁移+docstring 规则表；无散落 `uuid5(`
-- [ ] **ingest：** 重启后 `ingest_pending` 能续；不只 `background_runner`
-- [ ] **EVAL-01：** 低价值有行、无向量点；中高有点且 `source_kind` 可滤
-- [ ] **call_source：** 评估 LLM 在枚举内且 `use_call_source`；`llm_grader` 勿冒充价值分
-- [ ] **三面对齐：** Django snapshot + npm 工具列表 + skills 文案含同一工具名
-- [ ] **脱敏：** 含假 token 的答案入库后为红acted
-- [ ] **RetrievalTrace：** 召回 Capture 精华时 MCP/Chat 两链有 trace
-- [ ] **initiated_by_user_id：** durable 评估/ingest worker 非默默 `system`（有 PAT 时）
+- [ ] **工具面对齐：** `urls` == snapshot == `FRIDAY_TOOLS` == annotations；CI 在 mcp 未 checkout 时 **失败** 而非 skip；npm 测试无写死 43。
+- [ ] **字段契约：** 每个公开工具 request/response 键三面一致，不只新工具。
+- [ ] **HITL 闭集：** 仓库确认、finding resolve/dismiss、终审 approve/request_changes、CAS 版本字段，均在 **stdio** 可调用。
+- [ ] **分仓方案：** 发起/查询/重试/读产物不是「仅 REST」。
+- [ ] **长任务：** 写路径 accepted+job；stdio 超时 = unknown；同键重试不复制副作用。
+- [ ] **诊断：** stage、逐仓 task、callback/Runner 对账、lease、可 recover 动作可经 MCP 读到。
+- [ ] **空载荷：** confirmed/completed 不得 200+空 tasks；必有 `empty_reason`/`schema_version`。
+- [ ] **范围闸：** MCP 与 REST 同源；无第四份；非法 id 非预言机。
+- [ ] **限流与 poll_after_ms：** get 纯读；busy-loop 429。
+- [ ] **脱敏：** 超时/502 文本、handoff 摘要、日志无 PAT/连接串。
+- [ ] **版本：** `SERVER_VERSION` == 包版本；doctor 比对实例工具集；文档非无钉 `npx -y`。
+- [ ] **Canary：** Qdrant + runner + 丢 callback + 飞书 + handoff hash；skip ≠ passed。
+- [ ] **文档/skills：** 引用 ⊆ **客户端**白名单，不只 ⊆ snapshot。
+- [ ] **测试债：** `test_schema_snapshot` 独立字面量仍与 urls 同步更新，避免「改测试当改契约」。
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| 静默 `branch_unresolved` 丢数 | HIGH（客户端未留） | 无法找回；修契约后只能从 IDE 重跑。预防优先 |
-| diff 门挡掉纯对话 | MEDIUM | 放宽 hook；历史已丢。新会话生效 |
-| `main` 假命中写入错项目 | MEDIUM | 按时间+分支筛 Capture/记忆，迁仓或 supersede；lookup 加默认分支黑名单 |
-| Ledger 已入 Qdrant | HIGH | 按 `source_kind` tombstone 点；停 normalizer；对账 13-04 类 reconcile |
-| 误扩 active 记忆 | MEDIUM | `supersede` 批量；审计 `ACTION_PROJECT_MEMORY_CREATED` 回放 |
-| kind 字面值漂移双实体 | HIGH | 冻结写入；写迁移合并/作废旧 id；全量 revector |
-| ingest 重启丢失 | LOW–MEDIUM | 扫描未 ingest Capture 重投 durable；补状态机 |
-| 无 call_source 评估 | LOW | 补枚举与 contextvar；历史用量无法重标 |
-| npm/skill 未齐 | LOW | 发 mcp/skills 版本；安装器重装；对齐测试锁门 |
+| npm/服务端工具漂 | MEDIUM | 补白名单、发 mcp 补丁版、doctor 提示升级；旧实例返回工具级 404 说明 |
+| 120s 后重复执行 | HIGH | 按 idempotency/业务键对账 MR/会话；关停重复容器；泄漏的 PR 标 superceded |
+| 回调丢失、会话卡住 | MEDIUM | 跑 `areconcile_stalled_*`；用 RunnerEvent 收敛；MCP recover 重入 drive |
+| CAS 后超时误判未确认 | LOW | get 观察门状态；已锁定则禁止再确认，只 recover drive |
+| finding 被 clarifications 吃掉 | HIGH | 人工在 SPA 纠状态；代码修通道；已编码分支暂停 |
+| 轮询打满 | LOW | 429 + 临时降并发；修 skill 间隔 |
+| 密钥进模型/日志 | HIGH | 吊销 PAT、轮换 Git/飞书、红线审计导出 |
+| 客户端/实例版本交叉 | LOW | 钉版本或升级实例；doctor diff |
+| 空 payload 已回写飞书 | MEDIUM | 重渲 blueprint markdown 覆盖导出；修映射后重跑 get |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| `branch_unresolved` 丢 Capture | P1 MCP 契约 | 无项目+有仓 → 201/200 `stored=true`；测试禁止 skip 当成功 |
-| Stop 仅 diff | P2 hooks/skills | 无改动 fixture 仍 POST Q&A |
-| Cursor 不能注入 | P2 | Cursor 资产无注入 hook；文档 notes |
-| `main` 假命中 | P1 解析 + P5 回归 | lookup `main`+唯一 association → 不注入 |
-| Ledger→RAG | P3/P4 | import 守卫 + 检索测不用 ledger |
-| MEM-04 / active 记忆 | P3 | Q&A 不增 `ProjectMemory` |
-| uuid5 kind 漂移 | P4 | 复用 kind+新 source_kind；约束测试 |
-| background_runner 丢 ingest | P4 | durable/outbox + 重启续跑测 |
-| 评估无 call_source / 混 grader | P4 | CallSource 测试 + 词表闭集 |
-| 三面契约漂移 | P1+P2 | snapshot + npm alignment + skill 语义守卫 |
+| 静态白名单 55 vs 43、skip 假绿、写死 43 | P1 契约三面对齐 | CI 无 skip；集合差空；stdio ListTools 与 snapshot 相等 |
+| 字段/文档漂移、空 execution_plan 映射 | P1 | 独立字面量 snapshot；confirmed fixture tasks 非空；skills ⊆ 客户端 |
+| SERVER_VERSION 与包版本、npx 无钉 | P1 + P7 | 版本字符串相等；doctor 打印 diff；文档含 `@version` |
+| 缺确认门/finding/终审；作答通道误用 | P2 公开 HITL | 四工具在 stdio；finding 不能 answer；未确认 execute 零写入 |
+| 分仓计划/合成仅内部 | P3 | MCP 可 start/get/retry/read artifact |
+| 120s unknown、无 job、盲目重试 | P4 | abort 后 get 恢复；同键副作用=1；写工具无同步 adrive |
+| 幂等键/pending 409 过早 | P4 | 并发 pending 回 in-progress；参数漂移 conflict |
+| 回调丢失、电平 barrier、无诊断 | P5 | 丢 callback canary 收敛；诊断字段齐全；重复 drive 有度量 |
+| CAS 与「动作成功/续驱失败」混淆 | P2 + P4 | 二次确认 conflict/noop；响应分字段 |
+| 预言机、项目范围、全库 oracle | P6 | 非法 id 中性 404；同源闸无副本；exclusion 同出口 |
+| PAT/handoff/异常明文 | P6 | 假 secret 测试；handoff 非内联 |
+| 轮询风暴 | P4 + P5 | poll_after_ms；get 无 adrive；429 |
+| 合成绿 live 缺席 | P7 | 双栏报告；callback loss + 飞书 + Qdrant + handoff hash |
+| 发版交叉 | P7 | publish 跑 alignment；doctor 为发布门 |
 
 ## Sources
 
-- `server/mcp_tools/views.py`：`_resolve_report_project_id`、`lookup_project_by_branch` 第三源、`ReportProjectKnowledgeView` skip/`active` 分流
-- `skills/hooks/stop`、`skills/hooks/hooks.json`、`skills/hooks/user-prompt-submit`
-- `server/initiatives/services/ide_hook_assets.py`：Cursor `beforeSubmitPrompt` 不能注入
-- `server/initiatives/services/memory_service.py`：MEM-04 vs `record_hook_writeback`
-- `server/knowledge/ingestion.py` + `server/services/background_runner.py`：进程内 ingest、重启即丢
-- `server/knowledge/models.py`：`generate_entity_id` / `EntityKind` 锁定
-- `server/knowledge/llm_grader.py`：无 `use_call_source`；词表 related/duplicate
-- `server/agents/call_source.py`：`aux_knowledge_grader` / `ide_hook_distill` 已存在
-- `.planning/PROJECT.md` v0.25.0 决策：仓为主挂钩、三层分离、禁止 Ledger 反哺、价值≠路由 confidence
-- `.planning/debug/workflow_suite-friday-agent-e2e.md`：`main` 假命中无关项目
-- v0.17 Out of Scope：Ledger 反哺检索；INV-6 `aschedule_ingestion` 单一摄取入口
+- 本仓：`mcp/src/server.ts`（120s `AbortSignal.timeout`、未知工具拒绝、handoff 落盘）、`mcp/src/tools.ts`（43 工具静态白名单）、`mcp/tests/server.test.ts`（锁 43）、`mcp/package.json`（0.6.0）vs `SERVER_VERSION`（0.2.0）、`mcp/src/register.ts`（`npx -y`）
+- 本仓：`server/mcp_tools/urls.py` + `serializers.TOOL_SCHEMA_SNAPSHOT`（~55）、`tests/mcp_tools/test_mcp_package_alignment.py`（子模块缺失 skip）、`test_schema_snapshot.py`、`test_skills_snapshot_guard.py`
+- 本仓：`server/services/process_runtime/drive_lease.py`（并发审查跑 7 遍、fail-open）、`blueprint_resume.py`（`completed_without_structured_result_callback`）、`orchestration_delegate.py`（G3 空载荷/跳过澄清同步 drive）
+- 本仓：`delivery/api/blueprint_review_views.py`（范围闸 404 vs 非法 id 400、续驱失败不改动作结果）
+- 本仓审计：`.planning/milestones/v0.20.0-MILESTONE-AUDIT.md`（npm 四工具漂、确认门 stub、预言机）；`.planning/PROJECT.md`（v0.26.0 目标、RELY-01、finding 禁止作答通道、at-least-once）
+- MCP 规范：<https://modelcontextprotocol.io/specification/2026-07-28/server/tools>（超时、取消 best-effort、tool execution error 给模型重试、服务端须鉴权限流）
+- 未知结果与幂等：<https://rokoss21.tech/en/posts/uncertain-tool-outcomes/>；生产 MCP 恢复分类 <https://www.thepromptbuddy.com/insights/mcp-servers-in-production-authentication-permissions-logging-failure-recovery>；幂等 pending 不得过早 409（HN/业界共识，LOW–MEDIUM，与 AWS idempotency 指南同构）
 
 ---
-*Pitfalls research for: Friday AI v0.25.0 IDE 会话知识回写（Capture + 评估 + RAG）*
-*Researched: 2026-08-28*
+*Pitfalls research for: Friday AI 公开 MCP 全链路与稳定性*
+*Researched: 2026-09-14*

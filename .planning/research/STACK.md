@@ -1,170 +1,168 @@
 # Stack Research
 
-**Domain:** Cursor / Claude Code 会话知识回写（brownfield Friday AI）
-**Researched:** 2026-08-28
-**Confidence:** HIGH（复用既有栈）；MEDIUM（Cursor `afterAgentResponse` 与 Claude Code `last_assistant_message` 为答案采集点，官方契约已核，端到端配对需相位内验证）
+**Domain:** Public MCP 全链路开放与长任务稳定性（Friday AI brownfield，v0.26.0）
+**Researched:** 2026-09-14
+**Confidence:** HIGH（锁文件与现有集成点）；MEDIUM（MCP Tasks / elicitation 在 Cursor·Claude Code 宿主上的覆盖——官方规范存在，但公共代理不得依赖宿主实现）
 
-本文件只回答 **v0.25.0 要加/改哪些栈**，不重研已验证的 RAG / MCP 鉴权 / 项目记忆。结论：**不引入新运行时库**；新增一张 Capture 操作态表 + 一个 MCP 工具 + skills/hooks 适配；评估与向量化走既有 LLM / `delivery_knowledge` 管线。
+本文件只回答 **v0.26.0 要加/改哪些协议、库与配置**，不重研 RAG、runner、编码容器或前端栈。结论：**不引入新运行时依赖**；契约从「三份手写白名单」收成「服务端生成 + npm 消费」；长任务走既有 `process_runtime` + `DurableTaskService` 的 **应用层 job/轮询/幂等**，不要把稳定性押在 MCP Tasks 扩展或把 stdio `fetch` 超时拉到调研墙钟。
 
 ## Recommended Stack
 
 ### Core Technologies
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Django ORM + migration | Django `>=5.1` / Python `3.14` | 新 `SessionCapture`（或同名）操作态表 | 与仓内所有写模型一致；仓库 FK + 可选项目 FK 无法塞进现有 `ProjectMemory`（后者 `project` 必填 CASCADE） |
-| DRF Serializer + `McpToolView` | `djangorestframework>=3.15` + 现有 `adrf` | 新 MCP 工具 HTTP 面 | 鉴权 / `InteractionRun` / `_record` / 脱敏已由基类承担；禁止另开 REST 资源绕过 MCP |
-| `@friday-ai-codes/mcp` | 现包 `0.6.0`，`@modelcontextprotocol/sdk ^1.29.0`，Node `>=18` | stdio → `POST /api/mcp/tools/{name}/` | 客户端不直打业务表；工具名必须与 `TOOL_SCHEMA_SNAPSHOT` + `mcp/src/tools.ts` 三方对齐（v0.20 已有漂移债） |
-| `@friday-ai-codes/skills` | 现包 `0.7.0`，Node `>=20`，零 HTTP 库 | hooks / skill 正文 / 安装器 | 安装器已是 Node `fs` + `@clack/prompts`；Claude 插件经 `.claude-plugin/plugin.json` 挂 `hooks/hooks.json` |
-| 既有 LLM 解析栈 | `provider_config` + `anthropic`/`openai`/`google-genai` 现版本 | Friday 侧 high/medium/low 评估 | 不新增评测框架；新 `CallSource` 枚举值（建议 `session_capture_eval`），对标 `ide_hook_distill` / `memory_distill` |
-| 既有知识摄取 | `knowledge.ingestion.aschedule_ingestion` + Qdrant `delivery_knowledge` | 中高价值向量化 | v0.17 已锁「统一 collection、新 `source_kind`」；禁止新建向量库 |
+| Technology | Version（锁文件） | Purpose | Why Recommended |
+|------------|-------------------|---------|-----------------|
+| Django + adrf MCP HTTP | Django `>=5.1`（`uv.lock` **6.0.1**）、`djangorestframework>=3.15`、`adrf>=0.1.12` | 公开工具面仍是 `POST /api/mcp/tools/{name}/`，PAT fail-closed | 外部 Agent 与容器 RemoteTool 已走此边界；新 HITL/诊断工具只加 view+serializer，不换传输层 |
+| `@friday-ai-codes/mcp` stdio 代理 | 包 `0.6.0`；`@modelcontextprotocol/sdk` **1.29.0**（`mcp/pnpm-lock.yaml`）；Node `>=18` | Cursor / Claude Code / Codex 的公开 MCP | 宿主期望 stdio；现实现 `Server` + `StdioServerTransport` + `ListTools`/`CallTool`。保持 SDK **1.x**，与仓库 `mcp` Python **`<2`** 同代 |
+| Python `mcp`（容器内 SDK MCP，非公开面） | `>=1.25.0,<2`；`uv.lock` **1.26.0** | `claude-agent-sdk==0.1.58` 的 `create_sdk_mcp_server` | **禁止升 2.x**：注释已写明 2.0 去掉 `@server.list_tools()`。公开 npm 包不要改成 Python FastMCP |
+| `TOOL_SCHEMA_SNAPSHOT` + DRF Serializer | `jsonschema` **4.26.0**（`>=4.23.0`） | 工具名与请求/响应键的单一事实源 | 今日漂移根因是 `mcp/src/tools.ts` 静态 `FRIDAY_TOOLS`（测试仍断言 43 个）与 snapshot 手抄。v0.26 应用 **生成物** 替换手写 `inputSchema`，snapshot 仍作 CI 金标 |
+| `services.process_runtime` | 现包，无新库 | spec / route / research / repo plan / merge / HITL 续驱 | 编排状态已可持久化恢复；MCP 只做入口与诊断投影，不在代理进程里跑蓝图 |
+| `DurableTaskService` + Procrastinate | `procrastinate[django]>=3.8.1,<3.9`；锁 **3.8.1** | 长任务入队、rescue、诊断快照 | v0.12 已锁 at-least-once + 幂等；业务禁止 `import procrastinate`。MCP 发起调研/分仓计划后立刻返回 `session_id`/`job_id`，worker/runner 续跑 |
+| PAT + `AccessTokenAuthentication` | 现 `friday_pat_` | 公开 MCP 与 HTTP 同一身份 | 不新增 OAuth MCP remote 授权服务器；令牌不进日志/stdio 错误文本（现 `server.ts` 已遵守） |
 
 ### Supporting Libraries
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| `structlog`（已有 `>=25.5.0`） | 现依赖 | `xxx_started/completed/failed` + `category`/`component`/`duration_ms` | Capture 写入、评估、摄取全生命周期 |
-| `common.logging.redact_secrets_in_text` / `redact_for_ledger` | 现模块 | 问答精华入库前脱敏；Ledger 请求快照 | 不可绕过；客户端已抽精华仍要服务端再 redact |
-| `DurableTaskService` | 现 v0.12 适配层 | 评估 + 中高摄取异步 | MCP 入口同步只落 Capture（200/201），评估 fail-soft 进队列，不阻塞 IDE hook |
-| `jsonschema`（已有 `>=4.23.0`） | 现依赖 | 可选：评估输出 `{grade, distilled}` 校验 | 仅当 LLM JSON 不稳时用；不要为 Capture 请求再引入第二套校验（DRF 已是真源） |
-| Node 内置 `fs` / `urllib` / `python3` | 运行时已有 | hooks 脚本、安装器 merge `hooks.json` | **不要**给 skills 加 `axios`/`zod`/`node-fetch` |
-| `httpx`（已有 `>=0.27`） | 现依赖 | 仅服务端测与内部调用 | hooks 继续用 stdlib `urllib.request`，与现 `stop` / `user-prompt-submit` 一致 |
+| `@modelcontextprotocol/sdk` `Server` + `StdioServerTransport` | **1.29.0** | JSON-RPC tools 原语 | 继续用现有 `setRequestHandler(ListToolsRequestSchema / CallToolRequestSchema)`。**不要**为了 `McpServer.registerTool` / `registerToolTask` 大迁 API——Tasks 宿主覆盖不可作为 v0.26 验收 |
+| Node 内置 `fetch` + `AbortSignal.timeout` | 运行时 | HTTP 透传 | 拆超时：同步读工具短超时；**发起/轮询** 更短。现状全局 **120_000 ms** 会把「等调研」伪装成网络失败 |
+| `jsonschema` | **4.26.0** | 生成 JSON Schema 与 snapshot 对拍 | 生成器跑在 Django 测试/管理命令里；npm 包 **不**加 zod 作为契约真源（SDK 已传递 zod 4.4.3，仅作 SDK 内部） |
+| `structlog` | `>=25.5.0` | MCP caller 事件 + `duration_ms` | 新工具 `xxx_started/completed/failed`；`category=caller`；`component` 用现有 mcp 清单。观测 fail-soft |
+| `tenacity` | 现依赖 | 仅服务端对 Git/飞书的既有重试 | **不要**在 npm 代理里加重试库：超时重试会对非幂等写工具双提交；幂等靠 `idempotency_key` + 服务端 CAS |
+| `django-apscheduler` | `>=0.7.0` / **0.7.0** | 澄清过期、blueprint recovery 保险丝 | 与 durable rescue 分工保持现状；MCP 诊断面读这些状态，不新调度器 |
+| `httpx` | `>=0.27` | 服务端出站 | 代理继续用 Node `fetch`，与现 `callFridayTool` 一致 |
 
 ### Development Tools
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| `server/tests/mcp_tools/test_schema_snapshot.py` | `TOOL_SCHEMA_SNAPSHOT` 键集 | 新工具必须同时改 serializer、snapshot、本测试 |
-| `test_mcp_package_alignment.py` | `mcp/src/tools.ts` 名集 == snapshot | 漏 npm 客户端则工具对 Cursor 不可达（v0.20/v0.22 已知债） |
-| `test_skills_snapshot_guard.py` | SKILL.md 引用 ⊆ snapshot | 新工具名写进 `friday-dev` / `friday-memory` 时必过 |
-| Cursor 官方 Hooks 文档 | `beforeSubmitPrompt` / `stop` / `afterAgentResponse` / `sessionStart` | 答案采集不要押在 Cursor `stop` 入参上（官方只有 `status`/`loop_count`） |
-| Claude Code Hooks 文档 | `UserPromptSubmit` / `Stop` | 用 `last_assistant_message`，不要读可能滞后的 `transcript_path` |
+| `test_schema_snapshot.py` | snapshot 键集 = 已发布契约 | 新 HITL/诊断/轮询工具必须同 PR 改 serializer + snapshot |
+| `test_mcp_package_alignment.py` | `tools.ts` 名集 == snapshot | 生成后改为「生成物 vs snapshot」；禁止再手改 `FRIDAY_TOOLS` 过测试 |
+| `test_skills_snapshot_guard.py` | SKILL.md ⊆ snapshot | 公开工具名进文档时必过 |
+| `mcp` vitest + `tsdown` | 包测与构建 | `vitest@^4.1.8`、`tsdown@^0.22.2`、`typescript~5.9.3`；生成文件纳入 `src/` 并被 typecheck |
+| MCP 规范（tools / progress） | 协议对齐参考 | [Tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)、[Progress](https://modelcontextprotocol.io/specification/2026-07-28/basic/utilities/progress) |
 
 ## Installation
 
 ```bash
-# 不新增 npm / Python 包。发版节奏：
-# 1) 服务端：Django migration + 新 MCP 工具（随 friday-ai 镜像）
-# 2) 客户端：bump @friday-ai-codes/mcp 与 @friday-ai-codes/skills 补丁版
-
-# 开发者本机（已有）
-# Python：沿用 server/ uv + Django 5.1+
-# MCP 包：mcp/ 内现有 @modelcontextprotocol/sdk，勿升级 major
-# Skills：npx @friday-ai-codes/skills install --agent cursor|--agent claude-code
-
-# 禁止
-# npm install mem0 zod langchain axios
-# pip install chromadb llama-index-new-memory
+# 不新增运行时包。保持现有安装：
+# server
+#   mcp>=1.25.0,<2          # uv.lock: 1.26.0
+#   procrastinate[django]>=3.8.1,<3.9   # uv.lock: 3.8.1
+#   jsonschema>=4.23.0      # uv.lock: 4.26.0
+# mcp npm
+#   @modelcontextprotocol/sdk@1.29.0
+#   不要 npm install 新依赖
 ```
 
-无新 `npm install` 行。skills 安装器扩展为 **merge** Cursor `~/.cursor/hooks.json` 与项目 `.cursor/hooks.json`（`version: 1`），用现有 `readFileSync`/`writeFileSync`，不要依赖 jq。
+契约生成（实现期，零新依赖）建议形态：
+
+```bash
+# 服务端：从 Serializer + TOOL_SCHEMA_SNAPSHOT 写出 JSON Catalog
+cd server && uv run python manage.py export_mcp_tool_catalog --out ../mcp/src/generated/catalog.json
+
+# npm：ListTools 优先 GET {baseUrl}/api/mcp/tools/catalog/（PAT），失败回落 bundled catalog.json
+```
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|-------------------------|
-| **新 Capture 表**（仓库 FK 可空 + `git_url`/`branch` 标量；`project` 可选） | 扩 `ProjectMemory` | 永不：`ProjectMemory.project` 必填，与「仓库为主、无项目也先收」冲突；MEM-04 语义是成员共享记忆，不是问答账本 |
-| **新 MCP 工具**（建议名 `report_session_knowledge`） | 扩 `report_project_knowledge` | 仅当产品改口「无项目就丢」——当前锁定禁止。现工具在 `branch_unresolved` 时 `accepted=false` 且不落库 |
-| Cursor：`beforeSubmitPrompt` 缓存问题 + `afterAgentResponse` 配对答案 | Cursor `stop` 抽答案 | Cursor 官方 `stop` 无助手正文；`followup_message` 会再提交一轮，污染会话，禁止用于回写 |
-| Claude Code：`UserPromptSubmit` 记问题 + `Stop.last_assistant_message` | 解析 `transcript_path` JSONL | 官方写明 transcript 异步滞后；Stop 应用 `last_assistant_message` |
-| 中高价值 → 现 `aschedule_ingestion` + 新 `source_kind` | 新建 Qdrant collection | 违反 v0.17「统一知识库」；召回已走 `DeliveryKnowledgeSearchService` + `repository_ids` |
-| MCP 同步落 Capture，评估异步 | 在 hook 里等 LLM 打分 | hook 超时会拖 IDE；评估必须 Durable 队列 |
-| 安装器 merge Cursor `hooks.json` | 做 Cursor 专用插件 / VS Code extension | v0.15 已否决专用插件（PROJX-04）；hooks.json 是官方一等配置 |
+| 应用层 `status=accepted\|running\|waiting_hitl\|completed\|failed` + 专用 get/retry 工具 | MCP Tasks（`execution.taskSupport` / `tasks/get` / SEP-2663） | 仅当 **Cursor 与 Claude Code 均**声明 Tasks 扩展且 canary 证明 `resultType: "task"` 不被当成错误。2026-07-28 规范仍在演进，SDK 1.29 的 task 路径与宿主覆盖 **不足以** 作为公开稳定性底座 |
+| stdio npm 代理 + Django HTTP | 服务端 Streamable HTTP / SSE MCP（Python `mcp` FastMCP） | 将来做「无 Node 的远程 MCP」产品时再开里程碑；会撞 `mcp<2` 钉死、PAT 前缀闸门、以及 Cursor 默认 stdio 配置 |
+| 生成 catalog + 运行时 `tools/list` 拉服务器 | 继续三处手写（serializer / snapshot / `FRIDAY_TOOLS`） | 仅热修单个字段的紧急 patch；v0.20–v0.22 已证明手写会漏工具 |
+| Friday HITL 工具（answer / confirm / approve / dismiss finding） | MCP elicitation（`elicitation/create`） | 宿主未实现 elicitation 时流程卡死。蓝图确认门必须落 Friday 状态机，不能停在 JSON-RPC 中间请求 |
+| `DurableTaskService` 既有队列 | Celery / RQ / Temporal / 新 Postgres LISTEN | 无：v0.12 明确适配层隔离；SQLite dev fallback 必须保留 |
+| 同步工具保持 30–60s HTTP | 把 `REQUEST_TIMEOUT_MS` 提到 30–45min 等容器 | 超时会制造「未知结果」：代理报错但 runner 仍在跑。长工作必须先返回句柄 |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| 把 Interaction Ledger / `raw_request` 当 RAG 正文 | 锁定三层分离；Ledger 是审计与用量，`redact_for_ledger` 后也不该进向量 | `McpToolView._begin/_record` 照常记本次工具调用；知识只进 Capture →（中高）KnowledgeEntity |
-| `ProjectMemory` / `MemoryService.append` 作为 Capture 唯一落点 | 强制项目；`branch_unresolved` 静默丢；active 直写是 Phase 86 对「git 改动摘要」的 deviation，不是零散问答 | 新表 + `CaptureService`（INV-6 单一写入） |
-| 扩 `report_project_knowledge` 的 `content` 自由文本扛 Q&A | 无 `question`/`answer`/`response_model`/`session`；snapshot 已与 serializer 漂移（snapshot 仍是 `project_id, content, source_conversation_id`） | 新工具 + **完整** snapshot（请求/响应键一次写对） |
-| 新 npm 依赖（Mem0、LangChain memory、zod、axios） | 质量门禁止；MCP/skills 已能 HTTP + JSON Schema | 现 `@modelcontextprotocol/sdk` + DRF |
-| 新向量库 / 新 `llama-index` 存储 | 重复索引、权限过滤要重做 | `delivery_knowledge` + 新 `source_kind=session_capture`（名可微调，逻辑隔离同 `project_memory`） |
-| Cursor `afterAgentThought` 落库 | 锁定「不存隐藏 CoT」；官方入参即完整 thinking 文本 | 忽略该 hook；客户端只抽精华 |
-| 客户端猜 `response_model` | 拿不到记 `unknown` | 字段可选，默认 `unknown` |
-| 为 Capture 新建 Django app / 新微服务 | 过重；FK 指向 `repositories.Repository` / `initiatives.Project` 即可 | 放 `knowledge` app（靠近摄取）或 `initiatives` 但 **project 必须 null=True** |
-| Cursor `beforeSubmitPrompt` 注入 `additionalContext` | 官方输出仅 `continue` / `user_message`；社区仍在要注入能力。Phase 86 结论仍成立 | 读路径继续 always-on rule + MCP；Cursor **会话级**注入可用 `sessionStart.additional_context`（与 per-prompt 无关） |
-| Stop hook 在「无 git diff」时 `fail_soft` 跳过 | 现 `skills/hooks/stop` 无改动即 exit 0，直接违反 MCP-02/SKILL-01 | 改 Stop：无 diff 仍回写本轮 Q&A；git 摘要可继续调旧 `report_project_knowledge`（有项目时） |
-| 升级 `@modelcontextprotocol/sdk` major / `mcp` Python 到 2.x | 服务端刻意 pin `mcp>=1.25.0,<2`（SDK 装饰器） | 保持现 pin |
+| `mcp` Python **2.x** | 去掉 `claude-agent-sdk` 依赖的 `list_tools` 装饰器 | 钉死 `>=1.25.0,<2`（1.26.0） |
+| `@modelcontextprotocol/sdk` **2.x / 2026-07-28 强制升级** | 未验证与 Cursor stdio 客户端兼容；Tasks/subscriptions 握手 fragile（SEP-2663 原文） | 锁 **1.29.0**；协议能力继续只声明 `{ tools: {} }` |
+| FastMCP / 第二套 MCP 服务器 | 双面契约再漂移；鉴权绕过 `McpToolView` | 单一 HTTP 工具面 + npm 透传 |
+| Celery、Dramatiq、Temporal、自定义 Redis 队列 | 与 Procrastinate 三套并存；业务会直接依赖实现 | `DurableTaskService.defer` + process_runtime resume |
+| 在 npm 包加 `axios` / `zod` 契约 / `node-fetch` | 最小依赖；zod 若当 inputSchema 真源会与 DRF 再分裂 | 内置 `fetch`；schema 由服务端生成 |
+| MCP `notifications/progress` 作为唯一进度面 | stdio 代理当前不转发 progressToken；宿主可能丢弃 | 轮询工具返回阶段枚举 + `poll_after_ms`；可选：代理若见到 `_meta.progressToken` 再 best-effort 转发（非验收门） |
+| WebSocket MCP / GraphQL 工具网关 | 超出公开 MCP 与现有 ASGI 边界 | REST MCP + 既有 channels 仅服务 SPA |
+| 为 catalog 引入 OpenAPI 代码生成器（openapi-typescript 等） | 又一层 schema 方言 | DRF 字段 → JSON Schema draft 的 **仓内小生成器** + `jsonschema` 校验 |
+| 把 HITL 做成「模型在 tool result 里改蓝图正文」 | 违反 v0.20「AI 不覆盖人工 / finding 不走作答通道」 | 只暴露 `answer_*` / `approve_*` / `request_*_changes` / finding `resolve\|dismiss` |
 
 ## Stack Patterns by Variant
 
-**如果宿主是 Claude Code：**
-- 用插件 `hooks/hooks.json`：`UserPromptSubmit`（stdin 有 `prompt` + `session_id`）缓存本轮问题精华；`Stop` 读 `last_assistant_message` 抽答案精华，调新 MCP 工具。
-- 现 Stop 的 git `--stat` 上报保留为 **附加** 项目记忆路径，不得再当唯一写路径。
-- 凭证顺序不变：`FRIDAY_BASE_URL`/`FRIDAY_ACCESS_TOKEN` → `FRIDAY_API_URL`/`FRIDAY_PAT` → `~/.friday/config.json`。
+**If 工具是只读且 <10s（grep / rag / get_file / graph_query）：**
+- 保持同步 `tools/call` → HTTP 200 JSON
+- 代理超时可维持 ~60–120s
+- Because 用户期望一次往返拿到证据
 
-**如果宿主是 Cursor：**
-- `beforeSubmitPrompt`：只记录 `prompt`（可 `continue: true`），**不拦截**；问题缓存到 `~/.cache/friday-skills/`（与现 ctx/stop marker 同目录）。
-- `afterAgentResponse`：官方入参 `{ text }`，配对缓存问题后 MCP 回写。这是 Cursor 侧答案的唯一可靠钩子。
-- `stop`：不要用来抽答案；可继续做 git 改动摘要（现 ide-hook-assets 写路径）。
-- `sessionStart`：可注入仓库级提示，**不能**替代 per-turn 问答采集。
-- 安装器必须 merge `.cursor/hooks.json`；今日 `skills/lib/installer.mjs` **只装 skills + friday.mdc，不装 Cursor hooks**——这是本里程碑必改集成点。
+**If 工具会派容器 / durable worker / 飞书往返（research、repo plan、merge、execute）：**
+- HTTP **必须**在秒级返回 `accepted`/`partial` + 稳定 id + `poll_after_ms` + 幂等键
+- 配套 `get_*` / `retry_*` / 诊断工具；禁止在 view 内 `await` 调研墙钟
+- Because `AbortSignal.timeout(120000)` 与 gunicorn/proxy idle 都会把结果变成未知态
 
-**如果仓库解析失败 / 无 `repository_id`：**
-- 客户端仍提交 `git remote`/`branch`/`session` 标量；服务端解析 `Repository.git_url` **best-effort**。
-- 解析失败：**照样 INSERT Capture**（`repository_id=NULL`），`reason` 可标 `repo_unresolved`，**禁止**映射成现网的 `branch_unresolved` 丢弃语义。
-- 项目解析继续可选增强，失败不影响 Capture。
+**If 工具是 HITL 门（仓库确认、review finding、终审、退回）：**
+- 写工具必须幂等（同一 artifact_version_id + content_hash 重复批准 = 同一结果）
+- 状态只经既有 lifecycle/service（INV-6），MCP view 薄封装
+- Because 门是领域状态机，不是 MCP elicitation 会话
 
-**如果价值评估为 low：**
-- 行留在 Capture 表（评测回放）；**不**调用 `aschedule_ingestion`；不进 Qdrant。
-- 质量门槛（过短/低信息）可拒收向量化，但与「low 仍落账本」分开：门槛过严会违反「零散提问也收集」——建议门槛只挡空串/密钥，价值分给 LLM。
+**If 需要「工具列表随服务器版本变」：**
+- `tools/list` 拉 catalog（带短 TTL 缓存）；bundled `catalog.json` 作离线回落
+- **不要**宣称 `tools.listChanged: true` 除非代理真能在 stdio 上发 `notifications/tools/list_changed` 且宿主会重拉——Cursor 会话通常只在连接时 list 一次
+- Because 规范允许动态 list，但 stdio 热更新对 IDE 宿主不可靠；生成物 + 对齐测试才是防漂移
+
+**If 诊断/恢复：**
+- 只读投影：blueprint stage、逐仓 task、callback、durable job、retry/recovery 枚举
+- 写恢复：调用既有 `adrive_*` / `DurableTaskService.retry_stalled` 包装工具，带 `initiated_by_user_id`
+- Because 恢复语义已在 process_runtime / durable，MCP 不要复制状态机
 
 ## Version Compatibility
 
 | Package A | Compatible With | Notes |
 |-----------|-----------------|-------|
-| Django `>=5.1` / Python `3.14` | 现 `sync_to_async` ORM 纪律 | Capture 写路径必须 `CaptureService`，异步 view 不直接 `.save()` |
-| `djangorestframework>=3.15` | `McpToolView` PAT/JWT | 新 serializer `required`: `question`,`answer`；其余可选 |
-| `@friday-ai-codes/mcp@0.6.x` + `@modelcontextprotocol/sdk ^1.29.0` | 服务端 `TOOL_SCHEMA_SNAPSHOT` | 发 npm 前跑 `test_mcp_package_alignment`；不同步则 Cursor 调不到新工具 |
-| `@friday-ai-codes/skills@0.7.x` | Claude Code 插件 hooks + Cursor `hooks.json` v1 | 插件根 `hooks/hooks.json` 已有 UserPromptSubmit/Stop；Cursor 侧是缺口 |
-| 服务端 `mcp>=1.25.0,<2` | `claude-agent-sdk` | 勿为会话回写放开 mcp 2 |
-| Cursor Hooks `version: 1` | `beforeSubmitPrompt` 无 additional_context | 以 [cursor.com/docs/hooks](https://cursor.com/docs/hooks.md) 为准，不以论坛猜测为准 |
-| Claude Code Stop | `last_assistant_message` | [code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks) 2026 文档 |
+| `@modelcontextprotocol/sdk@1.29.0` | Cursor / Claude Code stdio clients expecting MCP 2024–2025 tools 原语 | 锁文件已解析；`^1.29.0` 允许 1.x patch，**禁止无评估的 2.x** |
+| `mcp==1.26.0` | `claude-agent-sdk==0.1.58` | 上下界 `<2` 是硬约束；server 与 task 两份 `pyproject.toml` 必须同钉 |
+| `procrastinate==3.8.1` | Django **6.0.1**、`psycopg[binary]>=3.3`、Python 3.14 | 生产强制 Postgres；SQLite 走 in-process fallback，MCP 长任务在 dev 可能丢 job——诊断面须暴露 backend |
+| `jsonschema==4.26.0` | 生成的 JSON Schema draft-07 风格 object | MCP tools `inputSchema` 必须是 JSON Schema object；不要输出 Zod |
+| `adrf` async views | ASGI（uvicorn/daphne）；ORM 经 `sync_to_async` | 新 catalog GET 与工具 POST 保持 async；禁止在事件循环直接 ORM |
+| npm `zod@4.4.3`（SDK 传递） | 仅 SDK 内部 | **不要**在 `mcp/package.json` 提升为直接依赖来写工具 schema |
 
-## Integration map（本里程碑改哪些面）
+## Integration Points（实现接线，非新库）
 
-| 层 | 动作 | 不改 |
-|----|------|------|
-| `knowledge` 新模型 + `CaptureService` + migration | **新增** | 不改 `ProjectMemory` 必填 FK |
-| `mcp_tools/serializers.py` + `views.py` + `urls.py` + `TOOL_SCHEMA_SNAPSHOT` | **新增工具** | 保留 `report_project_knowledge` 给「有项目的记忆沉淀」 |
-| `mcp/src/tools.ts` + `TOOL_ANNOTATIONS` | **同步** | 不改 MCP SDK |
-| `knowledge/sources/` 新 normalizer | 中高才跑 | 不把 Ledger payload hydrate 进图 |
-| `CallSource` + `LOGGING-SPEC.md` §4.1 | 加 1 个枚举 | 评估 LLM 必须打点 |
-| `skills/hooks/stop` + `user-prompt-submit` | 改采集逻辑 | 凭证解析/fail-soft/exit 0 模式保留 |
-| `skills/lib/installer.mjs` | merge Cursor hooks | 不引入新依赖 |
-| `server/initiatives/services/ide_hook_assets.py` | 资产脚本对齐新工具 | Cursor 读路径仍不押 `beforeSubmitPrompt` 注入 |
-| Vue 控制台 | **本里程碑可不做大前端**（PROJECT 小版本惯例） | 回放可后续 REST；先 MCP + 表 |
+| 点 | 现状 | v0.26 栈动作 |
+|----|------|----------------|
+| `server/mcp_tools/serializers.py` `TOOL_SCHEMA_SNAPSHOT` | 手写请求/响应键 | 保持金标；生成 catalog 的输入 |
+| `server/mcp_tools/views.py` | 每工具一个 `APIView` | 新 HITL/诊断/轮询 view；可选 `GET tools/catalog/` |
+| `mcp/src/tools.ts` `FRIDAY_TOOLS` | 静态 43 工具，未知名直接拒绝 | 改为 bundled catalog ± 运行时拉取；**去掉「未知即拒绝」对服务器新工具的永久封死**（至少：服务器 404 才算未知） |
+| `mcp/src/server.ts` `REQUEST_TIMEOUT_MS = 120_000` | 全局超时 | 按工具类拆分；长任务工具禁止同步等待 |
+| `callFridayTool` + `X-Friday-Run-ID` | 会话级 ledger 串联 | 保留；轮询同一 `run_id` |
+| `get_confirmed_blueprint_handoff` 落临时文件 | 大 payload 不进模型上下文 | 保留；新交接工具沿用「摘要 JSON + 本地文件」 |
+| `process_runtime` 蓝图 11 态 / 确认门 | 领域真源 | MCP 控制面只调 service |
+| `DurableTaskService` | 索引/摄取/部分 blueprint 恢复 | 长 MCP 作业的 enqueue/retry/诊断读模型，不新表引擎 |
+| 可观测 | `begin_interaction_run` / `_record` | 新入口纳入 QPS；LLM 赋既有 `call_source` 枚举，不新框架 |
 
-## MCP 契约（栈层，非产品文案）
+## Protocol / Config Changes（相对「加库」）
 
-建议请求键（DRF 为真源，snapshot 必须抄全）：
-
-- 必填：`question`, `answer`（客户端已抽精华，长度上限对齐现 `content` 量级，建议各 `<=20000`）
-- 可选：`response_model`（默认 `unknown`）, `repository_id`, `git_url`, `branch_name`, `session_id`, `project_id`, `client`（`cursor`/`claude_code`）
-- 禁止必填 `project_id`；禁止「无项目 → 400」
-
-建议响应键：`accepted`, `capture_id`, `repository_id`, `project_id`, `reason`, `run_id`（`reason` 可含 `repo_unresolved` 但仍 `accepted=true`）
-
-`idempotentHint: true` 可按 `(token_user, session_id, question_hash)` 幂等，避免 Stop 重试双写。
-
-现网债：`TOOL_SCHEMA_SNAPSHOT["report_project_knowledge"]` **小于**真实 serializer（缺 `branch_name`/`repository_id`/`writeback_mode`/`target`/`distill`）。本里程碑 **不要顺手「修一半」旧 snapshot** 除非单独立项；新工具必须一次对齐，避免再制造第三份漂移。
-
-## Observability（强制，无新库）
-
-- 入口：`category=caller`, `component=mcp_tools`（或 `knowledge`）
-- 评估 LLM：`call_source=session_capture_eval`（需写入 `CallSource` 与 LOGGING-SPEC）
-- 摄取：复用 knowledge normalizer 的 `sampling` 事件
-- Ledger：工具调用走既有 `begin_interaction_run`；**不要**把问答全文当 RAG 源从 Ledger 回灌
+| 变更 | 建议 | 不要做 |
+|------|------|--------|
+| MCP capabilities | 维持 `{ tools: {} }` | 不要广告 `listChanged`/`tasks`/`elicitation` 直到宿主 canary 通过 |
+| 异步契约字段 | 稳定：`job_id` 或既有 `session_id`、`status` 闭集、`poll_after_ms`、`idempotency_key`、`error_code` | 不要用 HTTP 504 表示「还在跑」 |
+| npm 配置 | 现有 `FRIDAY_BASE_URL` / `FRIDAY_ACCESS_TOKEN` / `~/.friday/config.json` | 不要为 catalog 再发明第二套凭证 |
+| 可选配置 | `FRIDAY_MCP_CATALOG_TTL_MS`、同步/轮询分超时 | 不要把调研超时写进代理 |
+| 服务端超时 | 容器超时仍在 `blueprint_research_adapter`（30/45 min）等 | 不要让 MCP HTTP 对齐这些墙钟 |
+| 幂等 | 扩展 `create_feishu_technical_plan` 已有 `idempotency_key` 模式到 start/retry | 不要客户端超时自动重放非幂等 execute |
 
 ## Sources
 
-- 仓库：`server/mcp_tools/views.py`（`_resolve_report_project_id` / `branch_unresolved` 丢弃）、`serializers.py` `ReportProjectKnowledgeRequestSerializer`、`initiatives/models/memory.py`、`interactions/models.py`、`knowledge/sources/project_memory.py`、`skills/hooks/{stop,user-prompt-submit}`、`skills/hooks/hooks.json`、`skills/lib/installer.mjs`、`mcp/package.json` `0.6.0`、`skills/package.json` `0.7.0` — **HIGH**
-- Cursor 官方 Hooks：[https://cursor.com/docs/hooks.md](https://cursor.com/docs/hooks.md) — `beforeSubmitPrompt` 仅 `continue`/`user_message`；`afterAgentResponse` 入参 `text`；`stop` 无助手正文；`sessionStart` 可 `additional_context` — **HIGH**
-- Claude Code 官方 Hooks：[https://code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks) — `UserPromptSubmit` 用 `hookSpecificOutput.additionalContext` 注入；Stop 用 `last_assistant_message` — **HIGH**
-- 社区 Cursor `beforeSubmitPrompt` 注入请求：[forum.cursor.com/t/150707](https://forum.cursor.com/t/hooks-allow-beforesubmitprompt-hook-to-inject-additional-context/150707) — 与官方输出 schema 一致，**不能**当已交付能力 — **MEDIUM**（仅作「不要押注入」佐证）
-- v0.16 Phase 86 / `ide_hook_assets.py`：Cursor 读路径不押注入 — 与 2026 官方文档仍一致 — **HIGH**
+- `mcp/package.json` + `mcp/pnpm-lock.yaml` — `@modelcontextprotocol/sdk@1.29.0`，zod 传递 4.4.3 — **HIGH**
+- `server/pyproject.toml` + `server/uv.lock` — `mcp==1.26.0`、`procrastinate==3.8.1`、`jsonschema==4.26.0`、`django==6.0.1`、`claude-agent-sdk==0.1.58` — **HIGH**
+- `mcp/src/server.ts` — 120s `AbortSignal`、静态 `FRIDAY_TOOLS` 未知拒绝、stdio 透传 — **HIGH**
+- `server/tests/mcp_tools/test_mcp_package_alignment.py` — 三面对齐守卫与历史漂移 — **HIGH**
+- [MCP Tools spec 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/server/tools) — `tools/list`、`listChanged` 需订阅流 — **HIGH**
+- [MCP Progress](https://modelcontextprotocol.io/specification/2026-07-28/basic/utilities/progress) — `progressToken` 可选，完成后必须停发 — **HIGH**
+- [MCP Tasks 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks) 与 [SEP-2663](https://modelcontextprotocol.io/seps/2663-tasks-extension) — taskSupport 握手脆弱、扩展仍在改 — **MEDIUM**（故不作为 v0.26 底座）
+- TypeScript SDK `McpServer` task 路径（`registerToolTask` / `taskSupport`）— 存在于当前 SDK 源码 — **MEDIUM**（公开代理未使用 `McpServer`）
 
 ---
-*Stack research for: Friday AI v0.25.0 IDE session knowledge writeback*
-*Researched: 2026-08-28*
+*Stack research for: Friday AI v0.26.0 public MCP capability and stability*
+*Researched: 2026-09-14*

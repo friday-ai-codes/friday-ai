@@ -1,210 +1,220 @@
 # Feature Research
 
-**Domain:** IDE 会话知识回写（Cursor / Claude Code → Friday Capture 账本 → 价值评估 → 仓库/项目 RAG）
-**Researched:** 2026-08-28
-**Confidence:** HIGH（Friday 既有 MCP/记忆/RAG 以源码为准）；MEDIUM（竞品与宿主 hooks 以官方文档 + 社区实现交叉验证）
+**Domain:** 面向外部 Agent 的 MCP-only 技术蓝图编排控制面
+**Researched:** 2026-09-14
+**Confidence:** HIGH（现状与缺口来自 Friday 源码）；HIGH（MCP 长任务、结构化输出与错误语义来自官方规范）
 
 ## Feature Landscape
 
-本里程碑要补的不是「再造一套记忆」，而是把现有闭环从 **「分支绑定项目 + git diff 才写回 + 长度/去重门槛」** 升级为 **「仓库为主挂钩、无项目也先收、零散问答也收、永不静默丢 Capture、价值分级后中高进 RAG」**。
+本里程碑的完成标准不是“内部已有蓝图、分仓方案和 REST 页面”，而是外部 Agent 在不调用
+Friday Web/REST、不了解数据库模型、也不依赖人工代点页面的前提下，仅通过公开 MCP 完成：
 
-产业上成熟产品都走同一条管线：**采集（hook/transcript）→ 抽精华（非全文、非 CoT）→ 持久化（账本 ≠ 向量）→ 重要性/去重 → 按 query 召回**。Mem0 官方模型是「发 messages，默认存提炼事实而非逐字 transcript」；Claude Code 官方 hooks 在 `Stop`/`SessionEnd` 提供 `transcript_path`，并警告 transcript 异步滞后、hook 有超时。Friday 现有 `skills/hooks/stop` 则在无 `git diff --stat` 时直接 `exit 0`，纯对话被系统性丢掉——这是 v0.25 相对 v0.16 stop hook 的核心缺口。
+`发起 → 轮询 → 规格澄清 → 仓库确认 → 逐仓方案 → 融合 → AI finding 处置 → 人类终审 → 确认交接`
+
+当前服务端有 55 个 `McpToolView.tool_name`，npm `mcp/src/tools.ts` 只有 43 个。缺失的 12 个中，
+与本目标直接相关的是 `approve_technical_blueprint` 和
+`request_technical_blueprint_changes`。更大的缺口是：仓库确认门的八个 REST 动作、AI
+review finding 的 `resolve`/`dismiss`、逐仓方案与融合的独立状态/产物/重试能力都没有公开
+MCP 工具。内部 adapter、模型或 REST 存在不构成“公开能力”。
 
 ### Table Stakes（用户期望这些）
 
-缺任一项，产品会感觉「回写没发生」或「知识进不去下次会话」。
+下列每项均应是可单独验收的原子能力。
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| MCP 结构化回写契约（问题 / 答案 / 回答模型 / 仓库 / 分支 / 会话） | 宿主只能提交结构化字段；缺字段记 `unknown`，不猜 | MEDIUM | 新建专用工具优于硬扩 `report_project_knowledge`（后者契约是自由文本 `content` + 项目定位）。须同步 `TOOL_SCHEMA_SNAPSHOT`、`mcp/src/tools.ts`、skills snapshot 守卫。依赖 PAT fail-closed（v0.2）。 |
-| 仓库为主挂钩、项目可选；无 `project_id` 仍接受 Capture | 问答常挂仓、不一定挂 Friday 项目 | MEDIUM | 解析仓库：`repository_id` 优先，否则 git remote / 本机 cwd 映射既有 `Repository`。项目经 `lookup_project_by_branch` **增强**，失败不得挡写入。 |
-| 禁止 `branch_unresolved` 静默丢数据 | 用户以为沉淀了，服务端 200 + `accepted=false` 等于丢 | LOW–MEDIUM | 今日 `ReportProjectKnowledgeView` 在 `_resolve_report_project_id` 失败时 200 跳过（`views.py`）。Capture 账本必须先落库；`accepted` 只表示「是否进记忆/RAG」，不是「是否收到」。 |
-| 零散问答 / 无 git 改动也采集 | 用户在 IDE 里问架构/坑/约定，往往不改文件 | MEDIUM | 现 stop hook 注释写明「只有未提交工作区改动才上报」。须改采集触发：技能主动抽 Q&A + hook 在无 diff 时仍提交精华。 |
-| Skills + Cursor / Claude Code hooks 抽精华并触发回写 | 不靠用户每次说「记下来」 | HIGH | Claude Code：`Stop` 已 `async: true`（`skills/hooks/hooks.json`）。Cursor 侧现多为 rule/技能编排，无与 Claude 对等的 transcript stdin。客户端只抽精华，禁止上报完整隐藏思维链。 |
-| Capture 账本（原始结构化问答 + 元数据） | 评测回放、审计、永不丢 | MEDIUM | 新写模型（INV-6 单一 service）。**不是** `Interaction Ledger`，也不是 `ProjectMemory`。Ledger 继续记 MCP run/用量。 |
-| 三层分离：Capture ≠ 提炼知识 ≠ Ledger | 统一知识库口径（v0.17）：Ledger 禁止反哺检索 | LOW（纪律）/ MEDIUM（建模） | 锁定决策已在 `PROJECT.md` Key Decisions。normalizer 只吃提炼后的中高价值正文。 |
-| 价值评估 high / medium / low + 提炼 | 全量向量化会污染 `delivery_knowledge` | MEDIUM | **不是** `evaluate_writeback_quality`（过短 / 低信息量 / Jaccard 重复）。新 LLM 调用须赋 `call_source`，fail-soft 不得丢掉 Capture。路由 `confidence` 禁止当知识价值。 |
-| 中高价值进仓库/项目 RAG；低价值留评测样本 | 下次编码能搜到决策与坑 | MEDIUM | 复用 `knowledge/sources/` 摄取 + `DeliveryKnowledgeSearchService`。建议新 `source_kind`（如 `session_capture`），**不要**假装成 `project_memory`（后者要求 active `ProjectMemory` + `repository_id=None`）。 |
-| 按仓 / 按项目可检索；Capture 可回放 | 用户验收「问过的能搜到、原始问答能打开」 | MEDIUM | 读路径：MCP 检索工具扩 filter（`repository_id` / 可选 `project_id`）+ 控制台或 API 回放。写 `RetrievalTrace`。 |
-| 认证、归因、脱敏 | 团队共享知识不可泄漏凭证 | LOW（复用） | `redact_secrets_in_text` 双保险；`initiated_by_user_id`；PAT=用户身份。 |
-| Hook / 技能 fail-soft，不阻断编码 | 产业与现网纪律一致 | LOW | Claude Code Stop 可 block 会话结束；Friday 必须 exit 0 / 200。超时：采集异步，避免同步 LLM。 |
+| ID | Capability | Public contract / acceptance | Complexity |
+|----|------------|------------------------------|------------|
+| PUB-01 | 服务端、HTTP URL、snapshot、npm stdio 单一工具清单 | 四面工具名、输入 schema、输出 schema、annotations 完全相等；CI 枚举真实 `McpToolView.tool_name`，禁止手抄白名单 | MEDIUM |
+| INIT-01 | MCP-only 幂等发起蓝图 | `start_technical_blueprint`（或收敛后的既有 create）接收 `context_id/project_id/assumptions_tier/idempotency_key`；立即返回 `operation_id/session_id/artifact_id/status/next_actions`，不等待长阶段完成 | MEDIUM |
+| INIT-02 | 幂等键负载绑定 | 同 `actor + idempotency_key + canonical_request_hash` 重放返回同一 operation；同 key 不同负载回 `409 idempotency_key_conflict`；在途重放为 `reused/in_progress`，不再建会话/容器 | MEDIUM |
+| STAT-01 | 蓝图总状态查询 | `get_technical_blueprint_status(operation_id 或 artifact_id)` 返回稳定枚举、当前 stage、stage 状态、版本坐标、进度计数、等待原因、`next_actions[]`、`retryable`、脱敏错误；纯 GET 语义，不隐式 advance | MEDIUM |
+| STAT-02 | 逐仓任务状态查询 | 返回每仓 `repository_id/role/stage/status/attempt/subtask_id/delivery_status/started_at/updated_at/error_code/retryable`；区分 `pending/running/waiting_input/succeeded/failed/stale/degraded` | MEDIUM |
+| STAT-03 | 融合状态查询 | 返回 `attempt/validation_status/coverage/min_coverage/gap_count/back_target/back_repository_id/unresolved_count/artifact_version_id`；不得把 `exhausted + 已落版本 + 待人审` 报成 failed | LOW |
+| STAT-04 | 增量进度游标 | 查询接受 `since_seq`，返回单调 `events[]/max_seq/has_more`；事件仅含阶段、计数、ID 和脱敏摘要，不暴露 CoT | MEDIUM |
+| SPEC-01 | 规格澄清闭环 | 状态返回可操作澄清项 `thread_id/kind/question/options/created_at`；`answer_blueprint_clarification` 要求真实用户答复，同请求返回 `reflow.status/version/conflicts` | 已有，需统一暴露 |
+| GATE-01 | 仓库确认门快照 | MCP 查询公开 REST 快照的完整可决策字段：仓库、角色、职责、fitness、pending research、移除态、thread/version token、是否可锁定 | MEDIUM |
+| GATE-02 | 仓库集原子变更 | 公开 `add/remove/reclassify/edit_responsibility/upgrade_research`；每次只改一仓，响应含 `requires_research/ready_to_lock/already_running` 与新 gate token | MEDIUM |
+| GATE-03 | 仓库门确认 | `confirm_blueprint_repositories` 必带 `expected_gate_version`（或 snapshot hash）；并发变化回 409，成功锁定确切仓集并异步续驱 | MEDIUM |
+| RPLAN-01 | 逐仓方案产物读取 | `get_blueprint_repo_plan(artifact_id, repository_id)` 返回 canonical `repo_plan`、`delivery_status`、产物版本/hash、引用摘要、未决 thread IDs；禁止仅返回顶层六段标题 | MEDIUM |
+| RPLAN-02 | 单仓显式重试 | `retry_blueprint_repo_plan` 必带 `repository_id/expected_attempt/reason`，只允许 failed/stale/degraded/empty；返回新 attempt/job，不重跑已 ready 的其他仓 | HIGH |
+| RPLAN-03 | 单仓职责修订后重跑 | 复用确认门 `edit_responsibility(rerun=true)` 或专用 retry，但必须保留前次产物与 attempt 链，不能原地覆盖 | MEDIUM |
+| MERGE-01 | 融合产物读取 | 读取每轮 merge 的 validation report、reconcile counts、coverage gaps、back target、version/hash；正文从 immutable artifact version 读取 | MEDIUM |
+| MERGE-02 | 显式重跑融合 | `retry_blueprint_merge` 仅在 retryable 状态受理，要求 `expected_artifact_version_id/content_hash/expected_attempt`；成功只建新轮次，不改旧版本 | HIGH |
+| REVIEW-01 | AI review 快照 | MCP 返回 `findings`（含 `thread_id/severity/status/blocking/anchor/脱敏 finding 正文`）、clarifications、orphaned threads、review round、未决 blocker IDs | MEDIUM |
+| REVIEW-02 | finding 采纳并标已修复 | `resolve_blueprint_finding(thread_id, reason, expected_status)`；reason 必填；已终态重放为 noop，不覆盖首次结论 | LOW |
+| REVIEW-03 | finding 判误报 | `dismiss_blueprint_finding(thread_id, reason, expected_status)`；与 resolve 分工具/分动作，禁止走 clarification answer 后门 | LOW |
+| REVIEW-04 | 最终通过 CAS | 公开 npm `approve_technical_blueprint`；必传 `technical_plan_id/artifact_id/artifact_version_id/content_hash`；blocker 或版本漂移回 409；成功钉住 approved 坐标 | 已有服务端，LOW |
+| REVIEW-05 | 最终退回与定向返工 | 公开 npm `request_technical_blueprint_changes`；支持 `review/merge/repos/full`，repos 时指定仓；返回新版本、revision round、实际归一后的 rework scope | 已有服务端，LOW |
+| HAND-01 | 已确认交接包 | `get_confirmed_blueprint_handoff` 逐项核验 plan/artifact/version/hash，返回 canonical content、confirmed markdown、结构化 repository tasks；任一漂移 409 | 已有，需对齐 |
+| HAND-02 | 交接结果可确认落盘 | npm 客户端以资源/文件形式保存完整包，只向模型返回路径、hash、task count；响应明确 `confirmed=true` 和服务端校验坐标 | MEDIUM |
+| RETRY-01 | 统一可重试错误模型 | 所有查询/动作错误包含 `error_code/retryable/retry_scope/retry_after_ms/current_state/expected_version`；确定性拒绝不得标 retryable | MEDIUM |
+| AUTH-01 | 所有读写统一项目范围 | PAT 即用户；Project-bound 必须 ProjectMember；越权与不存在同形 404；不信请求体自报 project/artifact/thread 归属 | MEDIUM |
+| AUTH-02 | 动作级权限声明 | 每个工具 annotations 准确标 `readOnlyHint/idempotentHint/openWorldHint/destructiveHint`；审批、退回、门动作不可误标 query | LOW |
+| SEC-01 | 全输出脱敏 | 状态、错误、finding、澄清题、产物标题、上游异常均经统一脱敏；日志只记 ID/计数/机器码，绝不记正文 | MEDIUM |
+| OUT-01 | 输入与输出 schema 都是公开契约 | npm 工具提供 `inputSchema`、`outputSchema`，成功返回匹配 `structuredContent`；业务错误是 Agent 可见的 `isError` 结果，不靠解析中文 | MEDIUM |
+
+### 建议的最小公开工具族
+
+工具应按用户动作分开，避免一个万能 `action` 工具隐藏权限与幂等语义。
+
+| Tool | Kind | Required keys | Stable success keys |
+|------|------|---------------|---------------------|
+| `start_technical_blueprint` | mutation/job | `context_id`, `idempotency_key` | `operation_id`, `session_id`, `artifact_id`, `status`, `next_actions` |
+| `get_technical_blueprint_status` | query | `artifact_id`, `since_seq?` | `status`, `stage`, `progress`, `repo_tasks`, `merge`, `review`, `next_actions`, `max_seq` |
+| `get_blueprint_repository_gate` | query | `artifact_id` | `gate_version`, `repos`, `pending_research_repository_ids`, `ready_to_lock` |
+| `update_blueprint_repository` | mutation | `artifact_id`, `action`, `repository_id`, `expected_gate_version` | `applied`, `gate_version`, `requires_research`, `next_actions` |
+| `confirm_blueprint_repositories` | approval | `artifact_id`, `expected_gate_version` | `locked`, `locked_repo_count`, `auto_removed_repository_ids`, `resume_job_id` |
+| `get_blueprint_repo_plan` | query | `artifact_id`, `repository_id` | `status`, `attempt`, `artifact`, `open_question_thread_ids` |
+| `retry_blueprint_repo_plan` | mutation/job | `artifact_id`, `repository_id`, `expected_attempt`, `reason` | `accepted`, `attempt`, `job_id` |
+| `get_blueprint_merge` | query | `artifact_id` | `validation_status`, `attempt`, `report`, `version`, `retryable` |
+| `retry_blueprint_merge` | mutation/job | `artifact_id`, `expected_attempt`, `artifact_version_id`, `content_hash` | `accepted`, `attempt`, `job_id` |
+| `get_blueprint_review` | query | `artifact_id` | `findings`, `clarifications`, `orphaned_threads`, `unresolved_blockers` |
+| `resolve_blueprint_finding` | mutation | `artifact_id`, `thread_id`, `reason`, `expected_status` | `status`, `thread_id`, `resume_job_id` |
+| `dismiss_blueprint_finding` | mutation | 同上 | 同上 |
+| `approve_technical_blueprint` | approval | 四坐标 | `confirmed`, `version_no`, `content_hash`, `repository_task_count` |
+| `request_technical_blueprint_changes` | rejection/job | `artifact_id`, `rework_scope`, `rework_repository_ids?` | `revision_round`, `rework_scope`, `reworked_repository_count`, `resume_job_id` |
+| `get_confirmed_blueprint_handoff` | query | 四坐标 | `confirmed`, `canonical_content`, `markdown`, `repository_tasks` |
+
+`answer_blueprint_clarification` 保留现名。`get_technical_blueprint` 可继续承担正文读取，但不应
+兼任完整 control-plane status；当前响应没有 gate、逐仓 attempt/error、merge report、AI
+findings 和 next action，无法支撑可靠 Agent 决策。
 
 ### Differentiators（竞争优势）
 
-这些不是「有个 memory.json」就能交差；这是 Friday 相对 `@modelcontextprotocol/server-memory` / 本机 MEMORY.md 的差异。
-
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| 团队共享、自托管、权限 fail-closed | 记忆属于仓/项目成员，不是个人 JSON | MEDIUM | 仓库 ACL 现状偏「登录即可读仓」（已知欠债）；项目记忆仍须成员校验。无项目 Capture 的读权限应对齐仓库可见性，禁止比代码 RAG 更松。 |
-| 挂仓库图谱 + 可选项目聚合根 | 同一条知识可被编码代理与「开发到哪一步了」共用 | MEDIUM | 有项目时 `REFERENCES` 到项目节点（镜像 `project_memory.py`）；无项目时 `repository_id` 必填进实体 payload。 |
-| 价值分级进 RAG，低价值永不进向量但仍可评测 | 召回质量可控，同时满足「永不丢 Capture」 | MEDIUM | Mem0 用 importance（约 1–10）+ recency 融合检索；Friday 用离散三档更可测、更好做 golden set。 |
-| 与既有 `friday-dev` 召回环路合流 | 开工 `lookup_project_by_branch` 能带上会话沉淀 | MEDIUM | 今日 context packer 吃项目记忆/工件；仓级 Capture 须进入 `search_rag_chunks` / `search_delivery_knowledge` / `search_project_context` 至少一条用户可走的面。 |
-| 宿主最小化：IDE 抽 Q&A 精华，Friday 评估 | 不把 CoT/token 账本塞进知识库 | LOW–MEDIUM | 模型名拿不到记 `unknown`。与 Claude Code 官方「Stop 用 `last_assistant_message` 而非滞后 transcript」对齐。 |
-| Capture 回放作评测集 | 可回归「哪些问答该进 RAG」 | MEDIUM | 低价值样本是资产不是垃圾。与 v0.19 golden set 纪律同类。 |
-| 不依赖专用 IDE 插件 | 复用 MCP + skills（CURSOR 回流 v0.15 已否决专用插件） | — | 专用插件仍是 PROJX-04 backlog，本里程碑不做。 |
+| `next_actions[]` 由服务端状态机权威生成 | Agent 不必猜“下一步该调哪个工具” | MEDIUM | 每项含 `action/tool/reason/required_inputs`；权限不足时不推荐不可执行动作 |
+| 单仓失败隔离与定向恢复 | 一个仓失败不让多仓蓝图全盘重跑 | HIGH | 复用 `RepoResearchTask.attempt`、`PartialPlan` 历史和现有定向 dispatch |
+| 版本四坐标交接 | 人审看到、批准、编码消费的是同一不可变版本 | MEDIUM | `technical_plan_id + artifact_id + version_id + content_hash` 已有基础 |
+| 分阶段证据可查 | 可解释仓库选择、API 波次、融合缺口与 finding | MEDIUM | 返回引用 ID/定位，不暴露私有推理链 |
+| 恢复诊断可见 | 把 durable resume、runner callback、stalled recovery 的结果转成用户可行动状态 | HIGH | 不直接公开内部堆栈；公开 `waiting_on/last_transition/recovery_state` |
+| MCP Tasks 协议渐进增强 | 支持新客户端的 task/progress，同时兼容旧客户端轮询 | HIGH | tool 声明 `execution.taskSupport`; 轮询仍是必备 fallback |
 
 ### Anti-Features（常被要求、往往有害）
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| 把 `report_project_knowledge` 当唯一写入口，继续 `branch_unresolved` 跳过 | 少一个 MCP 工具 | 语义是「项目记忆草稿/active」，无法表达无项目 Capture；跳过即丢数 | 新 Capture 工具（或显式 `accepted` vs `captured` 双字段）；旧工具行为保持向后兼容 |
-| 无 git diff 就不回写 | 防噪音（现 hook 实测踩过「每轮写最近提交」） | 丢掉本里程碑目标里的零散问答 | 无 diff 时改抽 transcript/本轮 Q&A 精华；噪音用价值评估 + 指纹去重，不用「有没有 diff」当闸 |
-| 全文会话 / 隐藏思维链入账本或 RAG | 「以后有完整上下文」 | 体积、隐私、脱敏失败面、RAG 被过程噪音淹没 | 只存问题、可见答案精华、模型名；CoT 禁止 |
-| 把 Interaction Ledger 当 RAG 正文 | 已经有 run 记录 | v0.17 明确 Ledger 不反哺检索；形态是调用/用量不是知识 | Ledger 只关联 `request_id`/`run_id` |
-| 用路由 `confidence` 或长度门槛当 high/medium/low | 省一次 LLM | `evaluate_writeback_quality` 只防 `too_short`/`low_information`/`duplicate`；路由分是选仓把握不是知识价值 | 独立价值评估器；长度门槛可作 **pre-filter**（过短仍落 Capture，标 low 或不评估） |
-| 无差别把所有 Capture 向量化 | 实现简单 | 污染 `delivery_knowledge`，伤害编码/方案召回 | 仅 medium/high 摄取；low 留账本 |
-| 把 Capture 写成 `ProjectMemory` 再等人工确认才「算收到」 | 对齐历史 MEM-04 | 无项目时没有 Memory 可挂；确认延迟 = 用户以为丢了；Phase 86 已用 active 直写打破「全部须确认」 | **账本无条件落**；RAG 是否 auto 见下方产品张力 |
-| 会话开始把全部记忆 dump 进 prompt | 模仿 memory.json | 社区与 Mem0 均警告撑爆上下文、旧事实压过关键约束 | 按 query / 仓 / 项目 on-demand 检索（已有 `search_project_context`） |
-| 本机 `@modelcontextprotocol/server-memory` 当 Friday 存储 | Cursor 教程多 | 个人文件、无权限、不进团队 RAG、重启路径易丢 | Friday 服务端账本 + Qdrant |
-| Stop hook 内同步跑评估 LLM | 一次完成 | Claude Code hook 超时；官方建议异步；现 Stop 已 async | Hook 只 POST Capture；评估进 durable/后台任务 |
-| 自动覆盖人工已确认的项目记忆 | 「最新会话为准」 | 蓝图/记忆「AI 不覆盖人工」；Phase 86 active 直写已是高风险特例 | Capture/RAG 与 `ProjectMemory` 解耦；可选「提议草稿」进记忆，不默默 supersede |
-| 猜测回答模型、token、项目 | 报表好看 | 锁定：拿不到记 `unknown`；不编造 `project_id` | 字段显式 optional / unknown |
-| Cursor 专用采集插件 | 更稳的 transcript | v0.15 明确留 v2；范围爆炸 | Skills + MCP；Cursor 用规则强制「有 Q&A 就调回写工具」 |
+| Anti-feature | Why Problematic | Alternative |
+|--------------|-----------------|-------------|
+| “服务端有 View 就算公开” | npm stdio 客户端看不到；当前 55 vs 43 已证明漂移 | 真实注册表生成/校验 HTTP、snapshot、npm 四面 |
+| 一个 `manage_blueprint(action=...)` 万能工具 | schema、权限、幂等和 annotations 无法精确表达；Agent 易选错动作 | 查询、批准、退回、resolve、dismiss、retry 分离 |
+| 查询工具隐式推进流程 | 轮询次数会改变业务结果，破坏 readOnly/idempotent 语义 | 查询纯读；动作返回 `resume_job_id`，后台续驱 |
+| 固定 HTTP 超时内等待完整蓝图 | 超时后结果未知，客户端重试可能重复建蓝图/容器 | 立即返回 operation/task + 幂等键 + 轮询 |
+| 自动批准仓库集或最终蓝图 | 绕过 HITL，选错仓和错误契约直接进入编码 | 服务端返回可执行 gate，必须记录真实 actor |
+| 用 clarification answer 处置 review finding | `answered` 仍可能阻塞；还绕过 reason 与 resolve/dismiss 语义 | finding 专用 resolve/dismiss |
+| 全局“重试蓝图” | 浪费容器、覆盖已成功产物、扩大副作用面 | 最小失败域 retry：repo / merge / resume |
+| retry 原地覆盖旧产物 | 无法审计、无法证明 CAS、交接坐标失真 | attempt 链 + immutable artifact versions |
+| 200 + 空列表表示依赖读取失败 | Agent 会把“读失败”解释成“没有待办”并错误推进 | 结构化 retryable error；关键清单读失败不得伪空 |
+| 把内部异常原文返回 Agent | 可能泄漏 token、URL 凭证、正文与内部路径 | 稳定机器码 + 脱敏 detail + correlation/run ID |
+| 仅靠推送，不提供轮询 | MCP 通知可选，客户端可能不实现或断线 | 查询工具/`tasks/get` 始终为事实源 |
+| 暴露任意 block 改写给外部 Agent | 容易绕过“AI 不覆盖人工”和最终评审 | 退回 canonical rework；人工编辑仍留受控 UI/专门权限 |
 
 ## Feature Dependencies
 
-```
-PAT 认证 MCP 入口 (v0.2)
-    └──requires──> 新 Capture MCP 工具 (MCP-01)
-                       └──requires──> Capture 账本 STORE-01
-                       └──requires──> 仓库解析（Repository 实体 / remote 映射）
-                       └──enhances──> lookup_project_by_branch（项目可选）
+```text
+PUB-01 四面对齐
+  └─> INIT-01 / STAT-01 / 所有新工具可被外部发现
 
-Skills / hooks 采集 (SKILL-01)
-    └──requires──> MCP-01 契约
-    └──conflicts──> 现 stop hook「无 git diff 则 skip」（必须改触发条件）
-    └──enhances──> friday-dev 收工 report_project_knowledge（并行保留，不替代 Capture）
+INIT-01 幂等发起
+  ├─> STAT-01 总状态
+  └─> SPEC-01 -> GATE-01/02/03
+                    └─> RPLAN-01/02/03
+                              └─> MERGE-01/02
+                                        └─> REVIEW-01/02/03
+                                                  └─> REVIEW-04 或 REVIEW-05
+                                                            └─> HAND-01/02
 
-价值评估 EVAL-01
-    └──requires──> STORE-01（先有 Capture 再评）
-    └──requires──> ProviderConfig / call_source / MemoryDistiller 同类 LLM seam（可复用 distill，不可复用其「必须 project 成员 + 只产 draft」语义）
-    └──conflicts──> 把 evaluate_writeback_quality 结果当作 high/medium/low
+AUTH-01 + SEC-01 + OUT-01 + RETRY-01
+  └─> 横切所有查询、动作、状态与交接工具
 
-RAG 摄取（中高）
-    └──requires──> EVAL-01 完成（或明确默认档）
-    └──requires──> knowledge/sources 新 normalizer + 摄取管线
-    └──requires──> DeliveryKnowledgeSearchService + 权限/exclusion fail-closed
-    └──conflicts──> 仅投影进 project_memory（无项目 / 非 active 会被 skip）
-
-召回与回放
-    └──requires──> RAG 摄取（检索）+ Capture 账本（回放原文）
-    └──enhances──> friday-dev / friday-memory / search_rag_chunks
-
-Phase 86 report_project_knowledge active 直写
-    └──conflicts──> 「所有 AI 产物必须 draft 确认才存在」
-    └──enhances──> 仅当用户仍要「改动摘要进项目记忆」时保留；与 Capture 账本分流
+STAT-04 事件游标
+  └─enhances─> MCP Tasks / progress notifications
+  └─does-not-replace─> STAT-01 polling
 ```
 
 ### Dependency Notes
 
-- **MCP-01 requires Capture 账本：** 工具成功语义必须是「已持久化」，不能再等于「已解析到唯一项目」。
-- **SKILL-01 requires 改 stop 闸：** 不改 `if not changes: fail_soft()`，零散问答需求无法验收。
-- **EVAL-01 requires 独立于质量门槛：** 门槛可拒绝「进 ProjectMemory」，但 v0.25 锁定永不丢 Capture；过短条目应入库并标 low。
-- **RAG requires 新 source_kind：** `project_memory.normalize` 在非 active 或无记忆时返回空列表；仓级知识必须能带 `repository_id`。
-- **lookup_project_by_branch 是增强不是前置：** 有项目则 context packer / 记忆 UI 更完整；无项目不得阻塞。
-- **`MemoryDistiller`：** 可复用 LLM seam 与脱敏；不可复用 `distill_to_draft` 的「必须项目成员否则抛」作为 Capture 入口（无项目用户仍应能回写仓级知识，权限改对齐仓库）。
-- **npm MCP 白名单：** 历史多次「服务端有、客户端无」。新工具必须同期改 `mcp/src/tools.ts`，否则 Cursor 调不到。
-
-## 产品张力（MEM-04 vs 中高自动入 RAG）
-
-历史 MEM-04：LLM 只产 **pending draft**，人工确认后才成 active `ProjectMemory`，且 **只有 active 才被 `project_memory` 摄取进 RAG**。
-
-Phase 86 已出现 **accepted deviation**：stop hook `writeback_mode=active` 直写生效记忆（质量门槛 + 脱敏 + 成员静默跳过 + 审计可回滚）。这与 MEM-04 字面冲突，但是为了「编码不中断、沉淀真正发生」。
-
-v0.25 建议把张力拆成两道闸，避免再混在一个开关里：
-
-| 层 | 建议默认 | 理由 |
-|----|----------|------|
-| Capture 账本 | **无确认、永不丢** | 评测与审计；用户可见「已收到」 |
-| 价值评估 / 提炼 | 自动（fail-soft，失败保留原文 Capture） | 客户端已抽过一版精华 |
-| 中高 → RAG 向量 | **产品决策点（须立项拍板）** | 自动：闭环像 Phase 86，编码代理立刻可搜；草案确认：更接近 MEM-04，延迟与漏确认会导致「搜不到刚问过的」。推荐：**仓级 RAG 对 medium/high 自动摄取**（可 supersede/下线，审计可回滚），**写入 `ProjectMemory` 仍默认 draft**（不把会话 Capture 冒充项目长期记忆）。低价值永不向量化。 |
-| 项目记忆 UI | 不自动 active | 避免会话噪音进入「团队长期记忆」编辑面 |
-
-若选择「中高也须人审才进 RAG」，必须提供积压队列与超时策略，否则验收「可召回」会系统性失败（与 v0.19 澄清卡死同类）。
+- **先对齐发现面，再补功能：** 否则服务端实现继续成为外部不可达能力。
+- **状态先于 retry：** 没有机器可判的 `retryable/retry_scope/attempt`，Agent 无法安全决定重试。
+- **仓库确认先于分仓方案：** `blueprint_repo_plan` 的权威输入就是确认门锁定集，不能让外部直接跳到 repo plan。
+- **finding 处置先于最终 approve：** 当前事务守卫会拦 open/answered BLOCKER；没有 resolve/dismiss，MCP-only 会死锁。
+- **approve 先于 handoff：** handoff 已按 confirmed 状态与四坐标 fail-closed，不能提供“预交接”绕路。
+- **MCP Tasks 是增强而非首要前置：** 官方规范要求客户端仍应轮询，先建立 Friday 稳定 operation/status 契约，再映射 task。
 
 ## MVP Definition
 
-### Launch With（v0.25.0）
+### Launch With（v0.26.0）
 
-- [ ] **MCP-01/02** — 结构化 Capture 写入；无项目按仓收；解析失败仍落账本
-- [ ] **SKILL-01** — Cursor 规则/技能 + Claude Code hooks：有/无 git 改动都抽 Q&A 精华并调用新工具
-- [ ] **STORE-01** — Capture 账本 + 与 Ledger / ProjectMemory 分表
-- [ ] **EVAL-01** — high/medium/low + 提炼；中高进仓（及可选项目）RAG；low 可回放
-- [ ] 脱敏 / PAT / fail-soft / `call_source` / RetrievalTrace / schema snapshot 与 npm 工具对齐
+- [ ] PUB-01：55 个服务端工具与 HTTP/snapshot/npm 同步；至少把现有 approve/reject 补进 npm。
+- [ ] INIT-01/02 + STAT-01/02/03：幂等异步发起与完整诊断状态。
+- [ ] GATE-01/02/03：仓库确认门全部决策可由 MCP 完成。
+- [ ] RPLAN-01/02 + MERGE-01/02：逐仓与融合的读取、定向重试、CAS。
+- [ ] REVIEW-01/02/03/04/05：finding 处置、最终通过、定向退回全部公开。
+- [ ] HAND-01/02：确认版本的可校验交接包。
+- [ ] AUTH-01/02 + SEC-01 + OUT-01 + RETRY-01：权限、脱敏、结构化结果和错误横切验收。
 
-### Add After Validation（v0.25.x）
+### Add After Validation（v0.26.x）
 
-- [ ] 控制台 Capture 回放与价值纠偏（人把 low↔medium）
-- [ ] SessionStart 按仓注入「近期高价值摘要」预算（防 dump）
-- [ ] 与 `report_project_knowledge` 去重：同一会话决策不双写 Memory + Capture RAG
-- [ ] Cursor 侧更稳的 transcript 采集（仍非专用插件）
+- [ ] MCP Tasks / progress notifications 原生映射；保留现有轮询工具。
+- [ ] `since_seq` 活动流的分页/订阅优化与客户端断线续读。
+- [ ] 操作取消能力，仅允许取消尚未产生外部副作用的 queued/running 子任务。
+- [ ] 批量 finding 处置，但每条仍要求独立 reason 与独立结果。
 
 ### Future Consideration（v2+）
 
-- [ ] 专用 IDE 插件 / PROJX-04
-- [ ] 结构化记忆矛盾消解、时效降权（PROJX-02）
-- [ ] 记忆全自动进 `ProjectMemory` active 且无人审（PROJX-03）——与本里程碑「账本自动、项目记忆谨慎」相反，保持 backlog
-- [ ] 多模态会话（截图问答）入 Capture
+- [ ] 外部 Agent 任意 block 编辑；风险高，除非增加专门 role 与审计。
+- [ ] 自动批准策略；仅可作为显式组织策略且默认关闭。
+- [ ] 跨租户开放平台、配额与计费；本里程碑仍是自托管 PAT/RBAC。
 
 ## Feature Prioritization Matrix
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| Capture MCP + 永不因无项目丢数 | HIGH | MEDIUM | P1 |
-| 无 git diff 的 Q&A 采集 | HIGH | MEDIUM | P1 |
-| Capture 账本三层分离 | HIGH | MEDIUM | P1 |
-| 价值分级 + 中高 RAG | HIGH | MEDIUM | P1 |
-| Skills/hooks 双宿主 | HIGH | HIGH | P1 |
-| 按仓/按项目检索 + 回放 | HIGH | MEDIUM | P1 |
-| 项目记忆 draft 确认 UI | MEDIUM | LOW（已有） | P2（不阻塞仓级 RAG） |
-| SessionStart 记忆注入 | MEDIUM | MEDIUM | P2 |
-| 价值人工纠偏 | MEDIUM | MEDIUM | P2 |
-| 专用插件 | LOW（本里程碑） | HIGH | P3 |
-| 全文 transcript 入向量 | LOW / 负 | LOW | 不做 |
+| Capability group | User Value | Cost | Priority |
+|------------------|------------|------|----------|
+| 四面工具契约对齐 | HIGH | MEDIUM | P1 |
+| 幂等发起 + 完整状态 | HIGH | MEDIUM | P1 |
+| 仓库确认门 MCP | HIGH | MEDIUM | P1 |
+| 分仓方案/融合查询与 retry | HIGH | HIGH | P1 |
+| finding resolve/dismiss | HIGH | LOW | P1 |
+| approve/reject npm 暴露 | HIGH | LOW | P1 |
+| 四坐标 handoff | HIGH | MEDIUM | P1 |
+| 输出 schema / structured errors | HIGH | MEDIUM | P1 |
+| MCP Tasks 原生支持 | MEDIUM | HIGH | P2 |
+| cancel / bulk actions | MEDIUM | MEDIUM | P2 |
+| Agent 任意正文编辑 | LOW/负 | HIGH | 不做 |
 
-**Priority key:**
-- P1: Must have for launch
-- P2: Should have, add when possible
-- P3: Nice to have, future consideration
+## Atomic Contract Tests
 
-## Competitor Feature Analysis
-
-| Feature | Mem0 / 通用 Memory MCP | Claude Code 原生 memory + hooks | Friday 现状 | Our Approach (v0.25) |
-|---------|------------------------|---------------------------------|-------------|----------------------|
-| 跨会话持久化 | `add` 提炼事实 + 向量检索 | `~/.claude/projects/.../memory/` 文件；社区要 PostMemoryWrite 才好外同步 | 项目记忆 + stop hook 改动摘要 | 服务端 Capture + 仓/项目 RAG |
-| 采集触发 | 应用显式 `add` | `Stop`/`SessionEnd` 读 transcript；超时需异步 | 有 diff 才 `report_project_knowledge` active | Hook + 技能；无 diff 也提交 Q&A |
-| 无项目/个人范围 | `user_id`/`agent_id` 过滤 | 本机目录 | **必须**唯一项目否则 skip | 仓为主、项目可选 |
-| 重要性 | LLM importance + recency 融合 | 无统一三档；靠模型自觉写 MEMORY.md | 长度/词数/Jaccard，非价值 | high/medium/low；仅中高向量化 |
-| 原始记录 | 默认可关 infer 存原文 | transcript 文件在宿主侧 | Ledger 是用量不是问答正文 | Capture 账本可回放 |
-| 团队权限 | 自建过滤 | 无 | 项目成员 + PAT | 仓可见性 + 可选项目成员 |
-| 与编码 RAG 一体 | 通常独立 memory 库 | 独立 | `delivery_knowledge` 已统一检索面 | 新 `source_kind` 进同一 collection，kind 过滤 |
-
-## 对既有 Friday 能力的依赖（落地清单）
-
-| 能力 | 路径 | 本里程碑用法 |
-|------|------|----------------|
-| `report_project_knowledge` | `mcp_tools/views.py` | **保留**给「收工项目记忆」；不要让它承担无项目 Capture |
-| `evaluate_writeback_quality` | `services/cursor_writeback.py` | 仅作噪音 pre-filter；**不是** EVAL-01 |
-| `MemoryDistiller` | `initiatives/services/memory_distill.py` | 复用 LLM seam / 脱敏 / `ide_hook_distill`；评估提示词与「NONE→不写」语义要改成「始终留 Capture」 |
-| `lookup_project_by_branch` | MCP | 可选填充 `project_id` |
-| `ProjectMemory` + MEM-04 draft | `MemoryService` | 可选二次投影；默认不把 Capture 当 active 记忆 |
-| `knowledge/sources/project_memory.py` | RAG | 参考 normalizer 范式；仓级知识另建 source |
-| `DeliveryKnowledgeSearchService` | 统一检索 | 中高价值召回 |
-| `skills/hooks/stop` + `friday-dev` | 客户端 | 改触发；技能教「零散问答也调 Capture 工具」 |
-| `@friday-ai-codes/mcp` 工具表 | `mcp/src/tools.ts` | 新工具必须同期发布，防客户端不可达 |
-| Durable 队列 (v0.12) | 评估/摄取 | 评估与向量化后台跑，hook 只负责 POST |
-| 可观测 | LOGGING-SPEC | Capture started/completed/failed；评估 `call_source`；召回 `RetrievalTrace` |
+1. **发现一致性：** 服务端真实 55 工具集合与 URL、snapshot、npm 集合相等；任一新增只改服务端而漏 npm 时 CI 必红。
+2. **发起幂等：** 相同 actor/key/payload 并发 10 次只产生 1 session、1 artifact、每仓至多 1 active container。
+3. **幂等冲突：** 同 key 改 `context_id/project_id` 返回 409，原 operation 不变。
+4. **纯查询：** 连续调用 status 100 次，session/artifact/thread/task 行与版本号不变。
+5. **范围隔离：** 非项目成员查询和动作均与随机不存在 artifact 返回同形 404。
+6. **gate CAS：** A 读 gate v3，B 改仓到 v4，A 用 v3 confirm 必须 409 且未锁定。
+7. **单仓 retry：** 三仓中一仓 failed，retry 后仅该仓 attempt +1，另两仓 task/partial/version 不变。
+8. **merge CAS：** 旧 version/hash 或旧 attempt 重试融合返回 409，不创建新版本。
+9. **finding 通道隔离：** clarification answer 调 finding 返回 `not_answerable` 且状态不变；resolve/dismiss reason 为空拒绝。
+10. **approve 守卫：** 存在 open/answered BLOCKER 时 approve 409；全部处置后同四坐标成功。
+11. **approve CAS：** get 后产生新版本，旧 version/hash approve 409；不得 pin handoff。
+12. **退回范围：** `repos` 只 stale 指定仓；`merge` 不重跑 repo；`review` 只重审；响应回实际 scope。
+13. **handoff 确认：** 未 confirmed、四坐标任一不匹配、零 repository tasks 均 409；成功包 hash 可复算一致。
+14. **失败不伪空：** pending/finding/repo plan 列表读取异常返回 retryable error，绝不 200 + `[]`。
+15. **脱敏：** 在错误、finding、澄清、仓级产物中注入 token/URL credential，所有 MCP 响应与调用记录均不出现明文。
+16. **旧客户端兼容：** 不支持 MCP Tasks/notifications 的 npm 客户端仅靠 start + poll + actions 可走完整链。
 
 ## Sources
 
-- Friday 源码（HIGH）：`server/mcp_tools/views.py`（`branch_unresolved` / draft vs active）、`server/services/cursor_writeback.py`、`server/initiatives/services/memory_distill.py`、`server/knowledge/sources/project_memory.py`、`skills/hooks/stop`、`skills/skills/friday-dev/SKILL.md`、`.planning/PROJECT.md` v0.25 Active 需求
-- Mem0 官方 How it works（HIGH）：https://docs.mem0.ai/core-concepts/how-it-works — 提炼事实 vs transcript；检索须 scope filter
-- Mem0 RAG vs Memory（MEDIUM）：importance × recency × similarity，禁止纯相似度当记忆
-- Claude Code hooks 官方（HIGH）：https://code.claude.com/docs/en/hooks.md — `Stop`/`SessionEnd`、`transcript_path` 滞后、`last_assistant_message`、hook 可 block、建议异步
-- 社区：Substrate / OpenViking Claude Code 插件（MEDIUM）— Stop 增量 checkpoint、fail-open exit 0、本地 spool
-- Cursor Memory MCP 教程（LOW–MEDIUM）— 本机 JSON 图谱；Rules 做 recall-act-memorize；**不能**替代团队知识库
-- 历史里程碑：v0.15 MEM-04/CURSOR-03、v0.16 Phase 86 active 直写 deviation、v0.17 Ledger ≠ RAG
+- Friday 源码（HIGH）：
+  - `server/mcp_tools/views.py`、`serializers.py`、`urls.py`：55 个服务端工具、现有蓝图 get/answer/approve/reject/handoff。
+  - `mcp/src/tools.ts`：43 个 npm 工具；缺 approve/reject，且无确认门/finding/分仓方案/融合控制面。
+  - `server/delivery/api/blueprint_gate_views.py`：内部仓库确认门八端点及范围/CAS/续驱语义。
+  - `server/delivery/api/blueprint_review_views.py`：内部 review 快照、finding resolve/dismiss、approve/reject。
+  - `server/services/process_runtime/blueprint_repo_plan.py`：逐仓 `delivery_status`、attempt、单仓隔离、波次与定向重派。
+  - `server/services/process_runtime/blueprint_merge.py`：merge 五态、覆盖率 retry/exhausted、版本与未决项。
+  - `server/services/process_runtime/blueprint_resume.py`：durable resume、stalled recovery、runner 恢复与人审状态边界。
+  - `server/mcp_tools/technical_plan_service.py`：幂等 reservation、四坐标 confirmed handoff。
+- MCP 官方规范（HIGH）：
+  - https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+  - https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/tasks
+  - https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/progress
+  - https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation
 
 ---
-*Feature research for: IDE session knowledge writeback (Friday v0.25.0)*
-*Researched: 2026-08-28*
+*Feature research for: Friday AI v0.26.0 complete public MCP blueprint orchestration*
+*Researched: 2026-09-14*

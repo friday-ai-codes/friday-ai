@@ -1,199 +1,325 @@
 # Project Research Summary
 
-**Project:** Friday AI v0.25.0 Cursor / Claude Code 会话知识回写
-**Domain:** IDE 会话采集 → Capture 账本 → 价值评估 → 仓/项目 RAG（brownfield，落在 Django MCP + knowledge，不碰 runner/task）
-**Researched:** 2026-08-28
-**Confidence:** HIGH（仓内接缝与锁定决策）；MEDIUM（Cursor `afterAgentResponse` 配对、git remote 归一化、入图 durable 投递需相位内钉死）
-
-> 本文件覆盖 **v0.25.0 会话知识回写** 研究结论，供 roadmapper 排期。不保留 v0.24.0 图查询内容。
+**Project:** Friday AI v0.26.0 MCP 全链路开放与稳定性
+**Domain:** 外部 Agent 的 MCP-only 技术蓝图编排控制面（brownfield）
+**Researched:** 2026-09-14
+**Confidence:** HIGH（仓内能力、依赖与缺口）；MEDIUM（MCP Tasks、宿主通知兼容性）
 
 ## Executive Summary
 
-v0.25.0 要补的不是再造一套记忆，而是把现闭环从「必须绑到唯一项目 + 有 git diff 才写 + 长度/去重门槛」升级为「仓库为主挂钩、项目可选、零散问答也收、永不静默丢 Capture、中高价值才进 `delivery_knowledge`」。产业成熟做法与 Mem0 / Claude Code hooks 一致：**hook 抽精华（非全文、非 CoT）→ 账本持久化（≠ 向量）→ 重要性分档 → 按仓/项目 on-demand 召回**。Friday 现网最大缺口是：`report_project_knowledge` 在 `_resolve_report_project_id` 失败时 200 + `accepted=false` + `branch_unresolved` **不落库**；`skills/hooks/stop` 在无 `git diff --stat` 时直接 `fail_soft()` 丢掉纯对话。
+Friday AI 已有完整的 `blueprint/v1` 领域流水线：规格澄清、仓库路由与确认、逐仓调研和方案、融合、AI review、人类终审、确认交接均有 canonical 状态与服务。v0.26.0 的任务不是重写蓝图引擎，而是把现有能力整理成一个安全、可恢复、外部 Agent 仅靠公开 MCP 就能完成的控制面。专家做法是 ports-and-adapters：REST 与 MCP 共享 application command/query service，`process_runtime`、`BlueprintLifecycleService`、`ArtifactService`、`DurableTaskService` 继续作为事实源，MCP 只负责认证、授权、契约校验、状态投影和错误映射。
 
-推荐路径（已锁定）：**新 Capture 表 + INV-6 `CaptureService` + 新 MCP 工具**（建议名 `report_session_knowledge`，相位钉死），**禁止**扩 `report_project_knowledge` / 把 `ProjectMemory` 当账本 / 把 Interaction Ledger 当 RAG。MCP 同步只 INSERT Capture（无项目、仓解析失败仍 `accepted=true`）；评估 LLM 异步（Durable / `on_commit` 后台），`call_source` 新枚举；仅 medium/high 走既有 `aschedule_ingestion` + 新 `source_kind`，复用 `DOCUMENT` kind，**不**新建 Qdrant collection、**不**新 EntityKind、**不**引入运行时库。`ProjectMemory` 仍 draft 门控；中高仓级 RAG **自动摄取**（可 supersede/回滚）。客户端只抽问题/可见答案精华；拿不到的模型字段记 `unknown`。
+实时源码确认了研究中的核心漂移：`server/mcp_tools/views.py` 当前有 **55** 个 `tool_name`，`mcp/src/tools.ts` 仅声明 **43** 个，且 npm 测试仍写死 `toHaveLength(43)`。缺失的 12 个是 `graph_query`、`impact_analysis`、`detect_changes`、`list_processes`、`get_process`、`rename_preview`、`trace_call_path`、`search_session_knowledge`、`get_session_capture`、`report_session_knowledge`、`approve_technical_blueprint`、`request_technical_blueprint_changes`。因此必须先建立服务端 canonical registry 和生成 catalog，再开放新工具；否则每增加一个 MCP 能力都会扩大漂移。
 
-主风险三条：① 复制旧 skip 语义导致「工具通了、库是空的」——新工具把挂钩与项目拆开，`branch_unresolved` 不得表示未收。② Cursor 与 Claude Code hook 模型不对称——Claude 用 `UserPromptSubmit` + `Stop.last_assistant_message`；Cursor 用 `beforeSubmitPrompt` 缓存问题 + `afterAgentResponse` 配对，**不要**押 `stop` 抽答案，也**不要**把 Claude 注入 hook 拷进 Cursor。③ 评估/入图若内联 MCP 或只走进程内 `background_runner`——hook 超时或重启丢向量；必须 persist-first + 可重试投递。npm `mcp` / snapshot / skills 三面必须同里程碑对齐，否则 Cursor 调不到新工具（v0.20/v0.22 已知债）。
+推荐采用“显式 operation + accepted/poll”作为稳定基线：长任务秒级返回 `operation_id`、canonical resource 坐标和 `poll_after_ms`，状态由现有 session/artifact/thread/repo-task/durable 数据实时投影；所有 mutation 使用作用域幂等键与 CAS。MCP Tasks、progress notification、elicitation 和远程 Streamable HTTP 只作为后续增强，不作为 v0.26.0 完整链验收前提。最大风险是固定 120 秒超时制造未知结果、HITL 能力只存在于 REST、重复续驱/回调丢失、权限预言机、空载荷伪成功及合成测试替代真实依赖；应以结构化错误、定向恢复、同源权限、语义完整性门禁和真实 canary 关闭这些风险。
 
 ## Key Findings
 
 ### Recommended Stack
 
-详见 [STACK.md](./STACK.md)。**不引入新 npm/Python 运行时库。** 发版是服务端 migration + MCP 工具，再 bump `@friday-ai-codes/mcp`（现 `0.6.0`）与 `@friday-ai-codes/skills`（现 `0.7.0`）补丁版。MCP SDK 保持 `@modelcontextprotocol/sdk ^1.29.0`；服务端 `mcp>=1.25.0,<2` 勿放开。评估与向量化走既有 `provider_config` + `aschedule_ingestion` + Qdrant `delivery_knowledge`。
+详见 [STACK.md](./STACK.md)。本里程碑**不新增任何 Python 或 npm 运行时依赖**，只复用现有锁定栈并增加仓内生成器、服务与测试：
 
 **Core technologies:**
-- Django ORM + migration（Python 3.14 / Django ≥5.1）：新 `SessionCapture`（或同名）操作态表，仓库 FK 可空 + `git_url`/`branch` 标量，`project` 可选 —— `ProjectMemory.project` 必填 CASCADE，塞不进去
-- DRF + 现有 `McpToolView`：新工具 HTTP 面；鉴权 / `InteractionRun` / `_record` / 脱敏由基类承担；禁止另开 REST 绕过 MCP
-- `@friday-ai-codes/mcp` + `@friday-ai-codes/skills`：stdio → `POST /api/mcp/tools/{name}/`；安装器 **merge** Cursor `hooks.json`（`version: 1`），用现有 `fs`，不加 axios/zod
-- 既有 LLM 栈 + 新 `CallSource`（建议 `session_capture_eval` / `ide_session_eval`，规划时钉死一个）：high/medium/low；对标 `ide_hook_distill` 但**不要复用**该枚举
-- 既有知识摄取：新 `source_kind`（建议 `session_capture` 或 `ide_session_knowledge`）进统一 collection；禁止新建向量库
+- Django + adrf：保留 `POST /api/mcp/tools/{name}/` PAT 边界；新 catalog、query、command adapter 遵循 async ORM 约束。
+- `@friday-ai-codes/mcp` + `@modelcontextprotocol/sdk@1.29.0`：继续使用 stdio、`ListTools`/`CallTool` 与 Node 内置 `fetch`；不升级 SDK 2.x。
+- Python `mcp==1.26.0`（约束 `<2`）：继续服务容器内 `claude-agent-sdk==0.1.58`，不改造成第二套 public FastMCP。
+- `process_runtime` + `DurableTaskService` + Procrastinate 3.8.1：驱动长任务、resume、recovery 与 at-least-once 执行；业务不直接依赖 Procrastinate。
+- DRF serializers + `jsonschema==4.26.0`：由服务端 registry 生成 input/output schema、manifest、npm catalog 和兼容 snapshot，不引入 OpenAPI generator 或 zod 契约真源。
+- PAT + `AccessTokenAuthentication`：MCP 调用者就是 token owner，项目范围从 canonical relation 推导并 fail-closed。
+- `structlog`、Interaction Ledger 与既有指标设施：所有新增入口按 caller 记录生命周期，内部高频步骤按 sampling；观测始终 best-effort。
 
-**契约要点（栈层）：** 请求必填 `question`,`answer`；可选 `response_model`（默认 `unknown`）、`repository_id`、`git_url`、`branch_name`、`session_id`、`project_id`、`client`。禁止必填 `project_id`。响应：`accepted`/`capture_id`/`reason`（`repo_unresolved` 仍可 `accepted=true`）。幂等建议 `(token_user, session_id, question_hash)`。旧工具 snapshot 已漂移——**本里程碑不要顺手修一半** `report_project_knowledge`。
+**版本硬约束：**
+- `@modelcontextprotocol/sdk` 保持 1.x；MCP Tasks 兼容性需真实宿主验证后再声明 capability。
+- Python `mcp` 保持 `>=1.25.0,<2`；不得破坏 `claude-agent-sdk` 的 decorator API。
+- npm `SERVER_VERSION` 必须来自或等于 `package.json`；当前 `0.2.0` vs package `0.6.0` 是发布阻断项。
+- 生产继续使用 Postgres durable；SQLite 仅 dev fallback，诊断响应必须显示 backend/recovery 能力差异。
 
 ### Expected Features
 
-详见 [FEATURES.md](./FEATURES.md)。验收锚点：用户感觉「回写发生了」且下次能搜到中高价值决策/坑。
+详见 [FEATURES.md](./FEATURES.md)。
 
-**Must have (table stakes):**
-- 新 MCP 结构化回写（问题 / 答案 / 回答模型 / 仓库 / 分支 / 会话）；缺字段记 `unknown`，不猜
-- 仓库为主、项目可选；无 `project_id` 仍接受 Capture；解析失败仍落账本
-- 禁止把 `branch_unresolved` 静默丢数据当成成功
-- 零散问答 / 无 git 改动也采集（必须改 stop 闸）
-- Skills + Cursor / Claude Code hooks 抽精华并触发回写；禁止完整隐藏 CoT
-- Capture 账本（原始结构化问答）；**不是** Ledger，**不是** `ProjectMemory`
-- 三层分离：Capture ≠ 提炼知识 ≠ Ledger（Ledger 禁止反哺检索）
-- 价值评估 high/medium/low + 提炼；**不是** `evaluate_writeback_quality`，**不是**路由 `confidence`
-- 中高进仓/可选项目 RAG；low 留评测样本不进 Qdrant
-- 按仓/按项目可检索；Capture 可回放；PAT / 脱敏 / fail-soft / RetrievalTrace
+**Must have（v0.26.0 table stakes）：**
+- 服务端 registry、Django URL、input/output schema、annotations、bundled npm catalog 与实际 stdio `tools/list` 完全一致。
+- MCP-only 幂等发起：立即返回 operation/session/artifact 坐标，不在请求内等待调研或融合。
+- 权威总状态与逐仓、融合、review、事件游标查询；查询纯读，返回 `next_actions`、`poll_after_ms` 和结构化 retry 信息。
+- 规格澄清、仓库 gate 快照与 add/remove/reclassify/edit/upgrade/confirm 全部可由 MCP 完成。
+- 逐仓方案和融合产物可读；失败域可按单仓或 merge attempt 定向重试，旧产物与 attempt 历史不可覆盖。
+- AI finding 独立 `resolve`/`dismiss`；禁止复用 clarification answer。
+- 最终 approve/request-changes 在 npm stdio 可发现，并携带 artifact/version/hash CAS 坐标。
+- confirmed handoff 对四坐标 fail-closed；完整 payload 落本地权限受限文件，模型只接收路径、hash 和任务摘要。
+- 所有 read/write 统一项目范围、动作权限、脱敏、annotations、`structuredContent` 和机器可判错误。
+- 真实 canary 经 stdio 走完整链，并覆盖 Qdrant、runner、容器、丢 callback、飞书交互和 handoff hash。
 
-**Should have (competitive):**
-- 团队共享、自托管、权限不比代码 RAG 更松
-- 仓图谱 + 可选项目 `REFERENCES`；与 `friday-dev` 召回环合流
-- Capture 回放作 golden set；离散三档比 Mem0 连续 importance 更好测
-- 不依赖专用 IDE 插件（PROJX-04 仍 backlog）
+**Should have（差异化能力）：**
+- 服务端权威生成 `next_actions[]`，每项给出 tool、原因和 required inputs，外部 Agent 不猜状态机。
+- 单仓失败隔离、定向恢复、attempt 链和 immutable artifact version。
+- 阶段证据与恢复诊断可见，但不暴露 CoT、内部堆栈或 durable implementation IDs。
+- manifest hash、client/server catalog diff 和版本钉扎 doctor，避免 npm/server 交叉版本静默失败。
+- `since_seq` 增量事件流，为未来 MCP progress/tasks 提供同源投影。
 
-**Defer (v0.25.x / v2+):**
-- 控制台价值纠偏、SessionStart 按仓注入摘要预算、与 `report_project_knowledge` 去重 —— v0.25.x
-- 专用插件、记忆矛盾消解、Capture 自动变 `ProjectMemory` active、多模态会话 —— v2+
-- 全文 transcript 入向量 —— **不做**
-
-**产品张力（已有推荐默认）：** Capture **无确认永不丢**；评估自动 fail-soft；**仓级 RAG 对 medium/high 自动摄取**；写入 `ProjectMemory` **仍默认 draft**。若中高也要人审才进 RAG，必须另做积压队列，否则「可召回」验收会系统性失败。
+**Defer（v0.26.x / v2+）：**
+- MCP Tasks、progress notifications 和 elicitation 原生映射：只能增强，不能替代 explicit operation/poll。
+- cancel：在各 stage 的业务取消语义和外部副作用补偿未定义前不开放。
+- Streamable HTTP/OAuth remote MCP、跨租户开放平台、配额与计费。
+- 批量 finding、自动批准、任意 block 改写和编码中自动 replan。
+- 细粒度 PAT scopes、仓库级 ACL 重构、全局脱敏债清理；若不在本里程碑实现，必须如实记录威胁边界。
 
 ### Architecture Approach
 
-详见 [ARCHITECTURE.md](./ARCHITECTURE.md)。**不要把 v0.25 塞进 `ReportProjectKnowledgeView` + `MemoryService`。** 模式是「MCP 同步收、异步炼」：对照 learning case / PR review 的 `on_commit` + `run_in_background`/`DurableTaskService`，**不要**对照 `_maybe_distill`（请求内 LLM 会拖死 hook）。入图复用 `EntityKind.DOCUMENT` + 新 `source_kind`；`IngestionEvent.content` 只放提炼正文。skills 优先改 `friday-memory`，不要新开 `friday-capture` skill。Vue 控制台本里程碑可不做大前端。
+详见 [ARCHITECTURE.md](./ARCHITECTURE.md)。采用端口适配与 CQRS 风格的 application boundary：MCP/REST adapter 只做 transport concern；command service 是唯一 writer；query/projection service 汇总 canonical 状态；public operation 仅保存 owner、scope、幂等 reservation 和 canonical locator，不复制蓝图状态机。任何 MCP 工具不得调用 REST view、直接写 ORM、直接启动 repo-plan/merge handler，或暴露 Procrastinate job ID。
 
 **Major components:**
-1. IDE skills / hooks — 抽精华、无 diff 也 POST；Cursor 与 Claude 分模型接线
-2. npm MCP 客户端 — `mcp/src/tools.ts` 白名单与 snapshot 双向对齐
-3. 新 `McpToolView` — PAT、校验、同步 `CaptureService.persist`、Ledger `_record`
-4. `CaptureService`（INV-6）— 唯一写入、脱敏、归因；grep 守卫
-5. Distill/Eval worker — 新 call_source；low 停、中高 `aschedule_ingestion`
-6. `knowledge/sources/<kind>.py` + `DeliveryKnowledgeSearchService` — 仓/项目召回
-7. `MemoryService` / `report_project_knowledge` — **零回归保留**；与 Capture 无写入边
+1. `McpToolRegistry` 与 contract generator — 服务端单一声明 name、request/response serializer、annotations、scope policy 和 async mode。
+2. Generated catalog — 生成版本化 JSON manifest、npm definitions、URL registration projection 和迁移期 snapshot；发布包携带 manifest hash。
+3. `BlueprintContextResolver` / `BlueprintAccessPolicy` — REST/MCP 共用 canonical 定位与 fail-closed 项目授权。
+4. Gate/Review/Stage command services — 复用 lifecycle、review action 与 stage rerun，统一 CAS、幂等和合法状态迁移。
+5. `BlueprintQueryService` — 只读汇总 gate、repo plan、merge、review、handoff 和安全诊断。
+6. `PublicOperationService` — 作用域幂等 reservation、canonical locator、状态/事件/next-actions 投影。
+7. `process_runtime` / `ArtifactService` / `DurableTaskService` — 保持唯一编排、版本与恢复事实源。
 
-**解析顺序（意见）：** 显式 `repository_id` → 归一化 `git_url` 匹配 `Repository.git_url` → `project_id` 可选（非成员不拒绝 Capture）→ `branch_name` 仅元数据。默认分支 `main`/`master`/`develop` **禁止**当唯一项目信号（PITFALLS：lookup 第三源假命中）。
+**契约单一事实源的明确取舍：**
+- canonical source 是 Django 侧 declarative registry + serializers，而不是 npm `tools.ts` 或现有手写 snapshot。
+- manifest、npm catalog、URL 名集和迁移期 `TOOL_SCHEMA_SNAPSHOT` 由 generator 产生。
+- CI 仍保留一份独立、版本化 compatibility baseline 用于 breaking-change 分类；不能让测试从被测 registry 动态 import 后自证一致。
+- npm 默认使用 bundled catalog，连接实例后可读取带 PAT 的 server catalog 做 hash/diff 诊断；未知工具仍 fail-closed，不做通配透传。
 
 ### Critical Pitfalls
 
-详见 [PITFALLS.md](./PITFALLS.md)。Roadmap 必须显式防住：
+详见 [PITFALLS.md](./PITFALLS.md)。
 
-1. **`branch_unresolved` 当成功跳过** — 新工具拆开仓挂钩与项目；无仓仍落库并给显式 `reason`；禁止 `if resolved_pid is None: return 200 accepted=false`
-2. **Stop 把无 git diff 当成无知识** — Q&A 与 diff 解耦；去重键 `(session_id, question_hash, answer_hash)`；300s 节流只套 diff 摘要
-3. **Cursor `beforeSubmitPrompt` 注入幻觉** — 采集主链是 MCP；Cursor 用 `afterAgentResponse` + 规则/skill；资产树禁止 Claude `UserPromptSubmit` 注入脚本
-4. **`lookup_project_by_branch` 在 `main` 上假命中** — 默认分支第三源不 `matched`；Capture 不以 lookup 项目当主键
-5. **Ledger / `writeback_mode=active` / 新 EntityKind / 进程内 ingest 当唯一投递** — 三层分离 + MEM-04 不扩大例外 + `source_kind` 分流 + Capture 状态机 + durable/outbox
-6. **服务端有工具、npm/skills 没有** — serializer + snapshot + `tools.ts` + SKILL.md 同一验收；容器写路径要么显式加白要么标明 Out of Scope
+1. **55 vs 43 静态白名单漂移** — 先建立 registry→generated catalog，CI 缺 npm checkout 必须失败；禁止绝对计数冒充一致性。
+2. **120 秒超时把 unknown outcome 当 failed** — mutation 秒级 accepted；abort 后用 operation/idempotency key 对账，不自动重放副作用。
+3. **幂等与 drive 重入不足** — `(actor, project, tool, key)` + canonical request hash 原子预留；pending 重放返回同一 operation，参数漂移 409。
+4. **回调丢失或 barrier 重复触发** — canonical 状态 + RunnerEvent 对账，callback 只加速；诊断与 recover 工具复用现有 reconciliation/lease。
+5. **CAS 后动作成功、续驱失败被混为失败** — 响应区分 `action_committed` 与 `drive_pending`；query 能确认 gate/approve 是否已落库。
+6. **HITL 闭集不完整** — repo confirmation、finding resolve/dismiss、approve/reject 缺一不可宣称 MCP-only；未 confirmed 蓝图禁止进入编码。
+7. **范围预言机与凭证/正文泄漏** — canonical project membership fail-closed、无权限与不存在同形、错误和 Ledger 脱敏、handoff 不内联。
+8. **空载荷伪成功与轮询风暴** — `schema_version/completeness/empty_reason`，关键读失败不返回空数组；`poll_after_ms`、429、query 无副作用。
+9. **合成测试冒充真实链** — live canary 状态必须独立报告，skip 只能是 `live_unrun`，不能计为 passed。
+
+## Complete MCP-Only Blueprint Chain
+
+v0.26.0 的验收主链固定为：
+
+```text
+start_technical_blueprint
+  → get_technical_blueprint_status / events
+  → answer_blueprint_clarification（如有）
+  → get/update/confirm blueprint repositories（CAS）
+  → get/retry repo plans
+  → get/retry merge
+  → get review
+  → resolve/dismiss findings
+  → approve 或 request changes（CAS，按 scope 返工）
+  → get_confirmed_blueprint_handoff（四坐标复核 + 文件 hash）
+```
+
+依赖关系：
+
+```text
+generated catalog
+  → shared context/access/application services
+  → operation + idempotent start/poll
+  → read-only full-chain projection
+  → repo gate/clarification commands
+  → repo-plan/merge retry controls
+  → finding/final-review/handoff commands
+  → live canary and release pinning
+```
+
+任一 query 不得隐式 advance；任一 stage command 不得绕过 `process_runtime`；任一高影响 mutation 必须在 service 内再次做状态和版本 CAS。
 
 ## Implications for Roadmap
 
-四份研究对**依赖序**一致：**先账本，再 MCP 契约，再评估入图，再召回，最后客户端**（客户端不能早于契约冻结）。PITFALLS 文中的 P1→P2 指「契约字段必须先于 hook 接线」，不是「先做 hook 再建模」。建议 **5 个交付相位**（GSD 相位号由 roadmapper 续号，此处为逻辑序）。
+建议 7 个交付相位。安全、授权、脱敏、观测与兼容性不是末尾补丁，而是每相位退出门禁。
 
-### Phase 1: Capture 账本 + 仓库解析（STORE-01）
-**Rationale:** 架构硬约束「无此步禁止接 MCP」；INV-6 与三层分离必须焊在表结构上，避免 P4 再迁一次状态机。
-**Delivers:** Capture 模型（问答、`response_model`、`repository_id` 可空、`git_url_raw`、`branch`、`project_id` 可空、`session_id`、hash、status、tier、distilled、`initiated_by_user_id`）；`CaptureService.create`（`redact_secrets_in_text`）；旁路 `objects.create` grep 守卫；git URL 归一化 helper（复用 `ssh_git_url_to_https`）；状态字段预留 `pending_eval` / `ingest_pending`。
-**Addresses:** STORE-01；三层分离；永不因无项目丢数（存储面）
-**Avoids:** Pitfall 5（Ledger 当 RAG）、6（MEM-04 / active 记忆）、Capture 直接 ORM 写
-**Uses:** Django migration；无新库
+### Phase 1: 契约注册表与生成目录
 
-### Phase 2: 新 MCP 工具面（MCP-01 / MCP-02）
-**Rationale:** IDE 打桩联调依赖冻结契约；旧工具门闩保持零回归。
-**Delivers:** 新 serializer（必填问答、禁止必填 `project_id`）、`McpToolView`、url、**完整** `TOOL_SCHEMA_SNAPSHOT`、`mcp/src/tools.ts` + `test_mcp_package_alignment`；行为：无项目 / `repo_unresolved` 仍 200 `accepted=true` 且有行；Ledger `_record`；评估可先 no-op 调度。
-**Addresses:** MCP-01/02
-**Avoids:** Pitfall 1（静默 skip）、10（三面漂移）、4（用 lookup 第三源当写主键）
-**Implements:** MCP 同步收；`report_project_knowledge` 不改门闩
+**Rationale:** 当前 live source 已确认 server=55、npm=43；不先消除四面漂移，后续新增工具不可可靠发现。
+**Delivers:** `McpToolRegistry`、serializer-derived input/output schema、版本化 manifest/hash、generated npm catalog、generated URL/snapshot projection、`--check`、breaking diff 分类、`SERVER_VERSION` 对齐和 doctor 基线。
+**Addresses:** PUB-01、OUT-01、AUTH-02。
+**Avoids:** 静态白名单漂移、子模块 skip 假绿、字段/annotations 漂移、客户端/实例版本谎言。
 
-### Phase 3: 价值评估 + 中高入图（EVAL-01）
-**Rationale:** 先有 Capture 行再评；LLM 不可内联 hook；入图登记表必须与 worker 同批否则 `get_normalizer` KeyError。
-**Delivers:** 新评估模块 + 新 `CallSource` + LOGGING-SPEC §4.1；`use_call_source`；fail-soft `eval_failed` 保留原文；仅 medium/high `aschedule_ingestion`；normalizer（`DOCUMENT` + `repository_id` + 可选项目 `REFERENCES`）；**不**调用 `MemoryService.append`；生产路径 durable/outbox + `ingest_pending` 对账（禁止把唯一投递交给 `background_runner`）。
-**Addresses:** EVAL-01；中高 RAG；low 评测样本
-**Avoids:** Pitfall 7（新 EntityKind）、8（重启丢向量）、9（无 call_source / 混 `llm_grader`）
-**Uses:** 既有 LLM / DurableTaskService / ingestion 六步序（不改算法）
+**Quality gates:**
+- live registry 恰好枚举当前 55 个 server tools；generated npm `tools/list` 与之集合相等，12 个现缺工具全部补齐。
+- npm 测试删除 `toHaveLength(43)`；对齐测试在 npm 目录缺失时 fail，不得 skip。
+- input/output schema、annotations、route、manifest hash 全量对拍；生成命令 `--check` 后工作树零 diff。
+- breaking 变更（删工具/字段、加 required、收窄 enum）必须被 compatibility baseline 拦截。
+- npm `SERVER_VERSION == package.json.version`；doctor 能显示 client/server manifest diff。
 
-### Phase 4: 召回、回放与观测收口
-**Rationale:** 「入了库但 IDE 召不回」是 hollow 高发点；packer kind 白名单必须显式打开。
-**Delivers:** `search_delivery_knowledge` / `pack_project_context` 纳入新 `source_kind`；RetrievalTrace（MCP + 对话链）；Capture 只读回放（MCP 或薄 REST，不扫 Ledger）；`main` + 唯一 RepoAssociation 回归：lookup 不注入、Capture 不写错项目；观测：persist=`caller`，eval 步=`sampling`。
-**Addresses:** 按仓/按项目检索 + Capture 可回放
-**Avoids:** Pitfall 4 回归；Ledger import 守卫
-**Note:** 大前端回放 UI **本里程碑非必须**（小版本惯例）
+### Phase 2: 共享应用服务与安全边界
 
-### Phase 5: 双宿主采集（SKILL-01）
-**Rationale:** 必须在 Phase 2 契约冻结之后，否则技能文档与 snapshot 互搏；现 stop 闸不改则零散问答无法验收。
-**Delivers:** Claude Code：`UserPromptSubmit` 缓存问题 + `Stop.last_assistant_message` 抽答案，无 diff 仍 POST 新工具；git `--stat` 可继续附加走旧 `report_project_knowledge`（有项目时）。Cursor：`beforeSubmitPrompt` 只缓存、不拦截；`afterAgentResponse` 配对后 MCP；`stop` 不抽答案。安装器 merge Cursor `hooks.json`；`friday-memory` + `http-fallback` + `ide_hook_assets`；`test_skills_snapshot_guard`；容器 `KNOWLEDGE_TOOL_SCHEMAS` 要么加白要么明确不做容器写。npm publish 可 Deferred，**源码必须绿**。
-**Addresses:** SKILL-01
-**Avoids:** Pitfall 2（diff 门）、3（Cursor 注入）、10（skill 仍教旧工具）
-**Uses:** Node 内置 fs/urllib；凭证顺序不变
+**Rationale:** MCP 必须成为第二个 adapter，而不是第二套业务规则；先提取共享 seam 才能安全开放写动作。
+**Delivers:** `BlueprintContextResolver`、`BlueprintAccessPolicy`、Gate/Review command services、`BlueprintQueryService`、DTO 与统一错误 taxonomy；REST 改用同一服务但保持现有 URL/响应兼容。
+**Addresses:** AUTH-01、SEC-01、RETRY-01，以及所有后续工具的 canonical service 前置。
+**Avoids:** MCP import REST 私有 helper、第四份权限逻辑、非法 ID 预言机、adapter 直接 ORM/状态迁移。
+
+**Quality gates:**
+- REST characterization tests 全绿；MCP/REST 对同一 command 产生相同 canonical 状态。
+- 任何 adapter 不 import `delivery.api.*` 私有 helper；query service 无写入，command service 是唯一 writer。
+- project 从 artifact/session/thread 关系推导；payload 自报 ID 不可信；非成员与不存在同形 404。
+- 日志/错误中的 PAT、URL credential、数据库连接串和正文样本全部脱敏。
+
+### Phase 3: Public Operation、幂等发起与轮询
+
+**Rationale:** 长任务控制面是所有 MCP-only 阶段的公共底座，必须先解决 unknown outcome 和重复副作用。
+**Delivers:** 薄 `PublicMcpOperation`、scoped idempotency reservation、`start_technical_blueprint`、get/list operation、稳定 status/phase/resources/error/retry/poll envelope、`since_seq` 事件游标、按工具类型拆分 timeout。
+**Addresses:** INIT-01/02、STAT-01/04、RETRY-01。
+**Avoids:** 同步 `adrive`、120 秒伪失败、重复 session/artifact/container、busy-loop。
+
+**Quality gates:**
+- 相同 actor/key/payload 并发 10 次只产生一个 operation/session/artifact；同 key 不同 payload 返回 409。
+- start 在秒级返回 accepted/running/input_required；请求断开不取消 canonical job。
+- 连续 poll 100 次不改变 session/artifact/thread/task/version；响应始终含 `poll_after_ms`。
+- timeout 后同 key 查询/重放可找回原 operation，外部副作用计数仍为 1。
+- operation status 从 canonical source 投影，不以 operation 行自建状态机；durable job ID 不外泄。
+
+### Phase 4: 全链只读状态、产物与诊断
+
+**Rationale:** Agent 在能安全行动或重试前，必须能无副作用地观察每个阶段和失败域。
+**Delivers:** technical blueprint status、repository gate、repo task/plan、merge、review、events、callback/Runner/recovery snapshot、completeness 与 next-actions 查询；大产物使用受限本地文件交付。
+**Addresses:** STAT-02/03、GATE-01、RPLAN-01、MERGE-01、REVIEW-01、HAND-02 的读半边。
+**Avoids:** 200+空数组伪成功、整体状态被单仓失败误标 failed、内部堆栈/CoT 泄漏、poll 触发续驱。
+
+**Quality gates:**
+- 从 start 到每个 `input_required`/terminal 状态，外部 Agent 仅靠 MCP 可判定当前 phase、等待原因和下一动作。
+- confirmed/completed fixture 的 repo task 数与锁定仓集一致；空主载荷必须有 `completeness` 与 `empty_reason`。
+- Runner 已完成但 callback 丢失时诊断明确给出 `waiting_on/recovery_state/retryable`。
+- query 失败返回结构化 retryable error，绝不伪装为 `[]`；事件 payload 只含 allowlisted ID/计数/脱敏摘要。
+
+### Phase 5: 仓库确认与规格 HITL
+
+**Rationale:** repo gate 是逐仓方案的权威输入，必须先于 repo-plan/merge 控制开放。
+**Delivers:** clarification answer、repository gate add/remove/reclassify/edit-responsibility/upgrade-research/confirm；每次 mutation 使用 gate revision/hash CAS 与 action idempotency，成功后通过既有 resume helper 续驱。
+**Addresses:** SPEC-01、GATE-02/03。
+**Avoids:** 跳过硬确认门、重复确认空仓、确认成功却因续驱失败返回 tool error、自动批准仓集。
+
+**Quality gates:**
+- A 读 gate v3、B 改至 v4，A 用 v3 confirm 必须 409 且未锁定。
+- `action_committed` 与 `drive_pending` 分开；续驱失败不回滚已提交决定，也不诱导重复确认。
+- 仅 MCP 可完成所有 gate 修改并进入 repo-plan；未确认蓝图进入编码/MR 的所有路径零写入。
+- clarification 只接受可回答 thread；finding 调此工具稳定返回 `not_answerable`。
+
+### Phase 6: 分仓、融合、评审与确认交接
+
+**Rationale:** 状态与 gate 稳定后再开放高成本 retry 和高影响最终决策，确保最小失败域与不可变版本坐标。
+**Delivers:** `retry_blueprint_repo_plan`、`retry_blueprint_merge`、resolve/dismiss finding、approve/request-changes、confirmed handoff；旧 `repository_tasks` 只经现有 canonical mapping 生成。
+**Addresses:** RPLAN-02/03、MERGE-02、REVIEW-02/03/04/05、HAND-01/02。
+**Avoids:** 全局重跑、旧产物覆盖、finding 走 answer 后门、陈旧 approve、未确认 handoff。
+
+**Quality gates:**
+- 三仓一仓失败时只该仓 attempt +1；其他仓 task/partial/version 不变。
+- 旧 merge attempt/version/hash 重试返回 409，不创建版本；新轮次保留完整历史。
+- resolve/dismiss reason 必填，终态重放 noop 且不覆盖首次 actor/reason。
+- 有 open/answered BLOCKER 时 approve 409；全部处置后 exact artifact/version/hash 成功。
+- `repos` 返工只 stale 指定仓，`merge` 不重跑 repo，`review` 只重审；响应返回实际归一 scope。
+- handoff 对 technical plan/artifact/version/hash 任一漂移、未 confirmed 或零 tasks 均 fail-closed；成功文件 hash 可复算。
+
+### Phase 7: 恢复、安全收口与真实发布 Canary
+
+**Rationale:** 完整链只有在真实依赖、callback loss 和发布包/实例组合下验证后才成立；synthetic green 不能替代 live evidence。
+**Delivers:** 显式 recover/retry action、poll rate limits、runner callback reconciliation、live canary harness、双栏报告、版本钉扎安装与 publish guard。
+**Addresses:** 恢复诊断、SEC-01、真实 canary、发布兼容。
+**Avoids:** callback 僵尸、电平 barrier 重驱、轮询风暴、secret 泄漏、`npx -y` 拉错代、live skip 冒充 passed。
+
+**Quality gates:**
+- canary 必须经已发布/待发布 stdio 包 `CallTool`，不能只 curl Django endpoint。
+- 使用真实 Qdrant 已知索引仓，检索结果非空；真实 runner 启动容器并完成逐仓方案。
+- 故意丢弃一次 structured callback，系统通过 RunnerEvent/reconciliation 收敛，且无重复产物。
+- 完成一次真实或受控真实凭证的飞书 HITL 交互；最终 handoff 文件坐标、hash、task count 全部一致。
+- 报告明确 `synthetic_passed` 与 `live_passed|live_failed|live_unrun`；`live_unrun` 阻断“完整 MCP-only 已验证”声明。
+- publish job 重跑 catalog alignment、package/server version、doctor 和 secret scan；文档安装命令钉 npm 版本。
 
 ### Phase Ordering Rationale
 
-- STORE → MCP → EVAL → 召回 → Skills：与 ARCHITECTURE Suggested Build Order 一致；Skills 不能先于 MCP；入图不能先于账本 `source_id`。
-- 评估 call_source 必须先于首次 LLM，否则用量落入 `unknown`。
-- MCP 与 npm snapshot 同相位，避免「服务端绿、Cursor 不可达」。
-- 观测与旧工具回归可并入 Phase 4 尾或每相位门禁，不必单独第六相位。
-- 分组依据：写模型边界（P1）/ 信任边界（P2）/ LLM+图（P3）/ 读路径（P4）/ 宿主差异（P5）。
+- 契约生成必须先于功能扩张；否则 server/npm 漂移会在每个后续相位重复。
+- 共享 application services 必须先于 MCP writer；否则 REST/MCP 会形成两个状态机和两套权限。
+- operation/idempotency 必须先于任何长任务 mutation；否则 timeout/retry 会复制昂贵副作用。
+- read-only projection 先于 HITL/retry，确保 Agent 基于机器可判状态行动。
+- repository gate 先于 repo-plan，repo-plan 先于 merge，finding 处置先于 approve，approve 先于 handoff。
+- 真实 canary 最后整链执行，但其 fixtures、开关与凭证计划应从 Phase 1 建档，不能到发布前才设计。
+
+## Explicit Non-Goals
+
+- 不新增 Python/npm 运行时依赖，不引入 Celery、Temporal、FastMCP、axios、zod 契约层或 OpenAPI generator。
+- 不重写 `process_runtime`、`BlueprintLifecycleService`、Artifact 或 durable queue；不建立第二套蓝图/task 状态机。
+- 不以 MCP Tasks、progress notification、elicitation 或 Streamable HTTP 作为 v0.26.0 完整链前提。
+- 不开放任意蓝图 block 改写、自动批准、批量 finding、未定义的 cancel 或编码中自动 replan。
+- 不把 public MCP operation 绑定到 durable job ID，不允许客户端直接 poll/cancel Procrastinate。
+- 不改变容器内 submit MCP 的内部 namespace/credentials，也不向外暴露 capture tools。
+- 不在本研究交付中修改生产代码；后续实现也不得顺手改动无关 provider、前端或用户现有 MCP worktree 修改。
+
+## Cross-Cutting Quality Gates
+
+以下门禁适用于每个实现相位，任一失败不得进入下一相位：
+
+- **Canonical services:** REST/MCP 调用相同 command/query service；MCP adapter 无领域写入。
+- **Async contract:** 长写请求 accepted+poll；无同步等待调研墙钟；查询严格纯读。
+- **Idempotency/CAS:** 外部副作用有 reservation/request hash；HITL 和 retry 有 revision/version/hash guard。
+- **Authorization:** PAT owner + canonical project membership；无法推导、关系歧义、越权一律 fail-closed。
+- **Observability:** `started/completed/failed`、`category`、`component`、`duration_ms`、actor 和 correlation IDs 齐全；后台显式 `initiated_by_user_id`。
+- **Redaction:** upstream error、finding、clarification、handoff summary 和 Ledger 入库分别走既有 redaction；日志只记 ID/计数/长度/hash。
+- **Fail-soft observability:** log/metric/Ledger 失败不影响业务事务。
+- **Semantic completeness:** terminal/confirmed 响应不得以空主载荷表示成功；schema/completeness/hash 可验证。
+- **Compatibility:** 旧 URL/工具名/required keys 保持；新增字段 additive；server 先兼容部署，npm 后发布。
+- **Evidence:** 每项能力同时有 service test、HTTP adapter test、stdio contract test；live 证据与 synthetic 证据分开。
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
-- **Phase 3:** Capture 入图投递：`aschedule_ingestion` + durable/outbox 与现 learning_case 窗口如何对齐；状态机字段一次定稿
-- **Phase 5:** Cursor `afterAgentResponse` 与 `beforeSubmitPrompt` 缓存的端到端配对（官方契约已核，本机配对未证）；安装器 merge `hooks.json` 与项目/用户级冲突
-- **Phase 1–2：** git remote 多命中/零命中策略与 `repo_unresolved` 文案
+规划时建议做深入 research：
+- **Phase 1:** registry 如何同时生成 URL、snapshot 与 TypeScript，且保留独立 compatibility baseline；需先冻结 manifest versioning/breaking rules。
+- **Phase 3:** operation reservation 崩溃接管、active session 对账和现有 `McpWorkItemTechnicalPlan` 兼容关系。
+- **Phase 4:** callback/Runner/durable/lease 的安全公共投影字段，避免泄漏内部实现又能指导恢复。
+- **Phase 7:** 当前 Cursor、Claude Code 对 MCP Tasks/progress 的真实支持矩阵，以及 Qdrant/runner/飞书 canary 凭证和隔离策略。
 
-Phases with standard patterns (skip research-phase):
-- **Phase 1 模型/INV-6：** 对照 `McpLearningCase` + `test_memory_inv6_guard`
-- **Phase 2 `McpToolView`：** 现成基类 + alignment 测试
-- **Phase 4 RetrievalTrace / structlog：** LOGGING-SPEC 已有清单
+可按既有模式直接规划：
+- **Phase 2:** context/access/application service 提取，有现有 REST views、lifecycle 与 review action seam 可对照。
+- **Phase 5:** gate commands 已有 REST 语义和 canonical lifecycle。
+- **Phase 6:** finding、approve/reject、stage rerun 和 handoff 已有 writer seam；重点是 MCP adapter、CAS 与测试，不需重研领域模型。
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | 复用既有 Django/MCP/skills/Qdrant；MEDIUM 仅宿主 hook 配对与枚举命名 |
-| Features | HIGH | 仓内缺口与 PROJECT 目标一一对应；竞品 Mem0/CC hooks 官方文档交叉 |
-| Architecture | HIGH | 接缝均对照源码；MEDIUM：价值分级提示词与 git 归一化实现细节 |
-| Pitfalls | HIGH | 陷阱均有现行代码/测试/debug 会话证据 |
+| Stack | HIGH | 版本来自 lockfile 与现有集成点；结论是不新增依赖 |
+| Features | HIGH | 缺口与完整链可由 live views、REST-only actions 和 npm catalog 直接核对 |
+| Architecture | HIGH | canonical services、process runtime、artifact、durable seams 已存在 |
+| Pitfalls | HIGH | 55/43、120s、skip、版本漂移和 callback recovery 均有仓内证据 |
+| MCP Tasks / host support | MEDIUM | 规范与 SDK 存在，但 Cursor/Claude Code 实际协商和通知覆盖未完成 canary |
+| Live external integrations | MEDIUM | Qdrant/runner/飞书历史测试债明确，需 Phase 7 真实环境验证 |
 
 **Overall confidence:** HIGH
 
 ### Gaps to Address
 
-规划相位必须钉死以下命名（研究文件用了两套近义词，roadmapper 选一写入 REQUIREMENTS）：
-
-- **工具名：** `report_session_knowledge` vs `capture_ide_session` — 推荐 `report_session_knowledge`（与现 `report_*` 并列、skills 更好教）
-- **`source_kind`：** `session_capture` vs `ide_session_knowledge` — 选一个写入 `generate_entity_id` docstring 规则表
-- **`CallSource`：** `session_capture_eval` vs `ide_session_eval` — 单轮 LLM 用一个值；两轮再拆 distill/value
-- **响应字段：** `accepted` vs 拆 `stored`/`accepted` — 推荐 Capture：`accepted=true` 表示已落账本；RAG 是否入图看 `value_tier`，不要再用 `accepted=false` 表示「没进记忆」
-- **Cursor 采集：** STACK 主张官方 `afterAgentResponse`；PITFALLS 强调 MCP 主链、hooks 只增强。规划按「MCP 必达 + Cursor hooks 作自动触发」合并，验收必须含 Cursor 干净工作树
-- **lookup 默认分支：** 是否在本里程碑改 `lookup_project_by_branch` 第三源，还是仅 Capture 写路径避开。推荐 **Capture 不调用第三源**；lookup 读路径修默认分支作为 P4 回归或小修补，避免读写继续分叉
-- **容器 MCP 写路径：** 默认 Out of Scope，除非产品要「编码容器也能沉淀会话」
-- **控制台回放：** 只读 API 可进 Phase 4；Vue 大页延后
-
-## Locked Decisions（写入 roadmap 不得推翻）
-
-- 仓库为主、项目可选；**永不丢 Capture**
-- Capture ≠ 提炼知识 ≠ Interaction Ledger（Ledger 不是 RAG）
-- **新 MCP 工具**，不是扩 `report_project_knowledge`
-- **无新运行时库**
-- medium/high → 仓级 RAG；`ProjectMemory` 保持 draft 门控
-- 客户端抽精华；未知模型字段保持 `unknown`
+- **工具命名冻结：** `get_technical_blueprint_status` 与 `get_blueprint_operation` 两套研究命名需在 requirements 阶段选定；推荐 operation 为通用 envelope、blueprint status 为领域详单，两者职责不重叠。
+- **是否新增 operation model：** 可先评估现有 session/technical-plan reservation 是否能承载 owner/scope/key/hash；若无法表达跨工具稳定句柄，再建薄表，禁止复制状态。
+- **Gate token：** 若现有 REST snapshot 无稳定 revision，应在 shared command/query service 生成 deterministic snapshot hash，不能在 MCP adapter 自算。
+- **Action-level RBAC：** 当前主要是 project membership；approve/reject 是否需要更高角色必须在 Phase 2 冻结，未知时 fail-closed。
+- **Rate limiting：** 现有 MCP 面缺专用 limiter；若不新增依赖，应复用 Django/cache/DB 设施并定义多副本一致性边界。
+- **Handoff 文件策略：** 需要明确 TTL、清理、mode 0o600 和 skill 禁止回读全文；不应把完整 canonical content 再内联到模型。
+- **Catalog runtime refresh：** bundled catalog 是可靠基线；server catalog 只用于 hash/diff 或安全刷新。不得声明 `tools.listChanged`，除非 stdio 通知与宿主重拉已被 canary 证明。
+- **Published package truth:** worktree 对齐不等于 npm registry 已发布；Phase 7 必须验证 tarball/dist，不只验证源码。
 
 ## Sources
 
-### Primary (HIGH confidence)
-- 本仓：`server/mcp_tools/views.py`、`serializers.py`、`initiatives/models/memory.py`、`memory_service.py`、`ide_hook_assets.py`、`knowledge/ingestion.py`、`knowledge/sources/project_memory.py`、`skills/hooks/{stop,user-prompt-submit,hooks.json}`、`skills/lib/installer.mjs`、`mcp/src/tools.ts`、alignment/skills snapshot 测试、`.planning/PROJECT.md` v0.25.0
-- Cursor Hooks 官方：https://cursor.com/docs/hooks.md — `afterAgentResponse` 有 `text`；`stop` 无助手正文；`beforeSubmitPrompt` 仅 continue/user_message
-- Claude Code Hooks 官方：https://code.claude.com/docs/en/hooks — `last_assistant_message`；transcript 异步滞后
-- Mem0 How it works：https://docs.mem0.ai/core-concepts/how-it-works — 提炼事实 vs transcript
-- v0.15 MEM-04 / v0.16 Phase 86 active 直写 deviation / v0.17 Ledger ≠ RAG
+### Primary（HIGH confidence）
+- [STACK.md](./STACK.md) — 锁定版本、零新增依赖、stdio/HTTP/durable 取舍。
+- [FEATURES.md](./FEATURES.md) — MCP-only 原子能力、依赖、验收测试。
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — application boundaries、operation projection、生成契约与 phase order。
+- [PITFALLS.md](./PITFALLS.md) — live 漂移、超时、回调、权限、发布与 canary 风险。
+- [PROJECT.md](../PROJECT.md) — v0.26.0 目标、brownfield 基线与锁定约束。
+- `server/mcp_tools/views.py` — 55 个 live `McpToolView.tool_name`。
+- `server/mcp_tools/serializers.py`、`server/mcp_tools/urls.py` — 当前 snapshot 与 HTTP 面。
+- `mcp/src/tools.ts`、`mcp/src/server.ts`、`mcp/tests/server.test.ts` — 43 个 npm 工具、120 秒 timeout、未知拒绝、版本与硬编码计数。
+- `server/delivery/api/blueprint_*_views.py`、`server/delivery/services/` — REST-only gate/review 与 canonical writer seams。
+- `server/services/process_runtime/`、`server/durable/` — stage graph、repo plan、merge、resume/recovery 与 at-least-once。
+- MCP 官方 Tools、Tasks、Progress、Authorization 规范与 JSON Schema Draft 2020-12。
 
-### Secondary (MEDIUM confidence)
-- Cursor 论坛注入请求（证明官方尚未交付 per-prompt 注入）
-- 社区 Claude Code 插件（Stop 增量、fail-open exit 0）
-- `.planning/debug/workflow_suite-friday-agent-e2e.md` — `main` 假命中无关项目
-
-### Tertiary (LOW confidence)
-- Cursor 本机 Memory MCP 教程 — 个人 JSON，不能替代团队知识库
+### Secondary（MEDIUM confidence）
+- Cursor / Claude Code 对 MCP Tasks、progress、elicitation 的实际支持矩阵，待真实宿主 canary。
+- npm registry 已发布 tarball 与当前 worktree 的一致性，待 publish phase 验证。
 
 ---
-*Research completed: 2026-08-28*
+*Research completed: 2026-09-14*
 *Ready for roadmap: yes*
