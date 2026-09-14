@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v0.26.0
 milestone_name: MCP 全链路开放与稳定性
 status: planning
-last_updated: "2026-09-14T01:10:26.053Z"
+last_updated: "2026-09-14T01:19:00.000Z"
 last_activity: 2026-09-14
 progress:
-  total_phases: 0
+  total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,17 +17,41 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md（updated 2026-08-31，v0.25.0 已归档）。归档见 `milestones/v0.25.0-*`。
+See: .planning/PROJECT.md（v0.26.0 started 2026-09-14）。上一里程碑归档见 `milestones/v0.25.0-*`。
 
-**Core value:** 让团队开箱即用、安全地把需求变成代码；IDE 会话知识可沉淀、可按仓召回，且不阻断编码。
-**Current focus:** Awaiting next milestone（`$gsd-new-milestone`）
+**Core value:** 让团队开箱即用、安全地把需求变成代码；外部 Agent 仅通过公开 MCP 也能稳定完成、诊断和恢复技术蓝图全链。
+**Current focus:** Phase 146 — 契约注册表与生成目录
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-09-14 — Milestone v0.26.0 started
+Phase: 146 of 152（里程碑第 1/7 相位：契约注册表与生成目录）
+Plan: 0 of TBD in current phase
+Status: Ready to plan
+Last activity: 2026-09-14 — v0.26.0 roadmap created，47/47 requirements mapped
+
+Progress: [░░░░░░░░░░] 0%
+
+## Milestone Overview (v0.26.0 — Phases 146–152 — 🚧 PLANNED)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 146 | 契约注册表与生成目录 | PUB-01~06 | Not started |
+| 147 | 共享服务与安全边界 | SEC-01~05 | Not started |
+| 148 | Operation 与幂等控制面 | OPS-01~05 | Not started |
+| 149 | 全链状态、产物与诊断 | STAT-01~07, GATE-01 | Not started |
+| 150 | 仓库确认与规格 HITL | GATE-02~05 | Not started |
+| 151 | 分仓、融合、评审与交接控制 | RPLAN-01~03, MERGE-01~02, REVIEW-01~05, HAND-01~02 | Not started |
+| 152 | 恢复、真实 Canary 与发布门禁 | SEC-06, LIVE-01~06 | Not started |
+
+**Execution order:** 146 → 147 → 148 → 149 → 150 → 151 → 152。
+
+**Coverage:** 47/47 requirements mapped exactly once；0 unmapped；0 duplicate。
+
+**Cross-cutting exit gates:** 每个相位均须满足 canonical service、权限 fail-closed、结构化日志/指标/Ledger、`initiated_by_user_id` 传播、全链脱敏、向后兼容，以及 service + HTTP + stdio 测试证据；live 与 synthetic 证据必须分开。
+
+**Research flags:** Phase 146 深研 registry/generator 与独立 compatibility baseline；Phase 148 深研 operation reservation 崩溃接管；Phase 149 深研安全恢复投影；Phase 152 深研真实宿主、Qdrant/runner/飞书 canary 与发布 tarball。
+
+**Known blockers/concerns:** 暂无路线图阻断。真实外部依赖与凭证若在 Phase 152 不可用，必须记为 `live_unrun` 并阻止“完整 MCP-only 已验证”声明。
 
 ## Milestone Overview (v0.25.0 — Phases 141–145 — ✅ ARCHIVED 2026-08-31，审计 tech_debt，未打 tag)
 

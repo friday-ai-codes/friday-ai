@@ -146,6 +146,53 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| PUB-01 | Phase 146 | Pending |
+| PUB-02 | Phase 146 | Pending |
+| PUB-03 | Phase 146 | Pending |
+| PUB-04 | Phase 146 | Pending |
+| PUB-05 | Phase 146 | Pending |
+| PUB-06 | Phase 146 | Pending |
+| SEC-01 | Phase 147 | Pending |
+| SEC-02 | Phase 147 | Pending |
+| SEC-03 | Phase 147 | Pending |
+| SEC-04 | Phase 147 | Pending |
+| SEC-05 | Phase 147 | Pending |
+| OPS-01 | Phase 148 | Pending |
+| OPS-02 | Phase 148 | Pending |
+| OPS-03 | Phase 148 | Pending |
+| OPS-04 | Phase 148 | Pending |
+| OPS-05 | Phase 148 | Pending |
+| STAT-01 | Phase 149 | Pending |
+| STAT-02 | Phase 149 | Pending |
+| STAT-03 | Phase 149 | Pending |
+| STAT-04 | Phase 149 | Pending |
+| STAT-05 | Phase 149 | Pending |
+| STAT-06 | Phase 149 | Pending |
+| STAT-07 | Phase 149 | Pending |
+| GATE-01 | Phase 149 | Pending |
+| GATE-02 | Phase 150 | Pending |
+| GATE-03 | Phase 150 | Pending |
+| GATE-04 | Phase 150 | Pending |
+| GATE-05 | Phase 150 | Pending |
+| RPLAN-01 | Phase 151 | Pending |
+| RPLAN-02 | Phase 151 | Pending |
+| RPLAN-03 | Phase 151 | Pending |
+| MERGE-01 | Phase 151 | Pending |
+| MERGE-02 | Phase 151 | Pending |
+| REVIEW-01 | Phase 151 | Pending |
+| REVIEW-02 | Phase 151 | Pending |
+| REVIEW-03 | Phase 151 | Pending |
+| REVIEW-04 | Phase 151 | Pending |
+| REVIEW-05 | Phase 151 | Pending |
+| HAND-01 | Phase 151 | Pending |
+| HAND-02 | Phase 151 | Pending |
+| SEC-06 | Phase 152 | Pending |
+| LIVE-01 | Phase 152 | Pending |
+| LIVE-02 | Phase 152 | Pending |
+| LIVE-03 | Phase 152 | Pending |
+| LIVE-04 | Phase 152 | Pending |
+| LIVE-05 | Phase 152 | Pending |
+| LIVE-06 | Phase 152 | Pending |
 
 ---
 *Requirements defined: 2026-09-14*
