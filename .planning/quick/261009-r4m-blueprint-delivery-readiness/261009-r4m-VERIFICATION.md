@@ -3,10 +3,10 @@ status: human_needed
 ---
 # 验证记录
 
-代码验证通过：284项（readiness/确定性投影/review/reconcile/schema/RepoPlan/HTTP取件/确认事务），76项（merge+生命周期），MCP 30项+类型检查+构建。使用隔离SQLite与内存cache，不运行生产迁移。
+核心业务改动：284项就绪/投影/review/reconcile/schema/RepoPlan/HTTP取件/确认事务通过，76项融合与生命周期通过；已验证真实HTTP确认→存储→handoff响应，输出跨配置仓validateFridayHandoff通过。测试用隔离SQLite与内存cache。
 
-新规则的反例包括提供方任务缺失、schema缺失/变化、字段来源漏项、建设任务缺失、延期裁决缺失、legacy不能正式就绪、丢失任务投影。确认事务与HTTP取件分别验证拒绝未就绪新版合同。MCP仅匹配四坐标/confirmed/任务数后落盘。
+后续针对全量CI漂移的验证：26项入口/状态测试、80项确认门与导出、16项提案/长文解析、51项编排入口/事件、45项工具与架构边界通过。MCP 31项、TypeScript检查与构建通过；55项工具名及相关请求字段对齐通过。Django system check与makemigrations无漂移检查通过（3个索引名称通过新增RenameIndex迁移收敛）。完整SQLite套件及远端CI尚待最终结果，不能用分组绿灯替代全绿。
 
-尚待：GitHub CI、源码合并/服务部署及完整真实业务验收。高三固定Mock只验证交接与下游，不声称已验证真实蓝图生成全链。
+Live验证：新版stdio源码客户端完成tools/list与固定高三v20取件，文件SHA复算通过；当前在线Friday仍返回legacy未验证。高三009重跑继续使用Mock蓝图；主任务及回执事件、附件原件验真已实际通过，业务开发/环境/全套测试/质量门未完成。
 
-既有snapshot中primary_team/project_id与现有生产接口不一致，本次按源代码修订独立预期，不删除字段断言。
+尚待：源码最终推送与CI、Friday服务和npm正式部署验证、Multica剩余阶段真实验收。此记录不声明完整MCP 146–152里程碑完成，也不以Mock证明真实蓝图生成全链完成。
