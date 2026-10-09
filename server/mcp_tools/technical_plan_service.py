@@ -111,6 +111,14 @@ async def get_confirmed_blueprint_handoff(
         readiness = evaluate_delivery_readiness(
             content, content_hash=content_hash, tasks=repository_tasks
         )
+        if content.get("delivery_contract_version") is not None and any(
+            not _is_repository_uuid(t.get("repository_id", "")) for t in repository_tasks
+        ):
+            readiness["ready"] = False
+            readiness["status"] = "blocked"
+            readiness["blockers"].append(
+                {"code": "repository_alias_unresolved", "location": "repository_tasks"}
+            )
         if content.get("delivery_contract_version") is not None and not readiness["ready"]:
             raise TechnicalPlanError(
                 "blueprint_delivery_not_ready", "蓝图业务交付合同未就绪；请先修复评审发现"

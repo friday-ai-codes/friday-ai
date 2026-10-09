@@ -1238,3 +1238,89 @@ def test_confirmation_checks_delivery_contract_even_without_version_pin(mcp_clie
         )
     artifact.refresh_from_db()
     assert artifact.blueprint_status == BlueprintStatus.PENDING_REVIEW
+
+
+def test_versioned_delivery_confirmation_and_handoff_round_trip(
+    mcp_client, access_user, monkeypatch
+):
+    """Exercise authenticated confirmation -> stored artifact -> read handoff, not just pure functions."""
+    from tests.services.process_runtime.test_blueprint_delivery_readiness import fixture
+
+    client, _ = mcp_client
+    _stub_resume(monkeypatch)
+    content = make_blueprint()
+    delivery = fixture()
+    delivery = json.loads(
+        json.dumps(delivery)
+        .replace('"backend"', '"11111111-1111-4111-8111-111111111111"')
+        .replace('"web"', '"22222222-2222-4222-8222-222222222222"')
+    )
+    # Canonical fixture supplies the required descriptive fields for rendering/schema.
+    feature = copy.deepcopy(content["requirement_spec"]["feature_points"][0])
+    feature["id"] = "f"
+    delivery["requirement_spec"] = {**content["requirement_spec"], "feature_points": [feature]}
+    for item in delivery["implementation_overview"]["items"]:
+        item["change_type"] = "create"
+        item["how"] = [
+            {
+                "block_id": "how-" + item["id"],
+                "type": "paragraph",
+                "text": "Implement the frozen contract",
+            }
+        ]
+        item["test_strategy"] = [
+            {
+                "block_id": "test-" + item["id"],
+                "type": "paragraph",
+                "text": "Run provider and consumer contract tests",
+            }
+        ]
+    for contract in delivery["api_contracts"]:
+        contract["name"] = "Topics contract"
+    for assoc in delivery["repo_associations"]:
+        assoc["role"] = "direct"
+        assoc["responsibility"] = []
+        assoc["rationale"] = {
+            "text": [
+                {
+                    "block_id": "rationale-" + assoc["repository_id"],
+                    "type": "paragraph",
+                    "text": "Owned implementation",
+                }
+            ],
+            "citations": [],
+        }
+    content["current_state_analysis"] = []
+    content.update(delivery)
+    content["implementation_overview"]["requirement_narrative"] = []
+    artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW, content=content)
+    _make_session(artifact, access_user)
+    plan = _make_blueprint_technical_plan(artifact)
+    coordinates = {
+        "artifact_id": str(artifact.id),
+        "artifact_version_id": str(artifact.current_version_id),
+        "content_hash": artifact.current_version.content_hash,
+        "technical_plan_id": str(plan.id),
+    }
+    approved = client.post(_APPROVE_URL, coordinates, format="json")
+    assert approved.status_code == 200, approved.json()
+    response = client.post(_GET_HANDOFF_URL, coordinates, format="json")
+    assert response.status_code == 200, response.json()
+    handoff = response.json()
+    assert handoff["delivery_readiness"]["ready"] is True
+    assert handoff["delivery_readiness"]["contentHash"] == coordinates["content_hash"]
+    assert len(handoff["repository_tasks"]) == 2
+    assert {i for t in handoff["repository_tasks"] for i in t["implementation_item_ids"]} == {
+        "build",
+        "ui",
+    }
+    # Optional local cross-repository verifier fixture; never production content.
+    import os
+
+    output = os.environ.get("FRIDAY_HANDOFF_TEST_OUTPUT")
+    if output:
+        from pathlib import Path
+
+        Path(output).write_text(
+            json.dumps({"handoff": handoff, "expected": coordinates}), encoding="utf-8"
+        )
