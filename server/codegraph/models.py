@@ -374,11 +374,11 @@ class SymbolCommunity(models.Model):
         unique_together = [("repository", "branch_name", "community_key")]
         indexes = [
             models.Index(
-                fields=["repository", "branch_name"], name="codegraph_s_reposit_comm_br_idx"
+                fields=["repository", "branch_name"], name="cg_comm_repo_branch_idx"
             ),
             models.Index(
                 fields=["repository", "branch_name", "member_fingerprint"],
-                name="codegraph_s_reposit_comm_fp_idx",
+                name="cg_comm_repo_fingerprint_idx",
             ),
         ]
 
@@ -435,7 +435,7 @@ class ProcessTrace(models.Model):
         unique_together = [("repository", "branch_name", "process_key")]
         indexes = [
             models.Index(
-                fields=["repository", "branch_name"], name="codegraph_p_reposit_proc_br_idx"
+                fields=["repository", "branch_name"], name="cg_proc_repo_branch_idx"
             ),
         ]
 
