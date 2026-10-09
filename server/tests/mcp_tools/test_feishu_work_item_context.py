@@ -137,6 +137,18 @@ def test_get_feishu_work_item_context_creates_snapshot_and_trace(
         name="登录超时治理",
         feishu_project_key=project.feishu_project_key,
     )
+    # MCP 项目身份只能由工作项的唯一权威关联得到，不能从 Space 猜测。
+    from delivery.models import WorkItem
+    from initiatives.models import ProjectWorkItemLink
+
+    item = WorkItem.objects.create(
+        feishu_project_key=project.feishu_project_key,
+        work_item_type="bug",
+        work_item_id=42,
+        space=project,
+        origin="manual",
+    )
+    ProjectWorkItemLink.objects.create(project=blueprint_project, work_item=item)
     monkeypatch.setattr(
         "mcp_tools.work_item_context_service.create_feishu_client_for_project",
         lambda _project: _FakeFeishuClient(),

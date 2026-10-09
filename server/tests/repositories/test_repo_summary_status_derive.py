@@ -5,9 +5,9 @@ REPO_SUMMARY SubAgentSession 派生——杜绝「幻影 running」（仓库缓�
 实际无 session 在跑）。
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from asgiref.sync import async_to_sync
 
 from repositories.models import AISummaryStatus, Repository
@@ -62,9 +62,7 @@ class TestDeriveSummaryStatus:
 
 @pytest.mark.django_db
 class TestResolveSummaryStatus:
-    def test_phantom_running_healed_to_failed(
-        self, repository: Repository, agent_session
-    ) -> None:
+    def test_phantom_running_healed_to_failed(self, repository: Repository, agent_session) -> None:
         """核心场景：仓库缓存停在 running，最新 session 已 timeout → 读时纠正为 failed。"""
         repository.ai_summary_status = AISummaryStatus.RUNNING
         repository.save(update_fields=["ai_summary_status"])
@@ -89,14 +87,12 @@ class TestResolveSummaryStatus:
         repository.ai_summary_status = AISummaryStatus.PENDING
         repository.ai_summary = ""
         repository.save(update_fields=["ai_summary_status", "ai_summary"])
-        session = _make_session(
-            repository, agent_session, status=SubAgentSession.Status.COMPLETED
-        )
+        session = _make_session(repository, agent_session, status=SubAgentSession.Status.COMPLETED)
         TaskResult.objects.create(
             session=session,
             result_type="text",
             text_output='{"overview": "一个测试仓库"}',
-            raw_output={"text": '{"overview": "一个测试仓库"}'},
+            raw_output={"mcp_result": {"overview": "一个测试仓库"}},
         )
 
         result = async_to_sync(aresolve_summary_status)(repository)
@@ -114,9 +110,7 @@ class TestResolveSummaryStatus:
 
         assert result == AISummaryStatus.NOT_STARTED
 
-    def test_consistent_status_unchanged(
-        self, repository: Repository, agent_session
-    ) -> None:
+    def test_consistent_status_unchanged(self, repository: Repository, agent_session) -> None:
         """缓存与 session 一致（running==running）时返回原值，不误改。"""
         repository.ai_summary_status = AISummaryStatus.RUNNING
         repository.save(update_fields=["ai_summary_status"])
@@ -160,9 +154,7 @@ class TestActiveSummaryRows:
         assert list(rows) == [str(repository.pk)]
         assert derive_summary_status(rows[str(repository.pk)]) == AISummaryStatus.RUNNING
 
-    def test_dedup_multiple_sessions_per_repo(
-        self, repository: Repository, agent_session
-    ) -> None:
+    def test_dedup_multiple_sessions_per_repo(self, repository: Repository, agent_session) -> None:
         from system.tasks_views import _active_summary_rows
 
         _make_session(
@@ -186,9 +178,7 @@ class TestDispatchEmptyRepoFailFast:
     """空仓 fail-fast：零分支空仓不派发容器、不烧 token，直接标失败并给明确文案。"""
 
     @pytest.mark.asyncio
-    async def test_empty_repo_marked_failed_without_dispatch(
-        self, repository: Repository
-    ) -> None:
+    async def test_empty_repo_marked_failed_without_dispatch(self, repository: Repository) -> None:
         from repositories.summary_service import dispatch_repo_summary
 
         with (
