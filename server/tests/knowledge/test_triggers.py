@@ -909,7 +909,8 @@ class TestMcpTriggers:
         )
 
         assert [_request_triple(r) for r in captured_requests] == [
-            ("mcp_technical_plan", str(result.artifact.id), "mcp_plan_created")
+            ("blueprint", result.output["blueprint_artifact_id"], "blueprint_version_created"),
+            ("mcp_technical_plan", str(result.artifact.id), "mcp_plan_created"),
         ]
 
     async def test_mcp_tasks_executed_delivers(
@@ -1323,9 +1324,7 @@ def _make_coding_chat_host(
             tech_plan="## 方案\n\n实现编码完成自动归档",
             affected_files=[],
         )
-    agent_session = AgentSession.objects.create(
-        session_id=f"agent-coding-{suffix}", space=project
-    )
+    agent_session = AgentSession.objects.create(session_id=f"agent-coding-{suffix}", space=project)
     sub = SubAgentSession.objects.create(
         session_id=f"sub-coding-{suffix}",
         main_session=agent_session,

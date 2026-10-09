@@ -153,15 +153,17 @@ def _open_gate(user, *, project_id: str = _SCOPE_PROJECT_ID) -> SimpleNamespace:
     fitness = {
         str(r.id): {
             "verdict": "suitable",
+            "reasons": ["仓库职责与需求匹配"],
             "role_suggestion": role,
             "responsibility": f"{r.name} 承担生成接口",
-            "findings": [],
+            "findings": [{"title": "现状", "detail": "已有接口和持久化实现", "citations": []}],
             "task_status": "done",
         }
         for r, role in zip(repos, roles)
     }
     adapter = BlueprintConfirmGateAdapter(fitness_loader=AsyncMock(return_value=fitness))
-    async_to_sync(adapter.open_gate)(session)
+    opened = async_to_sync(adapter.open_gate)(session)
+    assert opened["event"] == "awaiting_confirmation", opened
     return SimpleNamespace(artifact=artifact, session=session, repos=repos)
 
 

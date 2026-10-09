@@ -67,9 +67,7 @@ def _result_for(repos: list[Repository]) -> RepoRouteResultV2:
         )
         for idx, repo in enumerate(repos)
     ]
-    return RepoRouteResultV2(
-        candidates=candidates, router_version="v2", auto_selected=True
-    )
+    return RepoRouteResultV2(candidates=candidates, router_version="v2", auto_selected=True)
 
 
 def _patch_route(capture: dict, result: RepoRouteResultV2):
@@ -101,18 +99,27 @@ async def test_propose_combined_persists_proposed() -> None:
         patch(f"{_SVC_MOD}.arecord_retrieval_trace", trace),
     ):
         result = await RepoAssociationService().propose(
-            space=space, features_flat=_FEATURES, project=project,
+            space=space,
+            features_flat=_FEATURES,
+            project=project,
             initiated_by_user_id="u-1",
         )
 
     # 返回形态
     assert result["router_version"] == "v2"
-    assert result["auto_selected"] is True
+    # 路由器的建议不能代替发布门的人审确认。
+    assert result["auto_selected"] is False
+    assert result["publish_mode"] == "confirmation"
     assert result["query_len"] > 0
     assert len(result["candidates"]) == 2
     first = result["candidates"][0]
     assert set(first) == {
-        "repo_id", "repo_name", "score", "confidence", "reason", "matched_node_paths"
+        "repo_id",
+        "repo_name",
+        "score",
+        "confidence",
+        "reason",
+        "matched_node_paths",
     }
 
     # 候选落 RepoAssociation(proposed)，字段映射正确
@@ -136,7 +143,9 @@ async def test_propose_scope_limited_to_space_repos() -> None:
         patch(f"{_SVC_MOD}.arecord_retrieval_trace", AsyncMock()),
     ):
         await RepoAssociationService().propose(
-            space=space, features_flat=_FEATURES, project=project,
+            space=space,
+            features_flat=_FEATURES,
+            project=project,
         )
     # repository_ids 必须限定 Space.repositories（不为 None/全库）
     assert capture["repository_ids"] is not None
@@ -152,7 +161,9 @@ async def test_propose_observability_call_source_and_trace() -> None:
         patch(f"{_SVC_MOD}.arecord_retrieval_trace", trace),
     ):
         await RepoAssociationService().propose(
-            space=space, features_flat=_FEATURES, project=project,
+            space=space,
+            features_flat=_FEATURES,
+            project=project,
         )
     # route 在 aux_repo_router 作用域内
     assert capture["call_source"] == "aux_repo_router"
@@ -174,15 +185,16 @@ async def test_confirm_repos_reinforces_charter() -> None:
 
     for r in repos:
         await sync_to_async(RepoAssociation.objects.create)(
-            project=project, repository_id=r.id, status=RepoAssociationStatus.PROPOSED,
+            project=project,
+            repository_id=r.id,
+            status=RepoAssociationStatus.PROPOSED,
             source="router_v2",
         )
     enqueue = AsyncMock(return_value="job-1")
-    with patch(
-        "repositories.charter_enqueue.enqueue_charter_draft", enqueue
-    ):
+    with patch("repositories.charter_enqueue.enqueue_charter_draft", enqueue):
         confirmed = await RepoAssociationService().confirm_repos(
-            project=project, repo_ids=[str(r.id) for r in repos],
+            project=project,
+            repo_ids=[str(r.id) for r in repos],
             initiated_by_user_id="u-9",
         )
     assert len(confirmed) == 2
@@ -199,15 +211,16 @@ async def test_reject_candidates_reinforces_charter() -> None:
 
     for r in repos:
         await sync_to_async(RepoAssociation.objects.create)(
-            project=project, repository_id=r.id, status=RepoAssociationStatus.PROPOSED,
+            project=project,
+            repository_id=r.id,
+            status=RepoAssociationStatus.PROPOSED,
             source="router_v2",
         )
     enqueue = AsyncMock(return_value="job-2")
-    with patch(
-        "repositories.charter_enqueue.enqueue_charter_draft", enqueue
-    ):
+    with patch("repositories.charter_enqueue.enqueue_charter_draft", enqueue):
         rejected = await RepoAssociationService().reject_candidates(
-            project=project, repo_ids=[str(repos[0].id)],
+            project=project,
+            repo_ids=[str(repos[0].id)],
             initiated_by_user_id="u-9",
         )
     assert rejected == 1
@@ -221,7 +234,9 @@ async def test_reinforce_charters_failure_never_breaks_confirm() -> None:
     from initiatives.models import RepoAssociation
 
     await sync_to_async(RepoAssociation.objects.create)(
-        project=project, repository_id=repos[0].id, status=RepoAssociationStatus.PROPOSED,
+        project=project,
+        repository_id=repos[0].id,
+        status=RepoAssociationStatus.PROPOSED,
         source="router_v2",
     )
     with patch(
@@ -229,7 +244,8 @@ async def test_reinforce_charters_failure_never_breaks_confirm() -> None:
         AsyncMock(side_effect=RuntimeError("durable down")),
     ):
         confirmed = await RepoAssociationService().confirm_repos(
-            project=project, repo_ids=[str(repos[0].id)],
+            project=project,
+            repo_ids=[str(repos[0].id)],
         )
     assert len(confirmed) == 1  # 回灌失败，确认仍成功
 
@@ -271,10 +287,15 @@ async def test_propose_fuses_charter_and_history_signals() -> None:
     with (
         _patch_route(capture, _result_for(repos)),
         patch(f"{_SVC_MOD}.arecord_retrieval_trace", AsyncMock()),
-        patch(f"{_SVC_MOD}.RepoAssociationService._fuse_extended_signals", AsyncMock(return_value=fused)),
+        patch(
+            f"{_SVC_MOD}.RepoAssociationService._fuse_extended_signals",
+            AsyncMock(return_value=fused),
+        ),
     ):
         result = await RepoAssociationService().propose(
-            space=space, features_flat=_FEATURES, project=project,
+            space=space,
+            features_flat=_FEATURES,
+            project=project,
         )
     assert result["candidates"][0]["repo_id"] == str(repos[1].id)
     assert result["candidates"][0]["breakdown"]["history_match"] == 0.18
@@ -289,7 +310,9 @@ async def test_propose_empty_features_skips_route() -> None:
         patch(f"{_SVC_MOD}.arecord_retrieval_trace", trace),
     ):
         result = await RepoAssociationService().propose(
-            space=space, features_flat=[], project=project,
+            space=space,
+            features_flat=[],
+            project=project,
         )
     assert result["candidates"] == []
     assert result["router_version"] == "skipped"
@@ -308,7 +331,9 @@ async def test_propose_no_space_repos_no_full_library() -> None:
         patch(f"{_SVC_MOD}.arecord_retrieval_trace", AsyncMock()),
     ):
         result = await RepoAssociationService().propose(
-            space=space, features_flat=_FEATURES, project=project,
+            space=space,
+            features_flat=_FEATURES,
+            project=project,
         )
     assert result["status"] == "clarify"
     assert result["clarify_reason"] == "empty_team_core"
@@ -330,8 +355,11 @@ async def test_refine_reroute_includes_extra_instruction() -> None:
         patch(f"{_SVC_MOD}.arecord_retrieval_trace", trace),
     ):
         result = await RepoAssociationService().refine(
-            space=space, project=project, features_flat=_FEATURES,
-            extra_instruction="只看后端仓库", initiated_by_user_id="u-9",
+            space=space,
+            project=project,
+            features_flat=_FEATURES,
+            extra_instruction="只看后端仓库",
+            initiated_by_user_id="u-9",
         )
     # query 含 extra_instruction 约束文本
     assert "只看后端仓库" in capture["query"]

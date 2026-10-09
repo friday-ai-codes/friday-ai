@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-import re
+import ast
 from pathlib import Path
 
 SERVER_DIR = Path(__file__).resolve().parents[2]
@@ -16,6 +16,7 @@ SERVER_DIR = Path(__file__).resolve().parents[2]
 _PRUNE_DIRS = {
     ".venv",
     "node_modules",
+    "data",
     "staticfiles",
     "__pycache__",
     ".git",
@@ -28,15 +29,17 @@ _PRUNE_DIRS = {
 _ALLOWED_WRITER = "initiatives/services/project_branch_service.py"
 
 _MODELS = ("ProjectBranch",)
-_RE_ORM_WRITE = {
-    m: re.compile(
-        rf"\b{m}\.objects\.(?:create|bulk_create|get_or_create|update_or_create)\b"
-    )
-    for m in _MODELS
-}
-# 直接实例化 ProjectBranch(...)；"\s*\(" 紧跟，排除 ProjectBranchService( /
-# ProjectBranchSerializer( 等更长符号（其后非 "(" 故不匹配）。
-_RE_INSTANTIATE = {m: re.compile(rf"\b{m}\s*\(") for m in _MODELS}
+
+
+def _is_bypass_call(node: ast.AST) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    target = ast.unparse(node.func)
+    return target in _MODELS or target in {
+        f"{model}.objects.{method}"
+        for model in _MODELS
+        for method in ("create", "bulk_create", "get_or_create", "update_or_create")
+    }
 
 
 def _iter_py_files() -> list[Path]:
@@ -67,18 +70,14 @@ def test_inv6_no_bypass_project_branch_write() -> None:
         rel = path.relative_to(SERVER_DIR).as_posix()
         if not _is_scanned(rel):
             continue
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if line.lstrip().startswith("class ProjectBranch"):
-                continue
-            for m in _MODELS:
-                if _RE_ORM_WRITE[m].search(line) or _RE_INSTANTIATE[m].search(line):
-                    violations.append(f"{rel}:{lineno}: {line.strip()}")
-                    break
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if _is_bypass_call(node):
+                violations.append(f"{rel}:{node.lineno}: {ast.unparse(node.func)}")
 
     assert not violations, (
         "INV-6 违反：发现旁路 ProjectBranch 写表"
-        f"（落库只允许经 ProjectBranchService / {_ALLOWED_WRITER}）：\n"
-        + "\n".join(violations)
+        f"（落库只允许经 ProjectBranchService / {_ALLOWED_WRITER}）：\n" + "\n".join(violations)
     )
 
 
@@ -88,3 +87,13 @@ def test_inv6_writer_module_actually_writes() -> None:
     assert writer.exists(), f"{_ALLOWED_WRITER} 不存在"
     text = writer.read_text(encoding="utf-8")
     assert "ProjectBranch.objects.get_or_create" in text
+
+
+def test_guard_ignores_documentation_but_detects_multiline_writes() -> None:
+    documentation = ast.parse('"""ProjectBranch(source=manual)"""')
+    assert not any(_is_bypass_call(n) for n in ast.walk(documentation))
+    for source in (
+        "ProjectBranch(source='manual')",
+        "ProjectBranch.objects.create(\n source='manual'\n)",
+    ):
+        assert any(_is_bypass_call(n) for n in ast.walk(ast.parse(source)))

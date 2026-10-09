@@ -190,6 +190,7 @@ def _candidate(repo: Repository, *, role: str, confidence: str = "high") -> dict
 def _fitness_entry(repo: Repository, *, role: str, verdict: str = "suitable") -> dict:
     return {
         "verdict": verdict,
+        "reasons": ["仓库职责与需求匹配"],
         "role_suggestion": role,
         "responsibility": f"{repo.name} 承担生成接口",
         "findings": [{"title": "现状", "detail": "已有雏形", "citations": []}],
@@ -229,7 +230,8 @@ def _open_gate(user, roles: tuple[str, ...] = ("direct", "indirect")) -> SimpleN
     )
     fitness = {str(r.id): _fitness_entry(r, role=role) for r, role in zip(repos, roles)}
     adapter = BlueprintConfirmGateAdapter(fitness_loader=AsyncMock(return_value=fitness))
-    async_to_sync(adapter.open_gate)(session)
+    opened = async_to_sync(adapter.open_gate)(session)
+    assert opened["event"] == "awaiting_confirmation", opened
     thread = BlueprintThread.objects.filter(
         artifact=artifact, kind=ThreadKind.REPO_CONFIRMATION
     ).first()
@@ -961,13 +963,19 @@ def _e2e_setup(user, monkeypatch, roles=("direct", "indirect")) -> SimpleNamespa
         status=Runner.Status.ONLINE,
         last_heartbeat=timezone.now(),
     )
-    for repo in ctx.repos:
+    for repo, role in zip(ctx.repos, roles):
         task = RepoResearchTask.objects.create(
             session=ctx.session, repository=repo, status=RepoResearchTaskStatus.DONE
         )
         PartialPlan.objects.create(
             research_task=task,
-            content={"repository_id": str(repo.id), "fitness": {"verdict": "suitable"}},
+            content={
+                "repository_id": str(repo.id),
+                "fitness": {"verdict": "suitable", "reasons": ["职责匹配且具备现有实现"]},
+                "role_suggestion": role,
+                "responsibility": f"{repo.name} 承担生成接口",
+                "findings": [{"title": "现状", "detail": "已有接口和持久化实现", "citations": []}],
+            },
             content_hash=uuid.uuid4().hex,
             valid=True,
         )
@@ -1121,9 +1129,7 @@ def test_e2e_confirm_through_rest_drives_session_into_stage_two(
 
     assert resp.status_code == 200
     fresh = ConvergenceSession.objects.get(id=ctx.session.id)
-    assert fresh.current_stage in ("spec_gate", "repo_plan", "merge"), (
-        "confirm 未接续离开确认门"
-    )
+    assert fresh.current_stage in ("spec_gate", "repo_plan", "merge"), "confirm 未接续离开确认门"
     assert fresh.current_stage != "repo_confirmation"
     assert fresh.status != ConvergenceSessionStatus.FAILED, (
         "缺 LLM/容器只能停在挂起态等人处置，绝不许静默落 FAILED"

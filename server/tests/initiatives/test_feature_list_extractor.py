@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -18,10 +17,6 @@ from langchain_core.messages import AIMessage
 
 from agents.call_source import CallSource, get_call_source
 from initiatives.services import FeatureListExtractor
-
-_DEMO_PATH = (
-    Path(__file__).resolve().parents[3] / ".planning" / "feature-list-demo.md"
-)
 
 _EXTRACTOR_MOD = "initiatives.services.feature_list_extractor"
 
@@ -122,13 +117,8 @@ async def test_normalize_all_empty_raises() -> None:
 @pytest.mark.django_db(transaction=True)
 async def test_extract_structure_multi_module(monkeypatch: pytest.MonkeyPatch) -> None:
     captured = _patch_llm(monkeypatch)
-    raw = (
-        "## 模块A\n功能点 A1 描述\n\n"
-        "## 模块B\n功能点 B1 描述\n"
-    )
-    result = await FeatureListExtractor().extract_structure(
-        raw, space=SimpleNamespace(id="s1")
-    )
+    raw = "## 模块A\n功能点 A1 描述\n\n## 模块B\n功能点 B1 描述\n"
+    result = await FeatureListExtractor().extract_structure(raw, space=SimpleNamespace(id="s1"))
     assert {m["name"] for m in result["modules"]} == {"模块A", "模块B"}
     assert result["features_flat"]
     for feat in result["features_flat"]:
@@ -145,15 +135,14 @@ async def test_extract_structure_82kb_chunks_and_degrades(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """82KB demo → 分块生效（chunk_count>1）+ degraded 置位 + 不整篇塞 LLM。"""
-    assert _DEMO_PATH.exists(), f"demo 样本缺失: {_DEMO_PATH}"
-    raw = _DEMO_PATH.read_text(encoding="utf-8")
-    # 真实富文档（~79KB UTF-8 字节 / ~3.2 万中文字符），远超 token 预算阈值。
+    # 使用可重现的合成长文，不能依赖已归档的规划文档或私人需求样本。
+    paragraph = "用户完成学习后可查看报告。Acceptance: persist progress and show the result. "
+    raw = "\n".join(f"## 模块 {i}\n### 功能点 {i}\n{paragraph * 12}" for i in range(120))
+    assert len(raw.encode("utf-8")) > 82 * 1024
     assert len(raw) > 30_000
 
     captured = _patch_llm(monkeypatch)
-    result = await FeatureListExtractor().extract_structure(
-        raw, space=SimpleNamespace(id="s1")
-    )
+    result = await FeatureListExtractor().extract_structure(raw, space=SimpleNamespace(id="s1"))
     assert result["chunk_count"] > 1  # 分块生效
     assert result["degraded"] is True  # 超 token 预算降级
     assert captured  # LLM 至少被调一次

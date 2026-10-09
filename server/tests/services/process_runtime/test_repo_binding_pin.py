@@ -237,7 +237,7 @@ async def _make_blueprint_session(project_id: str) -> ConvergenceSession:
 
 
 async def test_blueprint_adapter_pins_and_skips_router() -> None:
-    """蓝图链短路：候选=绑定仓（direct/high），契约键逐键在场，路由器不被调。"""
+    """蓝图链短路：候选=绑定仓（candidate/high），契约键逐键在场，路由器不被调。"""
     ctx = await _make_project_with_bindings()
     router = SimpleNamespace(route=AsyncMock())
     session = await _make_blueprint_session(ctx["project_id"])
@@ -253,7 +253,7 @@ async def test_blueprint_adapter_pins_and_skips_router() -> None:
     assert set(by_repo) == {ctx["repo_a"], ctx["repo_b"]}
     cand = by_repo[ctx["repo_a"]]
     assert _CANDIDATE_KEYS <= set(cand)
-    assert cand["role_suggestion"] == "direct"
+    assert cand["role_suggestion"] == "candidate"
     assert cand["confidence"] == "high"
     assert cand["pinned_branch"] == "feature/new"
     assert cand["evidence"]["router_version"] == PINNED_ROUTER_VERSION
