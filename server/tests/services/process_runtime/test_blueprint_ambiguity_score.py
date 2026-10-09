@@ -89,7 +89,13 @@ def test_normalize_keeps_valid_payload() -> None:
     assert set(result["dimensions"]) == set(_DIMS)
     assert all(entry["score"] == 0.25 for entry in result["dimensions"].values())
     assert result["questions"] == [
-        {"text": "目标用户是谁？", "options": ["目标", "初三"], "citations": ["c1"]}
+        {
+            "text": "目标用户是谁？",
+            "options": ["目标", "初三"],
+            "citations": ["c1"],
+            "related_feature_points": [],
+            "recommended": "",
+        }
     ]
 
 

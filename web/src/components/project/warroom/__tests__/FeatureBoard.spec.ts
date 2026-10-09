@@ -4,8 +4,9 @@
  * 覆盖：模块 → 功能点层级渲染 / 状态指示灯与顶部图例 / 空态。
  */
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
-import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { createI18n } from 'vue-i18n'
 import zhCN from '~/locales/zh-CN.json'
 
@@ -28,8 +29,18 @@ const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': z
 
 const Comp = (await import('../FeatureBoard.vue')).default
 
+enableAutoUnmount(afterEach)
+const queryClients: QueryClient[] = []
+afterEach(() => {
+  // 空态开启轮询；卸载组件并清掉本例的查询缓存，避免串到后续用例。
+  for (const client of queryClients)
+    client.clear()
+  queryClients.length = 0
+})
+
 function mountComp() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  queryClients.push(queryClient)
   return mount(Comp, {
     props: { projectId: 'p1' },
     global: { plugins: [i18n, [VueQueryPlugin, { queryClient }]] },
@@ -101,7 +112,12 @@ describe('featureBoard（P1）', () => {
   it('空态渲染真实 zh-CN 文案', async () => {
     getFeatureListMock.mockResolvedValue([])
     const wrapper = mountComp()
-    await flushPromises()
+    // 等待当前查询和 Vue 渲染，不排空包含空态轮询的全局异步队列。
+    await queryClients.at(-1)!.ensureQueryData({
+      queryKey: ['project-features', 'p1'],
+      queryFn: () => getFeatureListMock(),
+    })
+    await nextTick()
     expect(wrapper.text()).toContain(zhCN.projects.workbench.feature.emptyTitle)
   })
 })
