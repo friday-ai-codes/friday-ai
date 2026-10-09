@@ -297,7 +297,7 @@ def test_no_separate_clarification_list_tool_was_added() -> None:
     }
 
 
-def test_create_feishu_technical_plan_only_gained_three_additive_keys() -> None:
+def test_create_feishu_technical_plan_preserves_team_and_additive_keys() -> None:
     """⭐ 既有 12 个响应键 / 9 个请求键**一个不少**，追加项逐个列名（外形兼容纪律）。
 
     ⚠️ 116-REVIEW MJ-02 起请求侧多一个 ``assumptions_tier``（可选、缺省空串 ⇒ 不传时请求
@@ -320,6 +320,7 @@ def test_create_feishu_technical_plan_only_gained_three_additive_keys() -> None:
     assert [key for key in entry["request"] if key not in old_request] == [
         "idempotency_key",
         "blueprint_project_id",
+        "primary_team",
         "assumptions_tier",
     ]
     old_response = [
@@ -401,9 +402,7 @@ def test_confirmed_handoff_returns_full_read_only_delivery_envelope(
 
     assert resp.status_code == 200, resp.json()
     body = resp.json()
-    assert set(body) == set(
-        TOOL_SCHEMA_SNAPSHOT["get_confirmed_blueprint_handoff"]["response"]
-    )
+    assert set(body) == set(TOOL_SCHEMA_SNAPSHOT["get_confirmed_blueprint_handoff"]["response"])
     assert body["current_status"] == BlueprintStatus.CONFIRMED
     assert body["artifact_version_id"] == str(artifact.current_version_id)
     assert body["content_hash"] == artifact.current_version.content_hash
@@ -970,7 +969,7 @@ def test_response_extras_are_empty_when_the_mcp_switch_is_off() -> None:
     assert async_to_sync(_ablueprint_response_extras)(delegate) == {}
 
 
-def test_response_extras_carry_five_keys_when_the_mcp_switch_is_on(access_user) -> None:
+def test_response_extras_preserve_project_identity_when_the_mcp_switch_is_on(access_user) -> None:
     from mcp_tools.technical_plan_service import _ablueprint_response_extras
 
     _save_switch({"mcp": "technical_blueprint"})
@@ -986,6 +985,7 @@ def test_response_extras_carry_five_keys_when_the_mcp_switch_is_on(access_user) 
         "blueprint_artifact_version_id",
         "blueprint_content_hash",
         "pending_clarifications",
+        "project_id",
     }
     assert extras["blueprint_artifact_id"] == str(artifact.id)
     assert extras["blueprint_current_status"] == BlueprintStatus.NEEDS_CLARIFICATION
@@ -1197,3 +1197,130 @@ def test_the_discriminator_does_not_copy_the_schema_version_literal() -> None:
             )
         ]
     )
+
+
+def test_confirmed_handoff_blocks_incomplete_versioned_delivery_contract(mcp_client, access_user):
+    client, _ = mcp_client
+    artifact = _make_artifact(BlueprintStatus.CONFIRMED)
+    _make_session(artifact, access_user)
+    plan = _make_blueprint_technical_plan(artifact)
+    version = artifact.current_version
+    version.content = {**version.content, "delivery_contract_version": 1}
+    version.save(update_fields=["content"])
+    resp = client.post(
+        _GET_HANDOFF_URL,
+        {
+            "technical_plan_id": str(plan.id),
+            "artifact_id": str(artifact.id),
+            "artifact_version_id": str(version.id),
+            "content_hash": version.content_hash,
+        },
+        format="json",
+    )
+    assert resp.status_code >= 400
+    assert resp.json()["error_code"] == "blueprint_delivery_not_ready"
+    artifact.refresh_from_db()
+    assert artifact.blueprint_status == BlueprintStatus.CONFIRMED
+
+
+def test_confirmation_checks_delivery_contract_even_without_version_pin(mcp_client, access_user):
+    from delivery.services.blueprint_lifecycle_service import BlueprintLifecycleService
+
+    artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW)
+    version = artifact.current_version
+    version.content = {**version.content, "delivery_contract_version": 1}
+    version.save(update_fields=["content"])
+    with pytest.raises(ValueError, match="业务交付合同未就绪"):
+        async_to_sync(BlueprintLifecycleService()._apply_transition_sync)(
+            artifact,
+            from_status=BlueprintStatus.PENDING_REVIEW,
+            to_status=BlueprintStatus.CONFIRMED,
+        )
+    artifact.refresh_from_db()
+    assert artifact.blueprint_status == BlueprintStatus.PENDING_REVIEW
+
+
+def test_versioned_delivery_confirmation_and_handoff_round_trip(
+    mcp_client, access_user, monkeypatch
+):
+    """Exercise authenticated confirmation -> stored artifact -> read handoff, not just pure functions."""
+    from tests.services.process_runtime.test_blueprint_delivery_readiness import fixture
+
+    client, _ = mcp_client
+    _stub_resume(monkeypatch)
+    content = make_blueprint()
+    delivery = fixture()
+    delivery = json.loads(
+        json.dumps(delivery)
+        .replace('"backend"', '"11111111-1111-4111-8111-111111111111"')
+        .replace('"web"', '"22222222-2222-4222-8222-222222222222"')
+    )
+    # Canonical fixture supplies the required descriptive fields for rendering/schema.
+    feature = copy.deepcopy(content["requirement_spec"]["feature_points"][0])
+    feature["id"] = "f"
+    delivery["requirement_spec"] = {**content["requirement_spec"], "feature_points": [feature]}
+    for item in delivery["implementation_overview"]["items"]:
+        item["change_type"] = "create"
+        item["how"] = [
+            {
+                "block_id": "how-" + item["id"],
+                "type": "paragraph",
+                "text": "Implement the frozen contract",
+            }
+        ]
+        item["test_strategy"] = [
+            {
+                "block_id": "test-" + item["id"],
+                "type": "paragraph",
+                "text": "Run provider and consumer contract tests",
+            }
+        ]
+    for contract in delivery["api_contracts"]:
+        contract["name"] = "Topics contract"
+    for assoc in delivery["repo_associations"]:
+        assoc["role"] = "direct"
+        assoc["responsibility"] = []
+        assoc["rationale"] = {
+            "text": [
+                {
+                    "block_id": "rationale-" + assoc["repository_id"],
+                    "type": "paragraph",
+                    "text": "Owned implementation",
+                }
+            ],
+            "citations": [],
+        }
+    content["current_state_analysis"] = []
+    content.update(delivery)
+    content["implementation_overview"]["requirement_narrative"] = []
+    artifact = _make_artifact(BlueprintStatus.PENDING_REVIEW, content=content)
+    _make_session(artifact, access_user)
+    plan = _make_blueprint_technical_plan(artifact)
+    coordinates = {
+        "artifact_id": str(artifact.id),
+        "artifact_version_id": str(artifact.current_version_id),
+        "content_hash": artifact.current_version.content_hash,
+        "technical_plan_id": str(plan.id),
+    }
+    approved = client.post(_APPROVE_URL, coordinates, format="json")
+    assert approved.status_code == 200, approved.json()
+    response = client.post(_GET_HANDOFF_URL, coordinates, format="json")
+    assert response.status_code == 200, response.json()
+    handoff = response.json()
+    assert handoff["delivery_readiness"]["ready"] is True
+    assert handoff["delivery_readiness"]["contentHash"] == coordinates["content_hash"]
+    assert len(handoff["repository_tasks"]) == 2
+    assert {i for t in handoff["repository_tasks"] for i in t["implementation_item_ids"]} == {
+        "build",
+        "ui",
+    }
+    # Optional local cross-repository verifier fixture; never production content.
+    import os
+
+    output = os.environ.get("FRIDAY_HANDOFF_TEST_OUTPUT")
+    if output:
+        from pathlib import Path
+
+        Path(output).write_text(
+            json.dumps({"handoff": handoff, "expected": coordinates}), encoding="utf-8"
+        )

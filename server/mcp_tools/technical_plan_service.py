@@ -79,9 +79,9 @@ async def get_confirmed_blueprint_handoff(
         if technical_plan.blueprint_artifact_id != artifact_id:
             raise TechnicalPlanError("blueprint_handoff_mismatch", "技术方案不属于该技术蓝图")
 
-        artifact = await Artifact.objects.select_related("current_version").filter(
-            id=artifact_id
-        ).afirst()
+        artifact = (
+            await Artifact.objects.select_related("current_version").filter(id=artifact_id).afirst()
+        )
         if artifact is None or artifact.blueprint_status != BlueprintStatus.CONFIRMED:
             raise TechnicalPlanError("blueprint_not_confirmed", "技术蓝图尚未确认，不能交接")
         version = artifact.current_version
@@ -104,6 +104,25 @@ async def get_confirmed_blueprint_handoff(
         if not repository_tasks:
             raise TechnicalPlanError("blueprint_handoff_empty", "已确认蓝图没有可交接的仓库任务")
 
+        from services.process_runtime.blueprint_delivery_readiness import (
+            evaluate_delivery_readiness,
+        )
+
+        readiness = evaluate_delivery_readiness(
+            content, content_hash=content_hash, tasks=repository_tasks
+        )
+        if content.get("delivery_contract_version") is not None and any(
+            not _is_repository_uuid(t.get("repository_id", "")) for t in repository_tasks
+        ):
+            readiness["ready"] = False
+            readiness["status"] = "blocked"
+            readiness["blockers"].append(
+                {"code": "repository_alias_unresolved", "location": "repository_tasks"}
+            )
+        if content.get("delivery_contract_version") is not None and not readiness["ready"]:
+            raise TechnicalPlanError(
+                "blueprint_delivery_not_ready", "蓝图业务交付合同未就绪；请先修复评审发现"
+            )
         meta = content.get("meta") if isinstance(content.get("meta"), dict) else {}
         result = {
             "technical_plan_id": str(technical_plan.id),
@@ -121,6 +140,7 @@ async def get_confirmed_blueprint_handoff(
             ),
             "repository_tasks": repository_tasks,
             "repository_task_count": len(repository_tasks),
+            "delivery_readiness": readiness,
         }
     except TechnicalPlanError as exc:
         logger.warning(
@@ -135,6 +155,9 @@ async def get_confirmed_blueprint_handoff(
         "confirmed_blueprint_handoff_completed",
         **fields,
         repository_task_count=len(repository_tasks),
+        delivery_ready=readiness["ready"],
+        delivery_blocker_count=len(readiness["blockers"]),
+        validator_version=readiness["validatorVersion"],
         duration_ms=int((time.monotonic() - started_at) * 1000),
     )
     return result
@@ -563,6 +586,17 @@ def _map_execution_plan_to_repository_tasks(content: dict[str, Any]) -> list[dic
                 "coding_instruction": coding_instruction,
                 "candidate_files": candidate_files,
                 "dependencies": [str(dep) for dep in dependencies],
+                **{
+                    key: _str_list(item[key])
+                    for key in (
+                        "implementation_item_ids",
+                        "contract_dependencies",
+                        "feature_point_ids",
+                        "provides",
+                        "consumes",
+                    )
+                    if key in item
+                },
                 # WR-01：下游 _coding_plan_body 读取的方案细节键（含 coding_instruction 兜底）。
                 "steps": steps,
                 "test_strategy": _str_list(item.get("test_strategy")),

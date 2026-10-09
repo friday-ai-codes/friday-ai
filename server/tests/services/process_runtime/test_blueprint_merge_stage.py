@@ -910,8 +910,8 @@ async def test_merge_answer_records_ignored_support_alias_in_session_state():
     ]
 
 
-async def test_ignored_support_aliases_skip_missing_repo_clarification():
-    """操作员排除未登记协作仓后，融合不再为同一缺口开阻塞澄清。"""
+async def test_ignored_support_aliases_do_not_claim_existing_without_evidence():
+    """排除意图不能证明外部接口存在，仍需明确来源或延期裁决。"""
     rid_a = _repo_id("a")
     session, artifact = await _make_locked_session(_association(rid_a))
     session.stage_state = {
@@ -945,19 +945,9 @@ async def test_ignored_support_aliases_skip_missing_repo_clarification():
         )
     }
     result, _synthesizer = await _run_merge(session, plans=plans)
-    assert result["validation_status"] != "needs_clarification", result
-    assert result["reconcile"]["missing_support_repos"] == 0
-    assert await BlueprintThread.objects.filter(artifact_id=artifact.id).acount() == 0
-    assert result["stage_state"]["merge"]["ignored_support_aliases"] == [
-        "sample-auth",
-        "sample-business",
-    ]
-    if result["validation_status"] == "passed":
-        content = await _landed_content(result)
-        consumed = [item for item in content["api_contracts"] if item["direction"] == "consumed"]
-        assert consumed
-        assert all(item["data_source"]["availability"] == "existing" for item in consumed)
-        assert any("sample-auth" in str(idea) for idea in content.get("deferred_ideas") or [])
+    assert result["validation_status"] == "needs_clarification", result
+    assert result["reconcile"]["missing_support_repos"] == 2
+    assert await BlueprintThread.objects.filter(artifact_id=artifact.id).acount() > 0
 
 
 # ── 10. ⭐ consumed 无 provider 必标 needs_support（B4 路径断言） ────────────

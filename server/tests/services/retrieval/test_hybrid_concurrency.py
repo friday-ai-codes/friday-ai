@@ -24,6 +24,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import structlog
 from structlog.testing import capture_logs
 
 from services.code_intel.local_provider import LocalProvider
@@ -33,6 +34,17 @@ from services.retrieval.types import HybridSearchResult, LayerSnapshot
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _capture_debug_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Wave 级采样日志已降到 DEBUG；用独立 logger 避免生产 INFO 过滤与缓存干扰断言。
+    logger = structlog.wrap_logger(
+        structlog.ReturnLogger(),
+        wrapper_class=structlog.make_filtering_bound_logger(0),
+        cache_logger_on_first_use=False,
+    )
+    monkeypatch.setattr("services.retrieval.hybrid_search.logger", logger)
 
 
 def _empty_snapshot() -> LayerSnapshot:
@@ -64,12 +76,16 @@ async def test_wave_0_concurrent_under_250ms() -> None:
     通常 > 220ms；250ms 阈值留 50ms 噪声余地（CI 抖动）。
     """
     svc = HybridSearchService(LocalProvider())
-    with patch(
-        "services.retrieval.hybrid_search.search_rag",
-        new=AsyncMock(side_effect=_sleep_then_snapshot),
-    ), patch.object(
-        LocalProvider, "lookup_symbols",
-        new=AsyncMock(side_effect=_sleep_then_symbols),
+    with (
+        patch(
+            "services.retrieval.hybrid_search.search_rag",
+            new=AsyncMock(side_effect=_sleep_then_snapshot),
+        ),
+        patch.object(
+            LocalProvider,
+            "lookup_symbols",
+            new=AsyncMock(side_effect=_sleep_then_symbols),
+        ),
     ):
         start = time.perf_counter()
         result = await svc.search(
@@ -95,13 +111,18 @@ async def test_wave_0_concurrent_under_250ms() -> None:
 async def test_wave_started_log_emits_wave_id_zero() -> None:
     """``hybrid_search_wave_started`` 事件 ``wave_id == 0`` 且 ``wave_0_tasks`` 含 rag/symbol。"""
     svc = HybridSearchService(LocalProvider())
-    with patch(
-        "services.retrieval.hybrid_search.search_rag",
-        new=AsyncMock(return_value=_empty_snapshot()),
-    ), patch.object(
-        LocalProvider, "lookup_symbols",
-        new=AsyncMock(return_value=[]),
-    ), capture_logs() as cap:
+    with (
+        patch(
+            "services.retrieval.hybrid_search.search_rag",
+            new=AsyncMock(return_value=_empty_snapshot()),
+        ),
+        patch.object(
+            LocalProvider,
+            "lookup_symbols",
+            new=AsyncMock(return_value=[]),
+        ),
+        capture_logs() as cap,
+    ):
         await svc.search(
             "log probe",
             repository_ids=["repo-a"],
@@ -114,9 +135,7 @@ async def test_wave_started_log_emits_wave_id_zero() -> None:
 
     assert started_events, "未发现 hybrid_search_wave_started 日志事件"
     assert done_events, "未发现 hybrid_search_wave_done 日志事件"
-    assert started_events[0].get("wave_id") == 0, (
-        f"wave_id 非 0: {started_events[0]}"
-    )
+    assert started_events[0].get("wave_id") == 0, f"wave_id 非 0: {started_events[0]}"
     assert list(started_events[0].get("wave_0_tasks") or []) == ["rag", "symbol"], (
         f"wave_0_tasks 字段错误: {started_events[0].get('wave_0_tasks')}"
     )
@@ -138,12 +157,16 @@ async def test_rag_failure_raises() -> None:
     svc = HybridSearchService(LocalProvider())
     boom = RuntimeError("simulated rag failure")
 
-    with patch(
-        "services.retrieval.hybrid_search.search_rag",
-        new=AsyncMock(side_effect=boom),
-    ), patch.object(
-        LocalProvider, "lookup_symbols",
-        new=AsyncMock(return_value=[]),
+    with (
+        patch(
+            "services.retrieval.hybrid_search.search_rag",
+            new=AsyncMock(side_effect=boom),
+        ),
+        patch.object(
+            LocalProvider,
+            "lookup_symbols",
+            new=AsyncMock(return_value=[]),
+        ),
     ):
         with pytest.raises(RuntimeError, match="simulated rag failure"):
             await svc.search(
@@ -170,13 +193,18 @@ async def test_symbol_failure_downgrades() -> None:
     """
     svc = HybridSearchService(LocalProvider())
 
-    with patch(
-        "services.retrieval.hybrid_search.search_rag",
-        new=AsyncMock(return_value=_empty_snapshot()),
-    ), patch.object(
-        LocalProvider, "lookup_symbols",
-        new=AsyncMock(side_effect=ValueError("simulated symbol failure")),
-    ), capture_logs() as cap:
+    with (
+        patch(
+            "services.retrieval.hybrid_search.search_rag",
+            new=AsyncMock(return_value=_empty_snapshot()),
+        ),
+        patch.object(
+            LocalProvider,
+            "lookup_symbols",
+            new=AsyncMock(side_effect=ValueError("simulated symbol failure")),
+        ),
+        capture_logs() as cap,
+    ):
         result = await svc.search(
             "symbol-fail probe",
             repository_ids=["repo-a"],
@@ -188,9 +216,7 @@ async def test_symbol_failure_downgrades() -> None:
         "symbol 失败时 search 不应抛错，应降级返回 HybridSearchResult"
     )
     symbol_fail_events = [e for e in cap if e.get("event") == "symbol_task_failed"]
-    assert symbol_fail_events, (
-        "symbol_task 失败应记录 symbol_task_failed warning event"
-    )
+    assert symbol_fail_events, "symbol_task 失败应记录 symbol_task_failed warning event"
     assert result.hop1_neighbors == []
     assert result.hop2_neighbors == []
 
@@ -220,12 +246,16 @@ async def test_two_tasks_started_within_5ms() -> None:
         return []
 
     svc = HybridSearchService(LocalProvider())
-    with patch(
-        "services.retrieval.hybrid_search.search_rag",
-        new=AsyncMock(side_effect=_record_rag),
-    ), patch.object(
-        LocalProvider, "lookup_symbols",
-        new=AsyncMock(side_effect=_record_symbol),
+    with (
+        patch(
+            "services.retrieval.hybrid_search.search_rag",
+            new=AsyncMock(side_effect=_record_rag),
+        ),
+        patch.object(
+            LocalProvider,
+            "lookup_symbols",
+            new=AsyncMock(side_effect=_record_symbol),
+        ),
     ):
         await svc.search(
             "wave-skew probe",
@@ -234,9 +264,7 @@ async def test_two_tasks_started_within_5ms() -> None:
             top_k=30,
         )
 
-    assert "rag" in started_at and "symbol" in started_at, (
-        f"未记录到 task 启动时间戳: {started_at}"
-    )
+    assert "rag" in started_at and "symbol" in started_at, f"未记录到 task 启动时间戳: {started_at}"
     skew_ms = abs(started_at["rag"] - started_at["symbol"]) * 1000
     assert skew_ms < 5.0, (
         f"rag/symbol task 启动时间差 {skew_ms:.3f}ms 超过 5ms 阈值（asyncio.gather"

@@ -332,10 +332,7 @@ class CrossRepoApiCall(models.Model):
         ]
 
     def __str__(self) -> str:
-        return (
-            f"{self.call_site} → {self.endpoint} "
-            f"[confidence={self.match_confidence}]"
-        )
+        return f"{self.call_site} → {self.endpoint} [confidence={self.match_confidence}]"
 
 
 class SymbolCommunity(models.Model):
@@ -376,14 +373,18 @@ class SymbolCommunity(models.Model):
         verbose_name_plural = "符号社区"
         unique_together = [("repository", "branch_name", "community_key")]
         indexes = [
-            models.Index(fields=["repository", "branch_name"]),
-            models.Index(fields=["repository", "branch_name", "member_fingerprint"]),
+            models.Index(
+                fields=["repository", "branch_name"], name="cg_comm_repo_branch_idx"
+            ),
+            models.Index(
+                fields=["repository", "branch_name", "member_fingerprint"],
+                name="cg_comm_repo_fingerprint_idx",
+            ),
         ]
 
     def __str__(self) -> str:
         return (
-            f"SymbolCommunity({self.community_key}, n={self.member_count}, "
-            f"algo={self.algorithm})"
+            f"SymbolCommunity({self.community_key}, n={self.member_count}, algo={self.algorithm})"
         )
 
 
@@ -433,7 +434,9 @@ class ProcessTrace(models.Model):
         verbose_name_plural = "执行流"
         unique_together = [("repository", "branch_name", "process_key")]
         indexes = [
-            models.Index(fields=["repository", "branch_name"]),
+            models.Index(
+                fields=["repository", "branch_name"], name="cg_proc_repo_branch_idx"
+            ),
         ]
 
     def __str__(self) -> str:
@@ -490,9 +493,13 @@ class SecurityFinding(models.Model):
             ),
         ]
         indexes = [
-            models.Index(fields=["repository", "branch_name"]),
-            models.Index(fields=["repository", "mr_key"]),
-            models.Index(fields=["repository", "fingerprint"]),
+            models.Index(
+                fields=["repository", "branch_name"], name="codegraph_s_reposit_sf_br_idx"
+            ),
+            models.Index(fields=["repository", "mr_key"], name="codegraph_s_reposit_sf_mr_idx"),
+            models.Index(
+                fields=["repository", "fingerprint"], name="codegraph_s_reposit_sf_fp_idx"
+            ),
         ]
 
     def __str__(self) -> str:

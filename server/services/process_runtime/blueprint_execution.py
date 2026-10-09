@@ -208,6 +208,7 @@ def derive_execution_plan(blueprint: dict) -> list[dict]:
                 "coding_instruction": _build_coding_instruction(repo_items[rid]),
                 "files": _merge_files(repo_items[rid]),
                 "dependencies": sorted(f"task_{dep}" for dep in repo_deps[rid]),
+                **_delivery_refs(blueprint, rid),
             }
         )
     return tasks
@@ -235,3 +236,9 @@ def derive_technical_plan_document(blueprint: dict) -> tuple[dict | None, str | 
     if not ok:
         return None, err
     return doc, None
+
+
+def _delivery_refs(blueprint: dict, repository_id: str) -> dict:
+    from services.process_runtime.blueprint_delivery_readiness import project_delivery_refs
+
+    return project_delivery_refs(blueprint, repository_id)

@@ -49,6 +49,7 @@ def _make_project(*, with_binding: bool) -> dict:
     project = Project.objects.create(space=space, name="P-sandbox")
     repo = Repository.objects.create(
         name="repo-sandbox",
+        facets={"团队归属": "sandbox-team"},
         git_url="https://example.com/sandbox.git",
         default_branch="main",
         index_status=IndexStatus.INDEXED,
@@ -75,7 +76,11 @@ async def _make_blueprint_session(project_id: str) -> ConvergenceSession:
         current_stage="route",
         stage_state={
             "blueprint": {"requirement_spec": _spec()},
-            "decomposition": {"requirement_text": "登录页改造", "project_id": project_id},
+            "decomposition": {
+                "requirement_text": "登录页改造",
+                "project_id": project_id,
+                "primary_team": "sandbox-team",
+            },
         },
     )
 
@@ -105,7 +110,11 @@ async def test_route_adapter_ignore_pin_bypasses_binding() -> None:
         patch(
             "services.process_runtime.initiative_profile.build_profile",
             new=AsyncMock(
-                return_value={"status": "ok", "profile": {"change_kind": "brownfield"}, "degrade_reason": ""}
+                return_value={
+                    "status": "ok",
+                    "profile": {"change_kind": "brownfield", "primary_team": "sandbox-team"},
+                    "degrade_reason": "",
+                }
             ),
         ),
         patch(
@@ -114,7 +123,10 @@ async def test_route_adapter_ignore_pin_bypasses_binding() -> None:
         ),
     ):
         bypassed = await adapter.route(session, ignore_pin=True)
-    router.route.assert_awaited_once()
+    # shortlist 与空候选兜底可能分别召回；每次仍必须受已知仓库范围约束。
+    assert router.route.await_count >= 1
+    for call in router.route.await_args_list:
+        assert call.kwargs["repository_ids"] == [ctx["repo_id"]]
     assert bypassed["router_version"] == "v2-test"
 
 

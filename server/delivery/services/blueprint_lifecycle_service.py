@@ -376,6 +376,34 @@ class BlueprintLifecycleService:
                     or str(current.content_hash) != expected_content_hash
                 ):
                     raise StaleBlueprintVersionError("蓝图版本已变化，请重新读取后再确认")
+            if to_status == BlueprintStatus.CONFIRMED:
+                from delivery.models import ArtifactVersion
+                from services.process_runtime.blueprint_delivery_readiness import (
+                    evaluate_delivery_readiness,
+                )
+
+                # Every confirmation reads the current content under the same row lock,
+                # including REST callers that do not supply optional version pins.
+                locked_artifact = Artifact.objects.select_for_update().get(id=artifact.id)
+                current_version = (
+                    ArtifactVersion.objects.select_for_update()
+                    .filter(id=locked_artifact.current_version_id)
+                    .first()
+                )
+                content = (
+                    current_version.content
+                    if current_version and isinstance(current_version.content, dict)
+                    else {}
+                )
+                if content.get("delivery_contract_version") is not None:
+                    readiness = evaluate_delivery_readiness(
+                        content, content_hash=current_version.content_hash
+                    )
+                    if not readiness["ready"]:
+                        raise ValueError(
+                            "蓝图业务交付合同未就绪："
+                            + ",".join(sorted({f["code"] for f in readiness["blockers"]}))
+                        )
             if to_status == BlueprintStatus.CONFIRMED and self._has_confirm_blockers_sync(artifact):
                 raise ValueError("存在未解决的阻塞澄清线程或未决 BLOCKER 审查发现，蓝图不可确认")
 
@@ -1382,7 +1410,8 @@ class BlueprintLifecycleService:
             if row is None:
                 return {"refreshed": False, "reason": "gate_not_open", "changed_count": 0}
             existing = [
-                item for item in (row.options if isinstance(row.options, list) else [])
+                item
+                for item in (row.options if isinstance(row.options, list) else [])
                 if isinstance(item, dict)
             ]
             merged = merge_gate_snapshot(existing, list(fresh_snapshot or []))

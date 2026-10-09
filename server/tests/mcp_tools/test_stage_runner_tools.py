@@ -39,6 +39,8 @@ def test_route_blueprint_repos_dry_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client, _plaintext = mcp_client
+    indexed_repository.facets = {"团队归属": "路由测试团队"}
+    indexed_repository.save(update_fields=["facets"])
     monkeypatch.setattr(
         "codegraph.services.repo_router_v2.RepoRouterV2.route",
         AsyncMock(
@@ -68,7 +70,12 @@ def test_route_blueprint_repos_dry_run(
 
     response = client.post(
         "/api/mcp/tools/route_blueprint_repos/",
-        {"requirement_text": "登录页改造", "ignore_pin": True, "top_k": 5},
+        {
+            "requirement_text": "登录页改造",
+            "ignore_pin": True,
+            "top_k": 5,
+            "primary_team": "路由测试团队",
+        },
         format="json",
     )
 

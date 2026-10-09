@@ -71,9 +71,7 @@ class TestSessionStoreRedisDown:
     def test_load_degrades_to_db_when_cache_get_raises(self) -> None:
         store = SessionStore()
         with patch.object(cache, "get", side_effect=RuntimeError("redis down")):
-            loaded = store.load(
-                coding_session=_session("db-sid", "db-transcript", cs_id="cs-down")
-            )
+            loaded = store.load(coding_session=_session("db-sid", "db-transcript", cs_id="cs-down"))
         assert loaded is not None
         assert loaded["sdk_session_id"] == "db-sid"
         assert loaded["sdk_transcript"] == "db-transcript"
@@ -89,9 +87,7 @@ class TestSessionStoreRedisDown:
 class TestAssertCwdConsistent:
     def test_consistent_same_cwd(self) -> None:
         store = SessionStore()
-        assert store.assert_cwd_consistent(
-            stored_cwd=WORKSPACE_CWD, dispatch_cwd=WORKSPACE_CWD
-        )
+        assert store.assert_cwd_consistent(stored_cwd=WORKSPACE_CWD, dispatch_cwd=WORKSPACE_CWD)
 
     def test_inconsistent_different_cwd(self) -> None:
         store = SessionStore()
@@ -115,14 +111,10 @@ class TestBuildResumeDispatchEnvWithStore:
             coding_session=_session("sess-x", transcript, cs_id="cs-resume"),
             cwd=WORKSPACE_CWD,
         )
-        env = build_resume_dispatch_env(
-            _session(cs_id="cs-resume"), dispatch_cwd=WORKSPACE_CWD
-        )
+        env = build_resume_dispatch_env(_session(cs_id="cs-resume"), dispatch_cwd=WORKSPACE_CWD)
         assert env["env_FRIDAY_TASK_RESUME_SESSION_ID"] == "sess-x"
         count = int(env["env_FRIDAY_TASK_RESUME_TRANSCRIPT_CHUNKS"])
-        reassembled = "".join(
-            env[f"env_FRIDAY_TASK_RESUME_TRANSCRIPT_{i}"] for i in range(count)
-        )
+        reassembled = "".join(env[f"env_FRIDAY_TASK_RESUME_TRANSCRIPT_{i}"] for i in range(count))
         assert reassembled == transcript
 
     @pytest.mark.asyncio
@@ -149,5 +141,9 @@ class TestBuildResumeDispatchEnvWithStore:
         from chat.sdk_resume import build_resume_dispatch_env
 
         # 无 Redis 镜像，DB 有 transcript 且无 cwd → 仍可 resume（v0.8 行为不回退）。
-        env = build_resume_dispatch_env(_session("db-sid", "db-body", cs_id="cs-dbonly"))
+        env = build_resume_dispatch_env(
+            _session(
+                "db-sid", '{"type":"user","message":{"content":"db-body"}}\n', cs_id="cs-dbonly"
+            )
+        )
         assert env["env_FRIDAY_TASK_RESUME_SESSION_ID"] == "db-sid"

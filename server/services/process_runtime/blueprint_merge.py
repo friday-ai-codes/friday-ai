@@ -1293,7 +1293,7 @@ def _project_contract(
     while contract_id in used_ids:
         contract_id = f"{contract_id}x"
     used_ids.add(contract_id)
-    kind = str(drafted.get("kind") or api.get("kind") or "").strip()
+    kind = str(api.get("kind") or drafted.get("kind") or "").strip()
     contract: dict[str, Any] = {
         "id": contract_id,
         "name": name[:_MAX_TITLE_CHARS],
@@ -1316,6 +1316,21 @@ def _project_contract(
     for key in ("request_example", "response_example"):
         if isinstance(drafted.get(key), dict):
             contract[key] = drafted[key]
+    delivery = api.get("delivery")
+    if isinstance(delivery, dict):
+        import copy
+
+        contract["delivery"] = copy.deepcopy(delivery)
+        local_refs = delivery.get("implementation_item_ids")
+        if isinstance(local_refs, list):
+            contract["delivery"]["implementation_item_ids"] = [
+                _impl_item_id(repository_id, ref) for ref in local_refs if isinstance(ref, str)
+            ]
+        for source in contract["delivery"].get("data_sources", []):
+            if isinstance(source, dict) and isinstance(source.get("implementation_item_id"), str):
+                source["implementation_item_id"] = _impl_item_id(
+                    repository_id, source["implementation_item_id"]
+                )
     data_source = _project_data_source(api, drafted, contract_id)
     if data_source:
         contract["data_source"] = data_source
@@ -1773,6 +1788,7 @@ class BlueprintMergeAdapter:
             # import 常量而非字面量：schema 里是 const，写错即整份非法；写成缺失则会被
             # 当成隐式 v0 pass-through（那是「假通过」，六段再完美也不落蓝图版本）。
             "schema_version": BLUEPRINT_SCHEMA_VERSION,
+            "delivery_contract_version": 1,
             "meta": meta,
             "requirement_spec": requirement_spec,
             "repo_associations": associations,
@@ -1788,6 +1804,7 @@ class BlueprintMergeAdapter:
             if isinstance(baseline.get(key), list):
                 assembled[key] = baseline[key]
 
+        _bind_delivery_providers(assembled[SECTION_API_CONTRACTS])
         canonicalize_contract_support_repository_ids(assembled[SECTION_API_CONTRACTS], associations)
         ignored_aliases = _ignored_support_aliases(state)
         demoted = _demote_ignored_support_contracts(
@@ -2713,7 +2730,7 @@ def extract_ignored_support_aliases(answer: Any, blueprint: Any) -> tuple[str, .
 
 
 def _demote_ignored_support_contracts(contracts: Any, ignored: Any) -> list[dict]:
-    """把命中排除名单的 ``needs_support`` 契约降为 ``existing``，避免再阻塞融合/审查。"""
+    """记录排除意图，不把本期不做改写成已存在；就绪门仍要求明确证据或延期裁决。"""
     demoted: list[dict] = []
     if not ignored:
         return demoted
@@ -2728,7 +2745,14 @@ def _demote_ignored_support_contracts(contracts: Any, ignored: Any) -> list[dict
         support = str(data_source.get("support_repository_id") or "").strip()
         if not support_alias_is_ignored(support, ignored):
             continue
-        data_source["availability"] = "existing"
+        # Excluding a repository is not evidence that its API already exists.
+        # Preserve the unresolved old enum and require a separately reviewed disposition.
+        delivery = contract.setdefault("delivery", {})
+        if isinstance(delivery, dict) and delivery.get("status") not in (
+            "external_verified",
+            "deferred",
+        ):
+            delivery["status"] = "unresolved"
         note = f"操作员本轮不纳入协作仓 {support}，按外部依赖/本期不做处理。"
         existing_notes = data_source.get("notes")
         data_source["notes"] = _as_block_list(
@@ -2873,3 +2897,19 @@ def _initiated_by(session: Any) -> str:
         or str(getattr(session, "created_by_id", "") or "")
         or "system"
     )
+
+
+def _bind_delivery_providers(contracts: list[dict]) -> None:
+    for c in contracts:
+        if c.get("direction") != "consumed" or not isinstance(c.get("delivery"), dict):
+            continue
+        d = c["delivery"]
+        candidates = [
+            p
+            for p in contracts
+            if p.get("direction") == "provided"
+            and p.get("repository_id") == d.get("provider_repository_id")
+            and all(p.get(k) == c.get(k) for k in ("kind", "method", "path"))
+        ]
+        if len(candidates) == 1:
+            d["provider_contract_id"] = candidates[0]["id"]

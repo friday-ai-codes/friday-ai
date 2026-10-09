@@ -359,7 +359,7 @@ def test_export_does_not_create_a_new_artifact_version(authenticated_client, mon
 def test_export_event_is_not_in_blueprint_events(authenticated_client, monkeypatch) -> None:
     """⭐ 导出事件不进 taxonomy：集合大小双断言 + 不混功能段进展时间线。
 
-    ⚠️ 这里的数字是 ``BLUEPRINT_EVENTS`` 的**当前基数**（118 加了 6 个活动事件 ⇒ 21 → 27），
+    ⚠️ 这里的数字是 ``BLUEPRINT_EVENTS`` 的**当前基数**（已含两项上下文澄清事件，共 29 项），
     权威断言在 ``test_blueprint_event_taxonomy_112.test_blueprint_events_shape``。本条真正
     要守的是「导出事件**不在**集合里」那一句，基数只是顺带的漂移哨兵。
     """
@@ -371,7 +371,7 @@ def test_export_event_is_not_in_blueprint_events(authenticated_client, monkeypat
     assert resp.status_code == 200
 
     assert "blueprint_exported_to_feishu" not in BLUEPRINT_EVENTS
-    assert len(BLUEPRINT_EVENTS) == 27
+    assert len(BLUEPRINT_EVENTS) == 29
     assert ConvergenceSessionEvent.objects.count() == before_events
 
 

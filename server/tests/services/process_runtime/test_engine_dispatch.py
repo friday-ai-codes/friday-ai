@@ -200,7 +200,7 @@ async def test_mutation_a_wrong_factory_at_repo_research_is_rejected() -> None:
     await wrong_engine.advance(session)
     fresh = await ConvergenceSession.objects.aget(id=session.id)
     assert fresh.current_stage == "repo_research"
-    assert fresh.status == ConvergenceSessionStatus.WAITING_EVENT
+    assert fresh.status == ConvergenceSessionStatus.WAITING_CLARIFICATION
     assert await ArtifactVersion.objects.acount() == before
 
 

@@ -393,10 +393,10 @@ async def test_workflow_entry_rejects_when_project_unresolved() -> None:
 # ---------------------------------------------------------------- chat 入口
 
 
-async def _amake_conversation(space):
+async def _amake_conversation(space, project=None):
     from chat.models import Conversation
 
-    return await Conversation.objects.acreate(space=space)
+    return await Conversation.objects.acreate(space=space, bound_project=project)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -433,7 +433,7 @@ async def test_chat_entry_drives_the_blueprint_chain(switch: str | None) -> None
     from delivery.models import ConvergenceSession
 
     space, project = await _amake_project()
-    conv = await _amake_conversation(space)
+    conv = await _amake_conversation(space, project)
     await _aapply_switch("chat", switch)
 
     with _stub_runtime():
@@ -452,8 +452,8 @@ async def test_chat_entry_drives_the_blueprint_chain(switch: str | None) -> None
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_chat_entry_rejects_when_project_unresolved() -> None:
-    """⭐ chat 推不出 project_id ⇒ ``ToolResult(success=False)`` 且 DB 零副作用。"""
+async def test_chat_entry_keeps_unbound_project_when_unresolved() -> None:
+    """无项目的 chat 可建澄清会话，但不能猜项目或凭空生成蓝图。"""
     from agents.tools.plan_research_tools import start_plan_research
     from chat.models import Conversation
     from delivery.models import Artifact, ConvergenceSession
@@ -469,9 +469,11 @@ async def test_chat_entry_rejects_when_project_unresolved() -> None:
             conversation_id=str(conv.id),
         )
 
-    assert result.success is False
-    assert result.error and "/" not in result.error
-    assert await ConvergenceSession.objects.acount() == before_sessions
+    assert result.success is True
+    assert not result.error
+    assert await ConvergenceSession.objects.acount() == before_sessions + 1
+    session = await ConvergenceSession.objects.aget(conversation_id=conv.id)
+    assert (session.decomposition or {}).get("project_id") == ""
     assert await Artifact.objects.acount() == before_artifacts
 
 
@@ -508,6 +510,13 @@ async def test_mcp_context_resolves_to_project_not_space(switch: str | None) -> 
     from mcp_tools.orchestration_delegate import delegate_process_runtime
 
     space, project = await _amake_project()
+    from delivery.models import WorkItem
+    from initiatives.models import ProjectWorkItemLink
+
+    item = await WorkItem.objects.acreate(
+        space=space, feishu_project_key="dispatch-test", work_item_type="story", work_item_id=42
+    )
+    await ProjectWorkItemLink.objects.acreate(project=project, work_item=item)
     context = _McpContextStub(space=space)
     await _aapply_switch("mcp", switch)
 
@@ -525,8 +534,8 @@ async def test_mcp_context_resolves_to_project_not_space(switch: str | None) -> 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_mcp_entry_rejects_when_project_unresolved() -> None:
-    """⭐ MCP 推不出 project_id ⇒ ``status="failed"`` + 中性 detail，且 DB 零副作用。"""
+async def test_mcp_entry_keeps_unbound_project_when_unresolved() -> None:
+    """无项目的 MCP 保留 partial 会话，不能猜项目或把未生成蓝图当完成。"""
     from delivery.models import Artifact, ConvergenceSession
     from mcp_tools.orchestration_delegate import delegate_process_runtime
 
@@ -536,18 +545,22 @@ async def test_mcp_entry_rejects_when_project_unresolved() -> None:
     with _stub_runtime():
         result = await delegate_process_runtime(requirement_text="让登录支持双因子")
 
-    assert result.status == "failed"
-    assert result.error_detail and "/" not in result.error_detail
-    assert await ConvergenceSession.objects.acount() == before_sessions
+    assert result.status == "partial"
+    assert result.session is not None
+    assert (result.session.decomposition or {}).get("project_id") == ""
+    assert await ConvergenceSession.objects.acount() == before_sessions + 1
     assert await Artifact.objects.acount() == before_artifacts
 
 
 class _McpContextStub:
-    """``McpWorkItemContext`` 的最小替身（只有 ``space`` / ``space_id`` 两个位被读）。"""
+    """含授权空间与工作项三元组的 MCP 上下文替身。"""
 
     def __init__(self, *, space) -> None:
         self.space = space
         self.space_id = getattr(space, "id", None)
+        self.feishu_project_key = "dispatch-test"
+        self.work_item_type = "story"
+        self.work_item_id = 42
 
 
 # ---------------------------------------------------------------- feature list 入口

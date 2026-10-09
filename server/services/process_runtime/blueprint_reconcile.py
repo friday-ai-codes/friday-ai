@@ -92,6 +92,14 @@ def reconcile_cross_repo_apis(blueprint: Any) -> dict:
         for item in contracts:
             if _direction(item) != "consumed":
                 continue
+            delivery = item.get("delivery") if isinstance(item.get("delivery"), dict) else {}
+            if (
+                isinstance(blueprint, dict)
+                and blueprint.get("delivery_contract_version") == 1
+                and delivery.get("status") in ("external_verified", "deferred")
+            ):
+                # The versioned readiness validator owns evidence/decision validation.
+                continue
             consumer_id = str(item.get("repository_id") or "")
             api_name = _api_label(item)
             provider = _find_provider(item, provided, consumer_id=consumer_id)

@@ -846,9 +846,7 @@ class ReportSessionKnowledgeRequestSerializer(serializers.Serializer):
         required=False, allow_blank=True, default="", max_length=255
     )
     project_id = serializers.UUIDField(required=False, allow_null=True, default=None)
-    session_id = serializers.CharField(
-        required=False, allow_blank=True, default="", max_length=255
-    )
+    session_id = serializers.CharField(required=False, allow_blank=True, default="", max_length=255)
     response_model = serializers.CharField(
         required=False, allow_blank=True, default="", max_length=128
     )
@@ -1946,6 +1944,7 @@ TOOL_SCHEMA_SNAPSHOT: dict[str, dict[str, object]] = {
             "markdown",
             "repository_tasks",
             "repository_task_count",
+            "delivery_readiness",
             "run_id",
         ],
     },

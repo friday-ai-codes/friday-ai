@@ -121,3 +121,12 @@ def test_get_session_capture_request_keys_aligned() -> None:
     snapshot_keys = set(TOOL_SCHEMA_SNAPSHOT["get_session_capture"]["request"])
     package_keys = _package_request_keys("get_session_capture")
     assert serializer_keys == snapshot_keys == package_keys
+
+
+def test_route_blueprint_repos_request_keys_aligned() -> None:
+    """客户端必须能传递团队与授权空间，不能只暴露仓库过滤。"""
+    from mcp_tools.serializers import RouteBlueprintReposRequestSerializer
+
+    assert set(RouteBlueprintReposRequestSerializer().fields) == _package_request_keys(
+        "route_blueprint_repos"
+    )

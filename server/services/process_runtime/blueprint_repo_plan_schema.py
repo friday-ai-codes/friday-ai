@@ -22,6 +22,8 @@ from typing import Any
 
 import jsonschema
 
+from services.process_runtime.delivery_contract_schema import DELIVERY_SCHEMA
+
 __all__ = [
     "BLUEPRINT_REPO_PLAN_SCHEMA",
     "REPO_PLAN_ROLES",
@@ -161,6 +163,7 @@ BLUEPRINT_REPO_PLAN_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
+                    "delivery": DELIVERY_SCHEMA,
                     "name": {"type": "string"},
                     "method": {"type": "string"},
                     "path": {"type": "string"},
@@ -180,6 +183,7 @@ BLUEPRINT_REPO_PLAN_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
+                    "delivery": DELIVERY_SCHEMA,
                     "name": {"type": "string"},
                     "method": {"type": "string"},
                     "path": {"type": "string"},

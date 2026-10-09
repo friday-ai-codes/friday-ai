@@ -26,6 +26,8 @@ from typing import Any, Iterator
 
 import jsonschema
 
+from services.process_runtime.delivery_contract_schema import DELIVERY_SCHEMA
+
 __all__ = [
     "BLUEPRINT_SCHEMA_VERSION",
     "BLUEPRINT_JSON_SCHEMA",
@@ -504,6 +506,7 @@ BLUEPRINT_JSON_SCHEMA: dict[str, Any] = {
                 },
             },
         },
+        "delivery_contract_version": {"const": 1},
         "api_contracts": {
             "type": "array",
             "description": "六段之 4：API 契约（provided 提供 + consumed 消费；DESIGN §3.9）",
@@ -517,6 +520,7 @@ BLUEPRINT_JSON_SCHEMA: dict[str, Any] = {
                         "description": "契约 id（api_*）",
                     },
                     "name": {"type": "string", "minLength": 1, "description": "契约名"},
+                    "delivery": DELIVERY_SCHEMA,
                     "kind": {
                         "type": "string",
                         "enum": ["http", "rpc", "event", "mq"],

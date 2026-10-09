@@ -17,6 +17,7 @@ def _production_python_files():
         relative = path.relative_to(SERVER_ROOT)
         if (
             "tests" in relative.parts
+            or relative.parts[0] in {"data", "staticfiles", "media"}
             or any(part.startswith(".") for part in relative.parts)
             or path in ALLOWED_INTERNAL_MODULES
         ):

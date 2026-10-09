@@ -37,6 +37,7 @@ vi.mock('~/api/providerCredentials', () => ({
   providerCredentialsApi: {
     list: (...a: unknown[]) => listMock(...a),
     retrieve: vi.fn(),
+    getClaudeCodeConfig: vi.fn().mockResolvedValue({ credential_id: null, model_mapping: {} }),
     create: (...a: unknown[]) => createMock(...a),
     update: (...a: unknown[]) => updateMock(...a),
     remove: (...a: unknown[]) => removeMock(...a),

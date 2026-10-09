@@ -11,6 +11,17 @@ X-Friday-Run-ID: {工作流首个调用返回的 run_id，首个调用可省略}
 
 ## 工具契约
 
+### 会话采集与项目记忆
+
+| 工具 | 路径 | 请求字段 | 响应（关键字段） |
+| --- | --- | --- | --- |
+| `report_session_knowledge` | `/api/mcp/tools/report_session_knowledge/` | `question`*, `answer`*, `repository_id`, `git_url`, `branch_name`, `project_id`, `session_id`, `response_model`, `provider`, `input_tokens`, `output_tokens`, `client` | `accepted`, `capture_id`, `deduplicated`, `link_reason`, `repository_id`, `project_id`, `run_id` |
+| `report_project_knowledge` | `/api/mcp/tools/report_project_knowledge/` | `content`*, `branch_name`/`project_id`, `repository_id`, `writeback_mode`, `target`, `distill` | `accepted`, `draft_id`, `reason`, `run_id` |
+
+`report_session_knowledge` 的 12 个请求字段中，只有 `question` 与 `answer` 必填；常规客户端可选传 `git_url`、`branch_name`、`session_id`、`response_model`、`provider`、`input_tokens`、`output_tokens`、`client`。`repository_id` 与 `project_id` 是服务端开放的可选挂钩字段，但客户端不得根据默认分支猜测或主动拼装 `project_id`。即使工作区是 **clean tree**（无 git 改动），每轮问答仍应提交；`answer` 只取用户可见的最终答案，禁止上传 transcript、隐藏思维链、凭证 / 密钥 / token 或个人敏感信息。
+
+两条写入路径职责独立：`report_session_knowledge` 记录 SessionCapture 原始问答；`report_project_knowledge` 只在存在 git 交付变更时记录 ProjectMemory 交付总结，并保留 diff 门闩与质量门槛。不得把二者合并为一个笼统的“记忆写回”。
+
 ### 经验记忆（LearningCase）
 
 | 工具 | 路径 | 请求字段 | 响应（关键字段） |
