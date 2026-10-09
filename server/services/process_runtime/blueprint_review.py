@@ -430,6 +430,14 @@ def check_api_closure(content: Any) -> list[dict]:
         for index, contract in enumerate(contracts):
             if _direction(contract) != _DIRECTION_CONSUMED:
                 continue
+            delivery = (
+                contract.get("delivery") if isinstance(contract.get("delivery"), dict) else {}
+            )
+            if content.get("delivery_contract_version") == 1 and delivery.get("status") in (
+                "external_verified",
+                "deferred",
+            ):
+                continue
             data_source = contract.get("data_source")
             if not isinstance(data_source, dict):
                 continue
@@ -769,6 +777,21 @@ def run_mechanical_rules(
             _append(findings, entry)
         for entry in check_api_closure(content):
             _append(findings, entry)
+        if isinstance(content, dict) and content.get("delivery_contract_version") is not None:
+            from services.process_runtime.blueprint_delivery_readiness import (
+                evaluate_delivery_readiness,
+            )
+
+            for finding in evaluate_delivery_readiness(content)["blockers"]:
+                _append(
+                    findings,
+                    _finding(
+                        "delivery_" + finding["code"],
+                        SEVERITY_BLOCKER,
+                        section_path=finding["location"],
+                        detail="业务交付就绪检查未通过：" + finding["code"],
+                    ),
+                )
         for entry in check_prohibitions(content):
             _append(findings, entry)
         for entry in check_charters(content, charters=charters):

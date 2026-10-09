@@ -923,6 +923,7 @@ class BlueprintResearchAdapter:
             "，不是顶层字段**\n"
             "  - availability 为 needs_support 时 data_source.support_repository_id **必填**"
             "（指出哪个仓要配合）\n"
+            "交付就绪扩展（每条 apis_provided/apis_consumed 必须包含 delivery 对象）：status 为 existing_verified/planned_in_scope/external_verified/unresolved/deferred；implementation_item_ids 引用本仓 impl_items.item_id。消费方给出 provider_repository_id，服务端按该仓与精确 kind/method/path 绑定 provider_contract_id，禁止名称猜配。提供方给 fields_needed（业务字段路径）和 data_sources=[{field,kind,implementation_item_id,owner,acceptance,evidence}]：新建来源 kind=planned，必须关联本仓建设任务、发布负责人和可验证准出；既有来源 evidence={repository_id,commit_sha（完整40位）,path}。existing_verified/external_verified 同时给 delivery.evidence。请求响应必须为真实 JSON Schema（type/properties/required 等），大schema可用 delivery.request_schema_ref/response_schema_ref={repository_id,commit_sha,path,sha256}，不得编造引用。延期仅在已有具名人工 decision_id 且 consumer_disabled=true 时写 deferred，单纯不纳入仓库不等于已存在。新建接口 schema 与建设任务明确即可规划，不要求预先已有代码。\n"
             "- local_impact: {affected_modules, affected_features, migration_required, notes}\n"
             "  - affected_features 是**对象数组**：[{name, citations}]，⛔ 不要写成字符串数组\n"
             "- risks: Block[]\n\n"

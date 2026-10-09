@@ -136,6 +136,7 @@ class LLMRepoPlanSynthesizer:
             "提供、本次需求可能被消费的能力\n"
             "- impl_items: []（间接仓默认不改动；确有必要的完善项用 change_type="
             '"indirect_refine"）\n'
+            "交付就绪扩展（每条 apis_provided/apis_consumed 必须包含 delivery 对象）：status 为 existing_verified/planned_in_scope/external_verified/unresolved/deferred；implementation_item_ids 引用本仓 impl_items.item_id。消费方给出 provider_repository_id，服务端按该仓与精确 kind/method/path 绑定 provider_contract_id，禁止名称猜配。提供方给 fields_needed（业务字段路径）和 data_sources=[{field,kind,implementation_item_id,owner,acceptance,evidence}]：新建来源 kind=planned，必须关联本仓建设任务、发布负责人和可验证准出；既有来源 evidence={repository_id,commit_sha（完整40位）,path}。existing_verified/external_verified 同时给 delivery.evidence。请求响应必须为真实 JSON Schema（type/properties/required 等），大schema可用 delivery.request_schema_ref/response_schema_ref={repository_id,commit_sha,path,sha256}，不得编造引用。延期仅在已有具名人工 decision_id 且 consumer_disabled=true 时写 deferred，单纯不纳入仓库不等于已存在。新建接口 schema 与建设任务明确即可规划，不要求预先已有代码。\n"
             "- risks: Block[]（把「无法确认的能力」写成风险，不要编造接口）\n"
             f"- 如需其他仓配合，写进 apis_consumed[].data_source（availability ∈ "
             f"{'、'.join(REPO_PLAN_AVAILABILITY)}，needs_support 时必填 support_repository_id）\n"
