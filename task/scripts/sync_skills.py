@@ -2,7 +2,7 @@
 
 单一事实源是仓库根的 ``skills/skills/``（git submodule），本脚本把其中的
 编码期技能目录镜像拷贝到 ``task/assets/skills/``：
-friday-code / friday-memory / friday-impact / friday-refactoring。
+friday / friday-code / friday-memory。
 ``task/assets/skills/`` 只是构建物料的镜像拷贝（task 镜像 build context 是
 ``./task``，无法直接 COPY 仓库根之外的内容）——**改动技能请改源头
 skills/skills/ 后重跑本脚本**，勿手工编辑 assets 副本（hash 一致性测试
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 # 编码期容器同源技能（勿把 friday-routing 等仅 IDE 技能误加进来）
-SKILL_NAMES = ("friday-code", "friday-memory", "friday-impact", "friday-refactoring")
+SKILL_NAMES = ("friday", "friday-code", "friday-memory")
 
 
 def main() -> int:
@@ -40,6 +40,11 @@ def main() -> int:
             return 1
 
     target_base.mkdir(parents=True, exist_ok=True)
+    # Retired source skills must not survive indefinitely in the image.
+    for retired in ("friday-impact", "friday-refactoring"):
+        target = target_base / retired
+        if target.is_dir() and not (source_base / retired).exists():
+            shutil.rmtree(target)
 
     for name in SKILL_NAMES:
         source = source_base / name

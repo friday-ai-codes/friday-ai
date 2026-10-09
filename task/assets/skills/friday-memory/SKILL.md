@@ -5,12 +5,16 @@ description: "Friday 的记忆层。当用户要把完成的任务沉淀为可�
 
 # Friday Memory
 
-Friday 的两层记忆，都通过 `friday` MCP server 工具访问：
+Friday 的记忆按职责分层，全部通过 `friday` MCP server 工具访问：
 
-| 记忆层 | 数据域 | 工具 |
+| 记忆层 | 数据域与职责 | 工具 |
 | --- | --- | --- |
+| **会话采集（SessionCapture）** | 每轮原始问答；即使是 **clean tree**（无 git 改动）也收集 | `report_session_knowledge` |
+| **项目记忆（ProjectMemory）** | 仅有 git 交付变更时记录提炼后的项目总结，保留 diff 门闩与质量门槛 | `report_project_knowledge` |
 | **经验记忆（LearningCase）** | 任务级经验：根因、解法、已验证测试 | `create_learning_case` / `search_learning_cases` |
 | **交付知识（Knowledge）** | 摄取后的全链路交付实体图谱：飞书需求 → 技术方案 → 代码变更/MR | `search_delivery_knowledge` / `get_entity_timeline` / `get_related_entities` |
+
+`report_session_knowledge` 与 `report_project_knowledge` 职责独立，不得合并成一个笼统的“记忆写回”。SessionCapture 的 `answer` 只取用户可见的最终答案，禁止上传 transcript、隐藏思维链、凭证 / 密钥 / token 或个人敏感信息。
 
 **不是**代码仓库 RAG——查"X 在仓库 Y 里怎么实现的"用 `friday-code`（`search_rag_chunks` 等）。
 

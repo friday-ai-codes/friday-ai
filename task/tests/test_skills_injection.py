@@ -17,7 +17,7 @@ import pytest
 from core import runner as runner_module
 from core.runner import TaskRunner
 
-SKILL_NAMES = ("friday-code", "friday-memory", "friday-impact", "friday-refactoring")
+SKILL_NAMES = ("friday", "friday-code", "friday-memory")
 
 
 def _find_repo_root() -> Path | None:
