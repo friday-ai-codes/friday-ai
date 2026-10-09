@@ -590,6 +590,7 @@ def _map_execution_plan_to_repository_tasks(content: dict[str, Any]) -> list[dic
                     key: _str_list(item[key])
                     for key in (
                         "implementation_item_ids",
+                        "contract_dependencies",
                         "feature_point_ids",
                         "provides",
                         "consumes",

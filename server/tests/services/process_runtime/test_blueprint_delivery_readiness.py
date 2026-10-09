@@ -92,6 +92,7 @@ def test_planned_api_can_be_ready_without_existing_implementation():
     assert evaluate_delivery_readiness(b, tasks=tasks)["ready"]
     assert tasks[0]["provides"] == ["p"]
     assert tasks[1]["consumes"] == ["c"]
+    assert tasks[1]["contract_dependencies"] == ["task_backend"]
 
 
 @pytest.mark.parametrize(

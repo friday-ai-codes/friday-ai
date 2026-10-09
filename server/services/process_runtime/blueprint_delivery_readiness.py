@@ -271,6 +271,18 @@ def project_delivery_refs(content: dict, repository_id: str) -> dict:
             for c in contracts
             if c.get("repository_id") == repository_id and c.get("direction") == "provided"
         ),
+        "contract_dependencies": sorted(
+            {
+                "task_" + c["delivery"]["provider_repository_id"]
+                for c in contracts
+                if c.get("repository_id") == repository_id
+                and c.get("direction") == "consumed"
+                and isinstance(c.get("delivery"), dict)
+                and c["delivery"].get("status") == "planned_in_scope"
+                and _text(c["delivery"].get("provider_repository_id"))
+                and c["delivery"]["provider_repository_id"] != repository_id
+            }
+        ),
         "consumes": sorted(
             c["id"]
             for c in contracts

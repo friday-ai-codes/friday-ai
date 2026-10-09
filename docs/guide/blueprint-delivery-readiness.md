@@ -14,7 +14,7 @@
 
 旧已确认蓝图仍可只读取件，新增 delivery_readiness 返回 ready=false 和 legacy_contract_unverified；这允许保留固定 Mock 取件，不宣称它通过新业务门。缺口不能因旧 confirmed 状态而当成真实质量通过。新的融合版本自动启用门，不需要调用者自行选择绕过。
 
-handoff 增加 delivery_readiness（绑定 contentHash/validatorVersion，含 blockers 与 contractTaskMatrix）。repository_tasks 新增 implementation_item_ids、feature_point_ids、provides、consumes。旧字段保留，调用者应按新字段做集合完整性检查。
+handoff 增加 delivery_readiness（绑定 contentHash/validatorVersion，含 blockers 与 contractTaskMatrix）。repository_tasks 新增 implementation_item_ids、feature_point_ids、provides、consumes、contract_dependencies。契约依赖与整仓任务完成依赖分开传递，已冻结schema可并行编码；集成阶段必须核对这些提供方。旧字段保留，调用者应按新字段做集合完整性检查。
 
 版本化蓝图缺口返回 blueprint_delivery_not_ready，旧版本坐标仍返回 blueprint_handoff_stale。MCP 客户端只有确认状态、请求四坐标、任务数与服务端结果一致才落盘；新版 readiness 不通过不落文件。每次取件使用唯一文件名避免并发覆盖。
 
