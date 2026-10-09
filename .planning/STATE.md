@@ -1427,3 +1427,7 @@ Resume file: None
 | 107 | verification_deferred_human（87/89 自动化 must-haves 已过、0 gap；余 6 项人工：澄清真机送达 / UI 观感 / O-6 回填 / 出口 dry-run / pending 可见性 / 跨项目仓名可见性判断——**第 1、5 项即 RELY-02 转满足的前置**；第 2 项已恢复为可执行） | /gsd-verify-work 107 |
 | 109 | verification_deferred_human（余 6 项人工：编排→PR 真机全链 / 飞书告示 / 浏览器视觉 / lark_md 观感 / **迁移 0033 影响面（发布前置）** / 容器消费策略） | /gsd-verify-work 109 |
 | 110 | verification_deferred_human（GAP-1 已在执行期闭合并经审计反向对照确认；余 8 项人工：SSE 直播节奏 / `plan_session_id` 跨进程相等 / 容器日志 / GAP-1 复验 / 读屏 / live region 节奏 / 空心点辨识度 / 完成后版面） | /gsd-verify-work 110 |
+
+## 2026-10-09 跨仓交付改进（进行中）
+
+Quick 261009-r4m：业务蓝图readiness/交接引用与MCP校验已通过本地验证；关联Multica配置仓改进和完整重跑待收口。见 quick/261009-r4m-blueprint-delivery-readiness/261009-r4m-PLAN.md。未声明146–152里程碑完成。
