@@ -10,7 +10,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RUNTIME_DIRS = void 0;
+exports.CODEX_CONFIG_MARKER = exports.RUNTIME_DIRS = void 0;
 exports.inferPreferredRuntime = inferPreferredRuntime;
 exports.envRuntimeDirs = envRuntimeDirs;
 exports.resolveUpdateContext = resolveUpdateContext;
@@ -38,6 +38,12 @@ exports.RUNTIME_DIRS = [
     ['codex', '.codex'],
 ];
 const SEMVER_PREFIX = /^\d+\.\d+\.\d+/;
+// Shared Codex config-root marker filename. Single-sourced here (this module
+// is the pre-existing, dependency-free owner) and re-exported by
+// host-runtime-detection.cts, whose detection rung reuses this exact probe
+// filename (though NOT the truthiness rule below — see that module's header
+// comment for the deliberate divergence).
+exports.CODEX_CONFIG_MARKER = 'config.toml';
 function expandHome(p, home) {
     if (!p)
         return '';
@@ -72,8 +78,12 @@ function inferPreferredRuntime({ fs, env, preferredConfigDir }) {
         if (fs.exists(node_path_1.default.join(preferredConfigDir, 'opencode.json')) ||
             fs.exists(node_path_1.default.join(preferredConfigDir, 'opencode.jsonc')))
             return 'opencode';
-        if (fs.exists(node_path_1.default.join(preferredConfigDir, 'config.toml')))
+        if (fs.exists(node_path_1.default.join(preferredConfigDir, exports.CODEX_CONFIG_MARKER)))
             return 'codex';
+        const resolved = node_path_1.default.resolve(preferredConfigDir);
+        const known = exports.RUNTIME_DIRS.find(([, reldir]) => resolved.endsWith(node_path_1.default.sep + reldir.split('/').join(node_path_1.default.sep)));
+        if (known)
+            return known[0];
     }
     if (env['CODEX_HOME'])
         return 'codex';
@@ -85,7 +95,7 @@ function inferPreferredRuntime({ fs, env, preferredConfigDir }) {
         return 'opencode';
     if (env['CLAUDE_CONFIG_DIR'])
         return 'claude';
-    return 'claude';
+    return '';
 }
 // Absolute env-override candidates, mirroring the bash ENV_RUNTIME_DIRS block.
 function envRuntimeDirs({ env, home }) {
@@ -117,21 +127,61 @@ function preferFirst(entries, preferred) {
     const rest = entries.filter(([rt]) => rt !== preferred);
     return [...pref, ...rest];
 }
+// GLOBAL probe: absolute env candidates first (in preferFirst order, first
+// hasInstall hit wins), then $HOME-relative. Single resolver shared by the
+// preferredConfigDir fast path's same-path dedup and the full cascade (#4197),
+// so both compare against the global dir the resolution would actually select —
+// an env-directed candidate, not necessarily the $HOME-relative pathname.
+function resolveGlobalCandidate(fs, env, home, preferred) {
+    for (const [rt, absdir] of preferFirst(envRuntimeDirs({ env, home }), preferred)) {
+        if (hasInstall(fs, absdir))
+            return { runtime: rt, dir: node_path_1.default.resolve(absdir) };
+    }
+    for (const [rt, reldir] of preferFirst(exports.RUNTIME_DIRS, preferred)) {
+        const cand = node_path_1.default.resolve(home, reldir);
+        if (hasInstall(fs, cand))
+            return { runtime: rt, dir: cand };
+    }
+    return { runtime: '', dir: '' };
+}
 /**
  * Pure resolver. Returns { installedVersion, scope, runtime, gsdDir }.
  */
-function resolveUpdateContext({ home, cwd, env = {}, fs, preferredConfigDir = '', preferredRuntime = '', }) {
+function resolveUpdateContext(opts) {
+    const base = resolveBaseUpdateContext(opts);
+    if (base.runtime !== 'opencode' || !base.gsdDir)
+        return base;
+    // The install records which OpenCode generation it targets; surface it when present.
+    const raw = opts.fs.readFile(node_path_1.default.join(base.gsdDir, 'gsd-install-state.json'));
+    if (raw == null)
+        return base;
+    try {
+        const hg = JSON.parse(raw).hostGeneration;
+        if (hg && hg.runtime === 'opencode' && (hg.generation === 1 || hg.generation === 2)) {
+            return { ...base, hostGeneration: hg.generation };
+        }
+    }
+    catch { /* an unreadable state file contributes nothing */ }
+    return base;
+}
+function resolveBaseUpdateContext({ home, cwd, env = {}, fs, preferredConfigDir = '', preferredRuntime = '', }) {
     // Expand a leading `~/` before any probe.
     preferredConfigDir = expandHome(preferredConfigDir, home);
     const preferred = preferredRuntime || inferPreferredRuntime({ fs, env, preferredConfigDir });
     // Fast path: a validated preferredConfigDir (custom --config-dir install).
     if (preferredConfigDir && hasInstall(fs, preferredConfigDir)) {
         const resolvedPref = node_path_1.default.resolve(preferredConfigDir);
+        // Same-path dedup the cascade applies (#4197): a preferred dir that IS the
+        // selected global install (an env candidate or the $HOME-relative dir) is
+        // GLOBAL even when cwd === $HOME also makes it the cwd-relative match.
+        const { dir: globalDir } = resolveGlobalCandidate(fs, env, home, preferred);
         let scope = 'GLOBAL';
-        for (const [, reldir] of exports.RUNTIME_DIRS) {
-            if (node_path_1.default.resolve(cwd, reldir) === resolvedPref) {
-                scope = 'LOCAL';
-                break;
+        if (resolvedPref !== globalDir) {
+            for (const [, reldir] of exports.RUNTIME_DIRS) {
+                if (node_path_1.default.resolve(cwd, reldir) === resolvedPref) {
+                    scope = 'LOCAL';
+                    break;
+                }
             }
         }
         return {
@@ -141,7 +191,6 @@ function resolveUpdateContext({ home, cwd, env = {}, fs, preferredConfigDir = ''
             gsdDir: preferredConfigDir,
         };
     }
-    const orderedEnv = preferFirst(envRuntimeDirs({ env, home }), preferred);
     const orderedRuntime = preferFirst(exports.RUNTIME_DIRS, preferred);
     // LOCAL probe (relative to cwd).
     let localRuntime = '', localDir = '';
@@ -153,25 +202,9 @@ function resolveUpdateContext({ home, cwd, env = {}, fs, preferredConfigDir = ''
             break;
         }
     }
-    // GLOBAL probe: absolute env candidates first, then $HOME-relative.
-    let globalRuntime = '', globalDir = '';
-    for (const [rt, absdir] of orderedEnv) {
-        if (hasInstall(fs, absdir)) {
-            globalRuntime = rt;
-            globalDir = node_path_1.default.resolve(absdir);
-            break;
-        }
-    }
-    if (!globalRuntime) {
-        for (const [rt, reldir] of orderedRuntime) {
-            const cand = node_path_1.default.resolve(home, reldir);
-            if (hasInstall(fs, cand)) {
-                globalRuntime = rt;
-                globalDir = cand;
-                break;
-            }
-        }
-    }
+    // GLOBAL probe: absolute env candidates first, then $HOME-relative — the
+    // same resolver the fast path dedups against.
+    const { runtime: globalRuntime, dir: globalDir } = resolveGlobalCandidate(fs, env, home, preferred);
     const localValid = trustedVersionAt(fs, localDir);
     const isLocal = !!localValid && (!globalDir || localDir !== globalDir);
     if (isLocal) {
@@ -190,7 +223,7 @@ function resolveUpdateContext({ home, cwd, env = {}, fs, preferredConfigDir = ''
     if (globalRuntime) {
         return { installedVersion: '0.0.0', scope: 'GLOBAL', runtime: globalRuntime, gsdDir: globalDir };
     }
-    return { installedVersion: '0.0.0', scope: 'UNKNOWN', runtime: 'claude', gsdDir: '' };
+    return { installedVersion: '0.0.0', scope: 'UNKNOWN', runtime: '', gsdDir: '' };
 }
 /**
  * CLI wiring: resolve against the real filesystem.

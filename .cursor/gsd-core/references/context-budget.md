@@ -2,7 +2,7 @@
 
 Standard rules for keeping orchestrator context lean. Reference this in workflows that spawn subagents or read significant content.
 
-See also: `references/universal-anti-patterns.md` for the complete set of universal rules.
+See also: `gsd-core/references/universal-anti-patterns.md` for the complete set of universal rules.
 
 ---
 
@@ -29,14 +29,14 @@ Every workflow that spawns agents or reads significant content must follow these
 
 ## Context Degradation Tiers
 
-Monitor context usage and adjust behavior accordingly:
+Monitor context usage and adjust behavior accordingly. The `workflow.context_guard_mode` config key (values: `auto`, `warn`, `off`; default `warn`) controls how `execute-phase.md` responds when the guard fires at a wave boundary.
 
-| Tier | Usage | Behavior |
-|------|-------|----------|
-| PEAK | 0-30% | Full operations. Read bodies, spawn multiple agents, inline results. |
-| GOOD | 30-50% | Normal operations. Prefer frontmatter reads, delegate aggressively. |
-| DEGRADING | 50-70% | Economize. Frontmatter-only reads, minimal inlining, warn user about budget. |
-| POOR | 70%+ | Emergency mode. Checkpoint progress immediately. No new reads unless critical. |
+| Tier | Usage | Behavior | Trigger Action (execute-phase) |
+|------|-------|----------|-------------------------------|
+| PEAK | 0-30% | Full operations. Read bodies, spawn multiple agents, inline results. | None |
+| GOOD | 30-50% | Normal operations. Prefer frontmatter reads, delegate aggressively. | None |
+| DEGRADING | 50-70% | Economize. Frontmatter-only reads, minimal inlining, warn user about budget. | Emit warning, continue |
+| POOR | 70%+ | Emergency mode. Checkpoint progress immediately. No new reads unless critical. | `warn`: emit warning + recommend `/gsd-pause-work`. `auto`: invoke pause-work before next wave. `off`: proceed anyway. |
 
 ## Context Degradation Warning Signs
 
@@ -69,7 +69,7 @@ Each item disabled removes its schema from every subsequent turn for the rest of
 
 ### How to toggle
 
-The keys live in `.claude/settings.json` (project) or `./.cursor/settings.json` (global) — **not** in `.planning/config.json`:
+The keys live in `.claude/settings.json` (project) or `.cursor/settings.json` (global) — **not** in `.planning/config.json`:
 
 ```json
 {
@@ -83,3 +83,43 @@ Either list works — `enabledMcpjsonServers` is an explicit allow-list, `disabl
 ### Composition with model_profile
 
 Trimming MCPs and tuning `model_profile` are independent levers that **compound**. Disabling a 25k-token MCP saves 25k per turn whether you're running `quality` (opus everywhere) or `budget` (sonnet/haiku); the savings are additive, not in lieu of model tuning. Don't pick one — do both, and audit MCPs first because the per-turn savings show up immediately and stack across every subagent the orchestrator spawns.
+
+---
+
+# Phase Sizing (gsd-planner)
+
+## Estimate Emission (#2631, ADR-2629)
+
+Every plan carries an `estimate` block. It is the quantitative reason a phase must be sliced — tracer-first says *slice thin*, the estimate says *how thin, for this codebase*.
+
+**Compute it:**
+1. Sum `estimateTokens`-scale cost across the plan: implementation + the files each task reads + verification output. Roughly chars/4 over what the executor will actually touch.
+2. Run `estimate-calibration` and **multiply your raw figure by its `factor`.** It is the measured estimate-vs-actual ratio for THIS project — a factor of 1 means there is not yet enough history to correct.
+3. `confidence` is **derived, not judged**: it is the `confidence` value from the same calibration query, keyed to the sample count (`low` <3, `med` 3–5, `high` ≥6). **Do not rate your own certainty.** Self-rated confidence was measured in this project and found weak (`references/honest-verifier.md:25-29`); every signal here routes on measured history instead.
+
+**Over budget?** The plan-checker flags a plan whose estimate exceeds `workflow.smart_zone_tokens`. This is advisory — it never blocks. When flagged, re-slice: a tracer plus expansion slices, each inside the budget. Prefer more, smaller plans over one that spends the agent's best early-context tokens and finishes degraded.
+
+## Context Budget Rules
+
+Plans should complete within ~50% context (not 80%). No context anxiety, quality maintained start to finish, room for unexpected complexity.
+
+**Each plan: 2-3 tasks maximum.**
+
+| Context Weight | Tasks/Plan | Context/Task | Total |
+|----------------|------------|--------------|-------|
+| Light (CRUD, config) | 3 | ~10-15% | ~30-45% |
+| Medium (auth, payments) | 2 | ~20-30% | ~40-50% |
+| Heavy (migrations, multi-subsystem) | 1-2 | ~30-40% | ~30-50% |
+
+## Split Signals
+
+**ALWAYS split if:**
+- More than 3 tasks
+- Multiple subsystems (DB + API + UI = separate plans)
+- Any task with >5 file modifications
+- Checkpoint + implementation in same plan
+- Discovery + implementation in same plan
+
+**CONSIDER splitting:** >5 files total, natural semantic boundaries, context cost estimate exceeds 40% for a single plan. See `<planner_authority_limits>` for prohibited split reasons.
+
+See @.cursor/gsd-core/references/planner-guidance.md for Granularity Calibration table (Coarse/Standard/Fine plans-per-phase).

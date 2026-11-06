@@ -1,8 +1,19 @@
+@.claude/gsd-core/references/response-language-directive.md
+
 <purpose>
-Create a clean branch for pull requests by filtering out transient .planning/ commits.
-The PR branch contains only code changes and structural planning state — reviewers
-don't see GSD transient artifacts (PLAN.md, SUMMARY.md, CONTEXT.md, RESEARCH.md, etc.)
-but milestone archives, STATE.md, ROADMAP.md, and PROJECT.md changes are preserved.
+Create a clean branch for pull requests by filtering .planning/ paths out of the
+cherry-picked history. Two modes, selected by the `planning.pr_strict` config key:
+
+- **default** (`planning.pr_strict: false`) — the PR branch contains code changes and
+  structural planning state. Reviewers don't see GSD transient artifacts (PLAN.md,
+  SUMMARY.md, CONTEXT.md, RESEARCH.md, etc.), but milestone archives, STATE.md,
+  ROADMAP.md, and PROJECT.md changes are preserved.
+- **strict** (`planning.pr_strict: true`) — *every* .planning/ path is filtered out,
+  structural files included. This is what makes `planning.commit_docs: true` safe for a
+  project that versions its planning tree locally but publishes none of it: planning state
+  keeps real git history (so `/gsd-undo` and revert paths have something to restore) and
+  executor worktrees still find their PLAN.md, while the public PR carries nothing from
+  `.planning/`.
 
 Uses git cherry-pick with path filtering to rebuild a clean history.
 </purpose>
@@ -14,7 +25,7 @@ Parse `$ARGUMENTS` for target branch. If no argument is supplied, detect the
 default branch via the single resolver (#1146).
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-./.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-./.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
 CURRENT_BRANCH=$(git branch --show-current)
 TARGET=${1:-$(gsd_run query git.base-branch)}
 ```
@@ -22,6 +33,7 @@ TARGET=${1:-$(gsd_run query git.base-branch)}
 Check preconditions:
 - Must be on a feature branch (not main/master)
 - Must have commits ahead of target
+- Working tree must be clean
 
 ```bash
 AHEAD=$(git rev-list --count "$TARGET".."$CURRENT_BRANCH" 2>/dev/null)
@@ -29,17 +41,36 @@ if [ "$AHEAD" = "0" ]; then
   echo "No commits ahead of $TARGET — nothing to filter."
   exit 0
 fi
+
+# The filter below removes files from the index AND the working tree before each
+# commit lands, and this command switches branches underneath the user's own
+# checkout. An uncommitted edit to a tracked file would be destroyed by that, and
+# git cherry-pick refuses to run against a dirty tree anyway — so fail here, where
+# the message is legible, rather than midway through the cherry-pick loop.
+DIRTY=$(git status --porcelain --untracked-files=no)
+if [ -n "$DIRTY" ]; then
+  echo "Working tree has uncommitted changes — commit or stash them first:" >&2
+  echo "$DIRTY" >&2
+  exit 1
+fi
+```
+
+Resolve the filter mode from config. A non-zero exit or an unset key means the default
+mode; only the literal string `true` selects strict.
+
+```bash
+PR_STRICT=$(gsd_run query config-get planning.pr_strict --raw 2>/dev/null)
+if [ "$PR_STRICT" = "true" ]; then PR_MODE="strict"; else PR_MODE="default"; PR_STRICT="false"; fi
 ```
 
 Display:
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► PR BRANCH
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► PR BRANCH
 
 Branch: {CURRENT_BRANCH}
 Target: {TARGET}
 Commits: {AHEAD} ahead
+Mode:    {PR_MODE}  (planning.pr_strict={PR_STRICT})
 ```
 </step>
 
@@ -59,6 +90,8 @@ jq dependency). Write dirty repo names to a temp file so the list survives acros
 subsequent command executions:
 
 ```bash
+# #5548: drop inherited repo-location vars (set inside git hooks) so cwd, not GIT_DIR, picks ROOT.
+unset GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_OBJECT_DIRECTORY GIT_DIR GIT_WORK_TREE GIT_IMPLICIT_WORK_TREE GIT_GRAFT_FILE GIT_INDEX_FILE GIT_NO_REPLACE_OBJECTS GIT_REPLACE_REF_BASE GIT_PREFIX GIT_SHALLOW_FILE GIT_COMMON_DIR
 ROOT=$(git rev-parse --show-toplevel)
 DIRTY_FILE=$(mktemp)
 
@@ -207,47 +240,116 @@ Classify commits:
 git log --oneline "$TARGET".."$CURRENT_BRANCH" --no-merges
 ```
 
-**Structural planning files** — always preserved (repository planning state):
-- `.planning/STATE.md`
-- `.planning/ROADMAP.md`
-- `.planning/MILESTONES.md`
-- `.planning/PROJECT.md`
-- `.planning/REQUIREMENTS.md`
-- `.planning/milestones/**`
+**Canonical path declarations.** These three lines are the single source of truth for the
+whole command. `create_pr_branch` derives *which paths it removes* from them, and `verify`
+derives *which paths must not appear* from the same three lines — so the two steps cannot
+disagree about what the filter promised. Declare them exactly once; do not restate either
+list anywhere else in this file. Their literal values are drift-guarded (`npm run lint:ci`,
+`scripts/lint-pr-branch-pattern-drift.cjs`) against the canonical `src/pr-branch-patterns.cts`
+constants — change one side and update the other, or the guard fails.
 
-**Transient planning files** — excluded from PR branch (reviewer noise):
-- `.planning/phases/**` (PLAN.md, SUMMARY.md, CONTEXT.md, RESEARCH.md, etc.)
-- `.planning/quick/**`
-- `.planning/research/**`
-- `.planning/threads/**`
-- `.planning/todos/**`
-- `.planning/debug/**`
-- `.planning/seeds/**`
-- `.planning/codebase/**`
-- `.planning/ui-reviews/**`
+```bash
+# Transient planning subdirectories — reviewer noise (PLAN.md, SUMMARY.md, CONTEXT.md,
+# RESEARCH.md, and friends). Filtered out in BOTH modes.
+TRANSIENT_DIRS="phases quick research threads todos debug seeds codebase ui-reviews"
+
+# Structural planning files — repository planning state. Preserved in default mode,
+# filtered out in strict mode. Anchored on both alternatives so `.planning/STATEX.md`
+# and `.planning/STATE.md.bak` are NOT treated as structural. The milestones
+# alternative matches only FILES directly under `.planning/milestones/` (e.g.
+# `v1.0-ROADMAP.md`) — not a `<milestone>-phases/` subdirectory nested there. That
+# subdirectory is reviewer noise, not structural state (#4605); it falls through to
+# `$MILESTONE_PHASES_RE` below instead.
+STRUCTURAL_RE="^\.planning/(STATE|ROADMAP|MILESTONES|PROJECT|REQUIREMENTS)\.md$|^\.planning/milestones/[^/]+\.md$"
+
+# Milestone-scoped phase-plan directories — the same reviewer noise as
+# `$TRANSIENT_DIRS`'s `phases` entry, but nested per-milestone once a project has
+# passed at least one milestone: `.planning/milestones/<milestone>-phases/`. The
+# milestone slug (`v1.0`, `m2`, ...) varies per project, so this is declared as a
+# shape, not a literal path — a single path segment standing in for the slug,
+# anchored the same way `$STRUCTURAL_RE`'s alternatives are (#4605).
+MILESTONE_PHASES_RE="^\.planning/milestones/[^/]+-phases/"
+```
+
+Derive the mode's two projections — `FILTER_PATHS` (what `create_pr_branch` removes from
+each cherry-picked commit) and `FORBIDDEN_RE` (what `verify` asserts is absent):
+
+```bash
+if [ "$PR_STRICT" = "true" ]; then
+  FILTER_PATHS=".planning/"
+  FORBIDDEN_RE="^\.planning/"
+else
+  # One path per LINE, not per space (#4605) — see create_pr_branch's consumption
+  # loop: a discovered `<milestone>-phases/` directory can contain a space, so
+  # whitespace cannot be the delimiter. Rewrapped through unquoted command
+  # substitution (gsd-core#4109): a bare `$VAR` word-splits under bash but not
+  # zsh, collapsing every element onto one iteration there.
+  FILTER_PATHS=$(for d in $(printf '%s' "$TRANSIENT_DIRS"); do printf '.planning/%s/\n' "$d"; done)
+  FORBIDDEN_RE="^\.planning/($(echo "$TRANSIENT_DIRS" | tr ' ' '|'))/|$MILESTONE_PHASES_RE"
+
+  # $MILESTONE_PHASES_RE is a shape, not a path — create_pr_branch's filter loop
+  # needs concrete paths to `git rm`, so resolve which `<milestone>-phases/`
+  # directories actually exist in this worktree (#4605). A project with no
+  # milestones yet (`.planning/milestones/` absent) yields nothing here, same as
+  # any other empty FILTER_PATHS entry. `-exec printf ... \;` rather than
+  # `for D in $(find ...)`: a `for` over unquoted `find` output word-splits a
+  # milestone slug containing a space into two spurious entries (ShellCheck
+  # SC2044) — the exact class of bug #4109 already fixed once in this file.
+  # `2>/dev/null` also swallows a genuine `find` failure (e.g. an unreadable
+  # `.planning/milestones/`), not just the expected-absent case — the unsafe
+  # direction, since a real failure then silently leaves those paths
+  # unfiltered rather than aborting. Accepted here because `$FORBIDDEN_RE`
+  # still asserts their absence downstream in `verify`, catching what this
+  # step misses.
+  MILESTONE_PHASE_DIRS=$(find .planning/milestones -mindepth 1 -maxdepth 1 -type d -name '*-phases' -exec printf '%s/\n' {} \; 2>/dev/null)
+  # Appended as its own LINE, and only when non-empty so no blank entry is
+  # introduced. The separator is a literal newline inside the quotes — `$(...)`
+  # has already stripped the trailing one off each side.
+  if [ -n "$MILESTONE_PHASE_DIRS" ]; then
+    FILTER_PATHS="${FILTER_PATHS}
+${MILESTONE_PHASE_DIRS}"
+  fi
+fi
+```
 
 For each commit, check what it touches:
 
 ```bash
 # For each commit hash
 FILES=$(git diff-tree --no-commit-id --name-only -r $HASH)
-NON_PLANNING=$(echo "$FILES" | grep -v "^\.planning/" | wc -l)
-STRUCTURAL=$(echo "$FILES" | grep -E "^\.planning/(STATE|ROADMAP|MILESTONES|PROJECT|REQUIREMENTS)\.md|^\.planning/milestones/" | wc -l)
-TRANSIENT_ONLY=$(echo "$FILES" | grep "^\.planning/" | grep -vE "^\.planning/(STATE|ROADMAP|MILESTONES|PROJECT|REQUIREMENTS)\.md|^\.planning/milestones/" | wc -l)
+NON_PLANNING=$(echo "$FILES" | grep -c -v "^\.planning/" || true)
+STRUCTURAL=$(echo "$FILES" | grep -Ec "$STRUCTURAL_RE" || true)
+PLANNING_COUNT=$(echo "$FILES" | grep -c "^\.planning/" || true)
 ```
 
-Classify:
-- **Code commits**: Touch at least one non-.planning/ file → INCLUDE
-- **Structural planning commits**: Touch only structural .planning/ files (STATE.md, ROADMAP.md, MILESTONES.md, PROJECT.md, REQUIREMENTS.md, milestones/**) → INCLUDE
-- **Transient planning commits**: Touch only transient .planning/ files (phases/, quick/, research/, etc.) → EXCLUDE
-- **Mixed commits**: Touch code + any planning files → INCLUDE (transient planning changes come along; acceptable in mixed context)
+Classify, using `NON_PLANNING`, `STRUCTURAL`, and `PLANNING_COUNT` computed above — every arm's
+condition is explicit and computable so no reading of it is ambiguous:
+- **Code commits**: `NON_PLANNING > 0` and `PLANNING_COUNT == 0` → INCLUDE (both modes)
+- **Mixed code+planning commits**: `NON_PLANNING > 0` and `PLANNING_COUNT > 0` → INCLUDE (both
+  modes; the planning paths are filtered out by `create_pr_branch`, not the commit)
+- **Structural-only planning commits**: `NON_PLANNING == 0` and `STRUCTURAL == PLANNING_COUNT`
+  and `PLANNING_COUNT > 0` (every `.planning/` file touched is structural) → INCLUDE in
+  **default** mode; **EXCLUDE** in strict mode, which has no structural carve-out
+- **Mixed planning commits (#4447)**: `NON_PLANNING == 0` and `STRUCTURAL > 0` and
+  `STRUCTURAL < PLANNING_COUNT` (some but not all `.planning/` files touched are structural —
+  the rest are transient and/or the "other" bucket, e.g. `config.json`/`intel/`) → INCLUDE in
+  **default** mode (the transient-dir subset of the non-structural paths is filtered out by
+  `create_pr_branch`'s universal per-commit filter exactly as for a mixed code+planning commit;
+  any "other" non-structural, non-transient path — `config.json`, `intel/`, etc. — is simply
+  preserved, same as default mode already does for such paths on any commit); **EXCLUDE** in
+  strict mode
+- **Transient-only planning commits**: `NON_PLANNING == 0` and `STRUCTURAL == 0` and
+  `PLANNING_COUNT > 0` → EXCLUDE (both modes)
+
+In strict mode this collapses to a single rule: `NON_PLANNING > 0` → INCLUDE, else EXCLUDE.
 
 Display analysis:
 ```
-Commits to include: {N} (code changes + structural planning)
-Commits to exclude: {N} (transient planning-only)
-Mixed commits: {N} (code + planning — included)
-Structural planning commits: {N} (STATE/ROADMAP/milestone updates — included)
+Commits to include: {N} (code changes{, + structural planning — default mode only})
+Commits to exclude: {N} (planning-only)
+Mixed commits: {N} (code + planning — included, planning paths filtered)
+Structural planning commits: {N} ({included|excluded — strict mode})
+Mixed planning commits: {N} ({included — structural + transient/other, planning paths filtered|excluded — strict mode})
 ```
 </step>
 
@@ -259,18 +361,133 @@ PR_BRANCH="${CURRENT_BRANCH}-pr"
 git checkout -b "$PR_BRANCH" "$TARGET"
 ```
 
-Cherry-pick code commits and structural planning commits (in order):
+Cherry-pick the included commits, in order, filtering `$FILTER_PATHS` out of each one.
+
+The filter forces every filtered path back to **exactly what the PR branch's HEAD already
+has**, in both the index and the working tree. That is stricter than simply un-staging, and
+both halves matter:
+
+- `git rm -r -f --ignore-unmatch` clears the index entry (including an unmerged one) and
+  removes the file the pick just wrote. It only ever touches paths that are in the index, so
+  a genuinely untracked planning file of the user's is never harmed.
+- `git checkout HEAD --` then restores whatever the target branch legitimately tracks at
+  those paths. **Without this, un-staging a path the target branch already tracks records a
+  DELETION** — the generated PR would remove the base branch's planning files. In strict mode
+  that would be the base's entire `.planning/` tree.
+
+Leaving the filtered file behind in the working tree is not an option either: a later commit
+touching the same planning path makes `git cherry-pick` abort with *"untracked working tree
+files would be overwritten by merge"*, and every remaining commit is silently dropped.
 
 ```bash
-for HASH in $CODE_AND_STRUCTURAL_COMMITS; do
-  git cherry-pick "$HASH" --no-commit
-  # Remove only transient .planning/ subdirectories that came along in mixed commits.
-  # DO NOT remove structural files (STATE.md, ROADMAP.md, MILESTONES.md, PROJECT.md,
-  # REQUIREMENTS.md, milestones/) — these must survive into the PR branch.
-  for dir in phases quick research threads todos debug seeds codebase ui-reviews; do
-    git rm -r --cached ".planning/$dir/" 2>/dev/null || true
-  done
-  git commit -C "$HASH"
+# Rewrapped through unquoted command substitution (gsd-core#4109): a bare
+# `$VAR` word-splits under bash but not zsh, collapsing every element onto
+# one iteration there.
+for HASH in $(printf '%s' "$INCLUDED_COMMITS"); do
+  # A modify/delete conflict on a filtered path is EXPECTED and is resolved below — the
+  # filtered path is absent from HEAD by construction. Do not treat it as a failure here.
+  git cherry-pick --no-commit "$HASH" || true
+
+  # One path per LINE, not per space (#4605) — a discovered `<milestone>-phases/`
+  # directory can contain a space, so `for P in $(printf ...)` would word-split it
+  # into spurious entries. `while IFS= read -r` reads $FILTER_PATHS one line at a
+  # time instead, matching the newline-safe pattern used to build $FILTER_PATHS above.
+  while IFS= read -r P; do
+    [ -n "$P" ] || continue
+    git rm -r -f -q --ignore-unmatch -- "$P" 2>/dev/null || true
+    git checkout HEAD -- "$P" 2>/dev/null || true
+  done <<FILTER_PATHS_EOF
+$FILTER_PATHS
+FILTER_PATHS_EOF
+
+  # #4606: a conflict on a "third bucket" path (`.planning/` — not `$FORBIDDEN_RE`
+  # transient, not `$STRUCTURAL_RE` structural — the same bucket `verify`'s
+  # `$OTHER` reports) is not a real conflict either, and needs its own
+  # resolution distinct from the filter loop above. Such a path is never
+  # per-commit replayed by classification — a commit touching ONLY a
+  # third-bucket path is EXCLUDEd — so when a LATER included commit (structural
+  # or code + that same path) reuses it, the diff's context can predate
+  # whatever the PR branch actually has, and cherry-pick reports a genuine
+  # content conflict on a path this command was never asked to filter.
+  # `git checkout --theirs` resolves it correctly by construction: in a
+  # cherry-pick's 3-way merge, "theirs" IS $HASH's own content for that path —
+  # exactly the chained final value the path is owed, the same guarantee
+  # `create_pr_branch` already gives structural files. A path $HASH deletes has
+  # no "theirs" blob to check out, so fall back to accepting the deletion (the
+  # `verify` step's `$PLANNING_DELETIONS` gate independently catches this if
+  # `$TARGET` ever legitimately tracked that path).
+  #
+  # The deleted-by-$HASH case is checked explicitly with `git cat-file -e`
+  # rather than inferred from `checkout --theirs` failing, so an unrelated
+  # checkout failure (I/O, permissions, a stale index lock) can't be
+  # misread as a deletion and silently `git rm`-ed — it falls through to the
+  # unmerged-path halt below instead.
+  #
+  # The `git add` below restages a path already committed to $CURRENT_BRANCH's
+  # own history onto the disposable $PR_BRANCH; not a commit_docs bypass
+  # (#1783/#3585), which guards against staging .planning/ content that was
+  # never committed at all.
+  #
+  # The unmerged list is snapshotted, then read one path PER LINE. `for P in
+  # $(git diff --name-only --diff-filter=U)` would split it on IFS instead: a
+  # third-bucket path containing a space (`.planning/My Notes.md`) becomes the
+  # fragments `.planning/My` and `Notes.md`, neither of which names the real
+  # conflicted file, so nothing is resolved and the run aborts with exactly the
+  # #4606 failure this block exists to prevent. Same word-split class as #4109.
+  # Snapshot-then-iterate (rather than piping) both keeps the list stable while
+  # the body restages paths and keeps the body in THIS shell, not a subshell.
+  UNMERGED_PATHS=$(git diff --name-only --diff-filter=U)
+  while IFS= read -r P; do
+    [ -n "$P" ] || continue
+    case "$P" in
+      .planning/*) ;;
+      *) continue ;;
+    esac
+    if echo "$P" | grep -Eq "$FORBIDDEN_RE"; then continue; fi
+    if echo "$P" | grep -Eq "$STRUCTURAL_RE"; then continue; fi
+    if git cat-file -e "$HASH:$P" 2>/dev/null; then
+      git checkout --theirs -- "$P" && git add -- "$P" # gsd-scan-ignore: #4606 -- see block comment above
+    else
+      git rm -f -q -- "$P" 2>/dev/null || true
+    fi
+  done <<UNMERGED_PATHS_EOF
+$UNMERGED_PATHS
+UNMERGED_PATHS_EOF
+
+  # Anything still unmerged is a REAL conflict, outside the filter. Halt — do not
+  # improvise a resolution and do not continue, which would drop the rest of the queue.
+  # Unwind first: this loop runs in the user's own checkout, so exiting mid-sequence
+  # would strand them on a half-built branch with cherry-pick state still live.
+  if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+    echo "Conflict outside the .planning/ filter while picking $HASH:" >&2
+    git diff --name-only --diff-filter=U >&2
+    # Order matters. `--quit` drops the sequencer state but leaves the unmerged index
+    # in place, and an unmerged index makes `git checkout` refuse — so reset first.
+    # $PR_BRANCH is disposable and every commit on it was cherry-picked, and the
+    # clean-tree precondition guarantees the user had nothing uncommitted, so a hard
+    # reset here cannot destroy anything of theirs.
+    git cherry-pick --quit 2>/dev/null || true
+    git reset -q --hard HEAD
+    if git checkout -q "$CURRENT_BRANCH"; then
+      git branch -q -D "$PR_BRANCH" 2>/dev/null || true
+      echo "Restored $CURRENT_BRANCH and removed the partial $PR_BRANCH." >&2
+    else
+      # Never claim a restore that did not happen — say exactly where they are.
+      echo "Could not return to $CURRENT_BRANCH; you are still on $PR_BRANCH." >&2
+      echo "Run: git checkout $CURRENT_BRANCH && git branch -D $PR_BRANCH" >&2
+    fi
+    echo "Resolve the conflict against $TARGET, then re-run /gsd-pr-branch." >&2
+    exit 1
+  fi
+
+  # Nothing left after filtering (possible when a pick's only surviving content was
+  # planning state): clear the sequencer rather than failing on an empty commit.
+  if git diff --cached --quiet; then
+    git cherry-pick --quit 2>/dev/null || true
+    continue
+  fi
+
+  git commit -q -C "$HASH"
 done
 ```
 
@@ -281,12 +498,40 @@ git checkout "$CURRENT_BRANCH"
 </step>
 
 <step name="verify">
+Assert against the **active mode's** contract — `$FORBIDDEN_RE`, the same declaration
+`create_pr_branch` filtered on. Counting every `.planning/` path unconditionally would
+contradict default mode, which is specified to preserve structural files: a correct run
+would report itself as failed on every phase that touched STATE.md, which is every phase.
+
 ```bash
-# Verify no .planning/ files in PR branch
-PLANNING_FILES=$(git diff --name-only "$TARGET".."$PR_BRANCH" | grep "^\.planning/" | wc -l)
-TOTAL_FILES=$(git diff --name-only "$TARGET".."$PR_BRANCH" | wc -l)
+DIFF_PATHS=$(git diff --name-only "$TARGET".."$PR_BRANCH")
+FORBIDDEN=$(echo "$DIFF_PATHS" | grep -Ec "$FORBIDDEN_RE" || true)
+PLANNING_TOTAL=$(echo "$DIFF_PATHS" | grep -c "^\.planning/" || true)
+ALLOWED=$((PLANNING_TOTAL - FORBIDDEN))
+TOTAL_FILES=$(echo "$DIFF_PATHS" | grep -c . || true)
 PR_COMMITS=$(git rev-list --count "$TARGET".."$PR_BRANCH")
+
+# #3679: a DELETED planning path is never legitimate — this workflow only ever
+# excludes content a cherry-picked commit ADDED; pre-existing target-tracked
+# planning files must survive byte-identical. Name-only counting cannot see
+# status (a deleted structural/allowed path verifies clean there), so gate on
+# deletions explicitly, across every planning category.
+PLANNING_DELETIONS=$(git diff --name-status --no-renames "$TARGET".."$PR_BRANCH" | grep "^D" | grep -c "\.planning/" || true)
+
+# Default mode preserves anything under .planning/ that is neither transient nor
+# structural — config.json, intel/, workstreams/. That is deliberate and unchanged, but it
+# must not be silent: report it so the user can choose strict mode knowingly.
+OTHER=$(echo "$DIFF_PATHS" | grep "^\.planning/" | grep -Ev "$FORBIDDEN_RE" | grep -Ev "$STRUCTURAL_RE" || true)
 ```
+
+`$FORBIDDEN` is the pass/fail number — it must be `0`. A non-zero value means the filter
+did not do what this mode promised; report it and do not tell the user to push.
+
+`$PLANNING_DELETIONS` is a second hard gate (#3679) — it must also be `0`. A non-zero
+value means the PR branch would DELETE planning files the target branch tracks
+(`git diff --name-status --no-renames "$TARGET".."$PR_BRANCH" | grep "^D" | grep "\.planning/"` lists
+them). That is data loss, not filtering — report it, do not tell the user to push, and
+rebuild the branch.
 
 Display results:
 ```
@@ -294,7 +539,9 @@ Display results:
 
 Original: {AHEAD} commits, {ORIGINAL_FILES} files
 PR branch: {PR_COMMITS} commits, {TOTAL_FILES} files
-Planning files: {PLANNING_FILES} (should be 0)
+Mode: {PR_MODE}
+Planning paths in diff: {PLANNING_TOTAL} (allowed {ALLOWED}, forbidden {FORBIDDEN} — must be 0)
+Planning deletions: {PLANNING_DELETIONS} (must be 0 — #3679)
 
 Next steps:
   git push origin {PR_BRANCH}
@@ -302,14 +549,25 @@ Next steps:
 
 Or use /gsd-ship to create the PR automatically.
 ```
+
+When `$OTHER` is non-empty (default mode only — strict forbids all of it), append:
+```
+ℹ️  These .planning/ paths are neither transient nor structural, so default mode keeps them:
+{OTHER}
+    Set `planning.pr_strict: true` to keep every .planning/ path out of the PR branch.
+```
 </step>
 
 </process>
 
 <success_criteria>
+- [ ] Working tree was clean before the PR branch was created
 - [ ] PR branch created from target
 - [ ] Planning-only commits excluded
-- [ ] No .planning/ files in PR branch diff
+- [ ] Zero paths matching the active mode's `$FORBIDDEN_RE` in the PR branch diff —
+      strict: no `.planning/` path at all; default: none from `$TRANSIENT_DIRS`
+- [ ] No `.planning/` path the target branch already tracked was deleted
+- [ ] Every included commit landed — none dropped by a failed cherry-pick
 - [ ] Commit messages preserved from original
 - [ ] User shown next steps
 </success_criteria>

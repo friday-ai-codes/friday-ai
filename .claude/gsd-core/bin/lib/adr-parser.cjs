@@ -14,6 +14,9 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const security_cjs_1 = require("./security.cjs");
 const markdown_sectionizer_cjs_1 = require("./markdown-sectionizer.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cliExitModule = require("./cli-exit.cjs");
+const { ExitError, runMain } = cliExitModule;
 const STATUS_REJECT_SET = new Set(['superseded', 'rejected', 'deprecated']);
 const CANONICAL_HEADERS = {
     status: ['status', 'state', 'lifecycle', 'stage'],
@@ -49,6 +52,7 @@ const CANONICAL_HEADERS = {
         'recommendation',
         'strategy',
         'decision outcome',
+        'locked decisions',
     ],
     considered_options: [
         'considered options',
@@ -187,7 +191,8 @@ function normalizeAdrHeader(raw) {
         .toLowerCase()
         .replace(/[\s:._-]+/g, ' ')
         .replace(/[^\w\s]/g, '')
-        .trim();
+        .trim()
+        .replace(/^\d+(?:\s+\d+)*\s+/, '');
 }
 // Normalized synonym index (audit M7). classifyHeader receives an ALREADY-normalized
 // header (via normalizeAdrHeader), but historically compared it against the RAW synonym
@@ -216,13 +221,45 @@ function classifyHeader(normalizedHeader) {
     }
     return null;
 }
+// A list item starts with a bullet (-, *, +) or an ordered marker (1. or 1)).
+const LIST_MARKER = /^([-*+]|\d+[.)])\s+/;
+/**
+ * Split a section body into one entry per top-level list item (#5227).
+ *
+ * A line that opens a list item starts a new entry with its marker stripped. Any
+ * other non-blank line, and any marker line indented deeper than the first item
+ * (a nested sub-bullet), joins the current entry with a single space, so a
+ * hard-wrapped item stays one entry. Text before the first marker is its own
+ * entry. A block with no list marker at all keeps one entry per line, so a plain
+ * `## Status` body still yields its first line.
+ */
 function splitEntries(blockText) {
-    return (typeof blockText === 'string' ? blockText : '')
+    const lines = (typeof blockText === 'string' ? blockText : '')
         .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => line.replace(/^[-*+]\s+/, '').trim())
-        .filter(Boolean);
+        .filter((line) => line.trim() !== '');
+    if (!lines.some((line) => LIST_MARKER.test(line.trim())))
+        return lines.map((line) => line.trim());
+    const entries = [];
+    let topIndent = -1;
+    let open = false;
+    for (const raw of lines) {
+        const text = raw.trim();
+        const indent = raw.length - raw.trimStart().length;
+        const isMarker = LIST_MARKER.test(text);
+        if (isMarker && (topIndent < 0 || indent <= topIndent)) {
+            if (topIndent < 0)
+                topIndent = indent;
+            entries.push(text.replace(LIST_MARKER, '').trim());
+            open = true;
+        }
+        else if (open) {
+            entries[entries.length - 1] = `${entries[entries.length - 1]} ${text}`;
+        }
+        else {
+            entries.push(text);
+        }
+    }
+    return entries.filter(Boolean);
 }
 /**
  * Thin adapter: wraps the seam's `collectSections` to produce the same
@@ -399,19 +436,22 @@ function parseCliArgs(argv) {
 }
 function main(argv) {
     const opts = parseCliArgs(argv);
-    const safePath = (0, security_cjs_1.requireSafePath)(opts.input, node_path_1.default.resolve(opts.projectDir), 'ADR input path', { allowAbsolute: true });
+    const safePath = (0, security_cjs_1.requireSafePath)(opts.input, node_path_1.default.resolve(opts.projectDir), 'ADR input path', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
     const content = node_fs_1.default.readFileSync(safePath, 'utf8');
     const parsed = parseAdrMarkdown(content, { sourcePath: opts.input ?? undefined, format: opts.format });
     process.stdout.write(JSON.stringify(parsed, null, 2));
 }
 if (require.main === module) {
-    try {
-        main(process.argv.slice(2));
-    }
-    catch (error) {
-        process.stderr.write(`Error: ${error.message}\n`);
-        process.exit(1);
-    }
+    runMain(() => {
+        try {
+            main(process.argv.slice(2));
+        }
+        catch (err) {
+            // ExitError with a message so runMain's catch writes it verbatim
+            // (byte-identical to the prior `Error: ${message}\n` process.exit(1)).
+            throw new ExitError(1, `Error: ${err.message}`);
+        }
+    });
 }
 module.exports = {
     CANONICAL_HEADERS,

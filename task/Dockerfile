@@ -55,10 +55,11 @@ WORKDIR /app
 # Copy Node.js from node-tools
 COPY --from=node-tools /usr/local/bin/node /usr/local/bin/
 COPY --from=node-tools /usr/local/lib/node_modules /usr/local/lib/node_modules
-# Pin claude-code 版本 (2026-05-28)，定期升级时更新此版本号
+# 固定 Claude Code stable 版本，使相同提交的任务镜像使用相同 CLI。
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
-    npm install -g @anthropic-ai/claude-code@2.1.153
+    npm install -g --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@2.1.311 && \
+    claude --version
 
 # 从 builder 复制已安装的 Python 包
 COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/python3.14/site-packages

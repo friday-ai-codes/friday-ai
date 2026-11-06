@@ -6,6 +6,10 @@ tags: [searchable tech]
 provides:
   - [bullet list of what was built/delivered]
 affects: [list of phase names or keywords]
+actuals:
+  tokens: [chars/4 over files actually changed]
+  tasks: [tasks completed]
+  commits: [commits made]
 tech-stack:
   added: [libraries/tools]
   patterns: [architectural/code patterns]
@@ -20,6 +24,8 @@ duration: Xmin
 completed: YYYY-MM-DD
 status: complete
 ---
+
+**Status (#2830):** `status: complete` is the default — the plan finished. Use `status: halted` instead when the plan reached a designed stop (a gate failure, a spike concluding without expanding into the full build, or any other intentional non-completion) and intentionally left tasks unfinished.
 
 # Phase [X]: [Name] Summary (Minimal)
 

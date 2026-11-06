@@ -1,6 +1,6 @@
 <purpose>
 
-Archive accumulated phase directories from completed milestones into `.planning/milestones/v{X.Y}-phases/`. Identifies which phases belong to each completed milestone, shows a dry-run summary, and moves directories on confirmation.
+Archive accumulated phase directories from completed milestones into `.planning/milestones/v{X.Y}-phases/`. Identifies which phases belong to each completed milestone, shows a dry-run summary, and moves directories on confirmation. Also offers retroactive archival of `.planning/quick/` (#2142) when it is non-empty.
 
 </purpose>
 
@@ -9,10 +9,18 @@ Archive accumulated phase directories from completed milestones into `.planning/
 1. `.planning/MILESTONES.md`
 2. `.planning/milestones/` directory listing
 3. `.planning/phases/` directory listing
+4. `.planning/quick/` directory listing
 
 </required_reading>
 
 <process>
+```bash
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+RESPONSE_LANGUAGE=$(gsd_run query config-get response_language --raw --default "" 2>/dev/null || echo "")
+```
+
+**If `response_language` is set:** All user-facing output of this workflow — narration between tool calls, status updates, progress notes, findings, questions, prompts, and explanations — MUST be presented in `{response_language}`. Technical terms, code, file paths, and subagent prompts stay in English — only user-facing output is translated.
+
 
 <step name="identify_completed_milestones">
 
@@ -62,6 +70,26 @@ Match phase directories to milestone membership. Only include directories that s
 
 </step>
 
+<step name="identify_quick_tasks">
+
+Check whether `.planning/quick/` has anything to retroactively archive (#2142):
+
+```bash
+ls -d .planning/quick/*/ 2>/dev/null || true
+```
+
+**If no directories are found:** `.planning/quick/` is empty (or absent) — say nothing about quick-task archival and do not offer the step. Skip straight to `show_dry_run` with no quick-task summary or prompt.
+
+**If at least one directory is found:** determine the target milestone. Unlike phase directories — whose milestone membership is derivable from the archived ROADMAP snapshot each completed milestone already has — quick tasks carry **no on-disk provenance** at all; there is no way to tell which milestone any given quick task directory belongs to. The target is therefore the single most recent completed milestone (from `.planning/MILESTONES.md`, already read in `identify_completed_milestones`, listed newest-first) that does not yet have a `-quick` archive directory:
+
+```bash
+ls -d .planning/milestones/v*-quick 2>/dev/null || true
+```
+
+Walk `.planning/MILESTONES.md`'s entries newest-first and pick the first version with no matching `v{version}-quick` directory above. If every completed milestone already has a `-quick` archive, or `.planning/MILESTONES.md` has no entries, there is no valid target — say so and skip the quick-task step entirely (do not prompt).
+
+</step>
+
 <step name="show_dry_run">
 
 Present a dry-run summary for each milestone:
@@ -85,6 +113,19 @@ These phase directories will be archived:
 Destination: .planning/milestones/v{X.Z}-phases/
 ```
 
+**If a quick-task target milestone was determined in `identify_quick_tasks`**, add:
+
+```
+### Quick tasks — bucket-all into v{X.Y}
+{N} directories under .planning/quick/ will ALL be archived into this ONE milestone
+(v{X.Y} — {Milestone Name}), regardless of when each was actually completed.
+Quick tasks carry no on-disk record of which milestone they belong to, so this is
+a bucket-all, not a per-milestone split — unlike the phase archival above, which
+is derived per-milestone from each archived ROADMAP snapshot.
+
+Destination: .planning/milestones/v{X.Y}-quick/
+```
+
 **Stale local branches (upstream gone):**
 
 First, update remote-tracking refs so the candidate list matches the execution list exactly:
@@ -105,20 +146,27 @@ Show each branch name. If none, show:
 No stale local branches detected.
 ```
 
-If no phase directories remain to archive (all already moved or deleted) AND no stale branches exist:
+If no phase directories remain to archive (all already moved or deleted) AND no stale branches exist AND no quick-task target milestone was determined:
 
 ```
 No phase directories found to archive. Phases may have been removed or archived previously.
 No stale local branches detected either.
+No quick tasks to archive either.
 ```
 
 Stop here.
 
 
-**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `conversational prompting` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Gemini CLI, etc.) where `conversational prompting` is not available.
+**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `conversational prompting` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Antigravity, etc.) where `conversational prompting` is not available.
 conversational prompting: "Proceed with archiving and pruning?" with options: "Yes — archive phases and prune stale branches" | "Cancel"
 
 If "Cancel": Stop.
+
+**If a quick-task target milestone was determined in `identify_quick_tasks`**, ask a separate, explicit question — this is a distinct, bucket-all action and must not be silently folded into the "Yes" above:
+
+conversational prompting: "Archive ALL {N} quick-task directories into v{X.Y} — {Milestone Name}? This buckets every remaining quick task into this ONE milestone; there is no way to split them per-milestone." with options: "Yes — archive quick tasks into v{X.Y}" | "Skip"
+
+If "Skip": do not run `archive_quick_tasks` — proceed to `archive_phases` (or `report`, if there were no phase directories to archive) with quick-task archival omitted.
 
 </step>
 
@@ -137,6 +185,20 @@ mv .planning/phases/{dir} .planning/milestones/v{X.Y}-phases/
 ```
 
 Repeat for all milestones in the cleanup set.
+
+</step>
+
+<step name="archive_quick_tasks">
+
+Only run this step when the "Yes — archive quick tasks into v{X.Y}" option was confirmed in `show_dry_run`.
+
+Uses the narrow `milestone.archive-quick` command (#2142 escalation) rather than `milestone.complete --archive-quick`: cleanup runs against milestones that are typically ALREADY completed, and `milestone.complete` is the full close-out — it archives ROADMAP/REQUIREMENTS and writes a MILESTONES.md entry, so re-running it against an already-completed milestone would clobber that milestone's archived ROADMAP/REQUIREMENTS snapshot (the very snapshot this cleanup depends on) and duplicate its MILESTONES.md entry. `milestone.archive-quick` shares the same move/README-index/table-reset logic as `milestone.complete --archive-quick` (same underlying helper) without any of that.
+
+```bash
+gsd_run query milestone.archive-quick "v{X.Y}"
+```
+
+This moves every directory under `.planning/quick/` into `.planning/milestones/v{X.Y}-quick/`, (re)writes that directory's `README.md` index, and clears STATE.md's `### Quick Tasks Completed` table rows — identical move/index/reset behavior to the `--archive-quick` flag documented in `complete-milestone.md`'s `archive_milestone` step, without touching ROADMAP.md, REQUIREMENTS.md, MILESTONES.md, or milestone-completion guards. Extract `archived` from the result to confirm.
 
 </step>
 
@@ -161,9 +223,10 @@ Notes:
 Commit the changes:
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
-gsd_run query commit "chore: archive phase directories from completed milestones" --files .planning/milestones/ .planning/phases/
+gsd_run query commit "chore: archive phase directories from completed milestones" --files .planning/milestones/ .planning/STATE.md --files-removed .planning/phases/ .planning/quick/
 ```
+
+`.planning/phases/` and `.planning/quick/` go under `--files-removed`, not `--files` (#4208): a `--files` directory entry stages everything under it, so it would also commit any in-flight phase or quick-task file a concurrent session had written there. `--files-removed` stages only the tracked files under those directories that the archival `mv` moved away, and leaves everything still present untouched.
 
 </step>
 
@@ -173,6 +236,8 @@ gsd_run query commit "chore: archive phase directories from completed milestones
 Archived:
 {For each milestone}
 - v{X.Y}: {N} phase directories → .planning/milestones/v{X.Y}-phases/
+{If quick-task archival ran}
+- v{X.Y}: {N} quick-task directories → .planning/milestones/v{X.Y}-quick/ (bucket-all — see known limit)
 
 Pruned: {N} local branches whose upstream is gone.
 
@@ -190,6 +255,8 @@ Pruned: {N} local branches whose upstream is gone.
 - [ ] Dry-run summary shown and user confirmed (covers both archival and pruning)
 - [ ] Phase directories moved to `.planning/milestones/v{X.Y}-phases/`
 - [ ] Stale local branches pruned (branches whose upstream is gone)
+- [ ] `.planning/quick/` checked; quick-task archival offered only when non-empty
+- [ ] When offered and confirmed, ALL remaining quick-task directories archived into the single named target milestone (bucket-all, not per-milestone) via `milestone.archive-quick`
 - [ ] Changes committed
 
 </success_criteria>

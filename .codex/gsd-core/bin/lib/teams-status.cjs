@@ -31,6 +31,9 @@ exports.cmdTeamsStatus = cmdTeamsStatus;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ioMod = require("./io.cjs");
 const { output: coreOutput } = ioMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cliExitModule = require("./cli-exit.cjs");
+const { ExitError } = cliExitModule;
 // ─── Pure core ────────────────────────────────────────────────────────────────
 /**
  * Resolve the agent-teams status from injected runtime and env.
@@ -67,7 +70,7 @@ function cmdTeamsStatus(cwd, opts) {
     const status = resolveTeamsStatus({ runtime, env: process.env });
     if (opts.active) {
         // --active mode: no output, exit code encodes the boolean
-        process.exit(status.active ? 0 : 1);
+        throw new ExitError(status.active ? 0 : 1);
     }
     // Default: emit JSON to stdout via io.output, exit 0
     coreOutput(status, false);

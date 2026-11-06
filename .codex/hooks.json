@@ -8,14 +8,6 @@
             "command": "node \"./.codex/hooks/gsd-check-update.js\""
           }
         ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"./.codex/hooks/gsd-check-update.js\""
-          }
-        ]
       }
     ],
     "SubagentStart": [

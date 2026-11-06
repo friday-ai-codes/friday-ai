@@ -11,6 +11,9 @@ const command_aliases_cjs_1 = require("./command-aliases.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cjsCommandRouterAdapter = require("./cjs-command-router-adapter.cjs");
 const { routeCjsCommandFamily } = cjsCommandRouterAdapter;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const checkCommandRouter = require("./check-command-router.cjs");
+const { routeCheckCommand } = checkCommandRouter;
 // ─── Implementation ───────────────────────────────────────────────────────────
 function routeVerifyCommand({ verify, args, cwd, raw, error }) {
     routeCjsCommandFamily({
@@ -26,16 +29,25 @@ function routeVerifyCommand({ verify, args, cwd, raw, error }) {
             commits: () => verify.cmdVerifyCommits(cwd, args.slice(2), raw),
             artifacts: () => verify.cmdVerifyArtifacts(cwd, args[2], raw),
             'key-links': () => verify.cmdVerifyKeyLinks(cwd, args[2], raw),
+            // The three drift verbs are the `drift` capability's gates (#5219, ADR-5057 §4): each is one gate
+            // module (src/gate-{schema,codebase,context}-drift.cts) that the check router formats; this
+            // surface hands them to it. `--skip` is this surface's bypass of the schema gate (it reads no
+            // GSD_SKIP_SCHEMA_CHECK), carried to the gate as the env flag the check router reads.
             'schema-drift': () => {
                 const rest = args.slice(2);
                 const skipFlag = rest.includes('--skip');
-                const phaseArg = rest.find((arg) => !arg.startsWith('-'));
-                verify.cmdVerifySchemaDrift(cwd, phaseArg, skipFlag, raw);
+                const phaseArg = rest.find((arg) => !arg.startsWith('-')) ?? '';
+                routeCheckCommand({
+                    args: ['check', 'verify-schema-drift', phaseArg],
+                    cwd,
+                    raw,
+                    env: skipFlag ? { GSD_SKIP_SCHEMA_CHECK: 'true' } : {},
+                });
             },
-            // verify codebase-drift dispatches direct to CJS — drift is out-of-seam
-            // per ADR/PRD 3524 §3 / L160 (CJS-only by design). Routing through
-            // recursive dispatch would re-enter this router path.
-            'codebase-drift': () => verify.cmdVerifyCodebaseDrift(cwd, raw),
+            // verify codebase-drift and context-drift are the same gate modules `check verify-<name>`
+            // runs (#5219, ADR-5057 §4): this surface hands them to the check router, which formats them.
+            'codebase-drift': () => routeCheckCommand({ args: ['check', 'verify-codebase-drift'], cwd, raw }),
+            'context-drift': () => routeCheckCommand({ args: ['check', 'verify-context-drift', args[2] ?? ''], cwd, raw }),
         },
     });
 }

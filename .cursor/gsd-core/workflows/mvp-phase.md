@@ -1,16 +1,14 @@
 <purpose>
-Guide the user through MVP-mode planning for a phase. Prompts for an "As a / I want to / So that" user story, runs SPIDR splitting check on the story, writes the result to ROADMAP.md, and delegates to `/gsd plan-phase` (which auto-detects MVP via the roadmap mode field shipped in PRD Phase 1).
+Guide the user through MVP-mode planning for a phase. Prompts for an "As a / I want to / So that" user story, runs SPIDR splitting check on the story, writes the result to ROADMAP.md, and delegates to `/gsd-plan-phase` (which auto-detects MVP via the roadmap mode field shipped in PRD Phase 1).
 </purpose>
 
 <required_reading>
-@./.cursor/gsd-core/references/user-story-template.md
-@./.cursor/gsd-core/references/spidr-splitting.md
-@./.cursor/gsd-core/references/planner-mvp-mode.md
+@.cursor/gsd-core/references/user-story-template.md
+@.cursor/gsd-core/references/spidr-splitting.md
+@.cursor/gsd-core/references/planner-mvp-mode.md
 </required_reading>
 
 <runtime_note>
-**Copilot (VS Code):** Use `vscode_askquestions` wherever this workflow calls `conversational prompting`. They are equivalent.
-
 **TEXT_MODE fallback:** Set TEXT_MODE=true if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is true. When TEXT_MODE is active, replace every conversational prompting call with a plain-text numbered list and ask the user to type their choice number.
 </runtime_note>
 
@@ -23,38 +21,44 @@ Extract the phase number from `{{GSD_ARGS}}` (integer or decimal like `2.1`). Op
 If no argument:
 ```
 ERROR: Phase number required
-Usage: /gsd mvp-phase <phase-number>
-Example: /gsd mvp-phase 1
-Example: /gsd mvp-phase 2.1
+Usage: /gsd-mvp-phase <phase-number>
+Example: /gsd-mvp-phase 1
+Example: /gsd-mvp-phase 2.1
 ```
 Exit.
 
-Normalize per `@./.cursor/gsd-core/references/phase-argument-parsing.md` (zero-pad integer phases to two digits).
+Normalize per `@.cursor/gsd-core/references/phase-argument-parsing.md` (zero-pad integer phases to two digits).
 
 ## 2. Validate phase exists and check status
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+RESPONSE_LANGUAGE=$(gsd_run query config-get response_language --raw --default "" 2>/dev/null || echo "")
 PHASE_INFO=$(gsd_run query roadmap.get-phase "${PHASE}")
 PHASE_FOUND=$(echo "$PHASE_INFO" | jq -r '.found')
 PHASE_NAME=$(echo "$PHASE_INFO" | jq -r '.phase_name')
 PHASE_GOAL=$(echo "$PHASE_INFO" | jq -r '.goal')
 PHASE_MODE=$(echo "$PHASE_INFO" | jq -r '.mode // ""')
-PHASE_COMPLETE=$(echo "$PHASE_INFO" | jq -r '.roadmap_complete // false')
-
 ANALYZE=$(gsd_run query roadmap.analyze)
 if [[ "$ANALYZE" == @file:* ]]; then ANALYZE=$(cat "${ANALYZE#@file:}"); fi
 DISK_STATUS=$(echo "$ANALYZE" | jq -r --arg p "$PHASE" '.phases[] | select((.phase_number|tostring)==$p) | .disk_status' | head -1)
-if [[ "$DISK_STATUS" == "complete" || "$PHASE_COMPLETE" == "true" ]]; then
+# ADR-3180 §7.4 (issue #3186, disk-strict, #2957): DISK_STATUS alone decides
+# completion — a ROADMAP checkbox carries no machine authority and is never
+# ORed in here. `roadmap.analyze`'s `disk_status` already routes through the
+# canonical owner (`isPhaseComplete`), so this is the same predicate the read
+# and write paths both use.
+if [[ "$DISK_STATUS" == "complete" ]]; then
   STATUS="completed"
-elif [[ "$DISK_STATUS" == "planned" || "$DISK_STATUS" == "partial" ]]; then
+elif [[ "$DISK_STATUS" == "planned" || "$DISK_STATUS" == "partial" || "$DISK_STATUS" == "executed" ]]; then
   STATUS="in_progress"
 else
   STATUS="not_started"
 fi
 ```
 
-If `PHASE_FOUND` is `false`: error and exit. Suggest `/gsd add-phase` or `/gsd insert-phase` to create the phase first.
+**If `response_language` is set:** All user-facing output of this workflow — narration between tool calls, status updates, progress notes, findings, questions, prompts, and explanations — MUST be presented in `{response_language}`. Technical terms, code, file paths, and subagent prompts stay in English — only user-facing output is translated.
+
+If `PHASE_FOUND` is `false`: error and exit. Suggest `/gsd-phase "<description>"` or `/gsd-phase --insert <after-phase> "<description>"` to create the phase first.
 
 **Status guard.** If the phase is `in_progress` (has plans but not complete) or `completed`, refuse unless `--force` is in `{{GSD_ARGS}}`:
 
@@ -63,7 +67,7 @@ ERROR: Phase ${PHASE} is currently ${STATUS}.
 Converting an active or completed phase to MVP mode mid-flight will
 invalidate any existing plans and summaries.
 
-To proceed anyway: /gsd mvp-phase ${PHASE} --force
+To proceed anyway: /gsd-mvp-phase ${PHASE} --force
 ```
 
 **Already-MVP guard.** If `PHASE_MODE` is already `mvp`, surface this and ask whether to re-prompt the user story or abort:
@@ -74,7 +78,7 @@ Use `conversational prompting` with options [Re-prompt / Abort]. On Abort, exit 
 
 ## 3. User story prompts
 
-Run three sequential `conversational prompting` calls. Each is free-text. After all three, assemble into the canonical sentence per `@./.cursor/gsd-core/references/user-story-template.md`:
+Run three sequential `conversational prompting` calls. Each is free-text. After all three, assemble into the canonical sentence per `@.cursor/gsd-core/references/user-story-template.md`:
 
 **Prompt 1 — As a:**
 > "As a [user role]?"
@@ -113,7 +117,7 @@ If `RE_PROMPT_USER_STORY=true`, re-run only the offending prompt field(s), rebui
 
 ## 4. SPIDR splitting check
 
-Run the SPIDR rules from `@./.cursor/gsd-core/references/spidr-splitting.md`. Briefly:
+Run the SPIDR rules from `@.cursor/gsd-core/references/spidr-splitting.md`. Briefly:
 
 **Trigger evaluation.** Check the assembled `USER_STORY` against the four size signals from the reference (compound capabilities, multi-actor, length > 120 chars, vague capability). If none fire, **skip SPIDR** entirely — go to step 5.
 
@@ -155,7 +159,7 @@ d) Produce a split proposal. Example:
 
 Use `conversational prompting` [Accept / Modify / Reject].
 
-- **Accept**: `USER_STORY` becomes the first split's story (`${HAPPY_STORY}` in the example). Surface the remaining splits as a list of `/gsd add-phase` invocations the user can run after this command completes — do NOT auto-create the new phases (preserve user control over numbering).
+- **Accept**: `USER_STORY` becomes the first split's story (`${HAPPY_STORY}` in the example). Surface the remaining splits as a list of `/gsd-phase` invocations the user can run after this command completes — do NOT auto-create the new phases (preserve user control over numbering).
 - **Modify**: re-prompt the splits one more time, then accept or reject.
 - **Reject**: revert `USER_STORY` to the original, proceed without splitting.
 
@@ -194,9 +198,9 @@ Assert:
 
 If either assertion fails, surface the discrepancy to the user and exit. Do not proceed to plan-phase delegation with a half-applied write.
 
-## 7. Delegate to /gsd plan-phase
+## 7. Delegate to /gsd-plan-phase
 
-Invoke `/gsd plan-phase ${PHASE}` (no flags). Phase 1's MVP_MODE resolution chain (CLI flag → roadmap mode → config → false) will detect the new `**Mode:** mvp` line and run plan-phase in vertical-slice mode automatically.
+Invoke `/gsd-plan-phase ${PHASE}` (no flags). Phase 1's MVP_MODE resolution chain (CLI flag → roadmap mode → config → false) will detect the new `**Mode:** mvp` line and run plan-phase in vertical-slice mode automatically.
 
 The Walking Skeleton gate (also from Phase 1) will fire automatically if `${PHASE} == "01"` and there are zero prior phase summaries.
 
@@ -209,11 +213,11 @@ If SPIDR produced a split in step 4, append a final user-facing message:
 > Your original story was split. The first slice is now planned via plan-phase.
 > To create the remaining slice(s) as new phases, run:
 >
-> - `/gsd add-phase` — for the next slice: «${SPLIT_2_STORY}»
-> - `/gsd add-phase` — for the next slice: «${SPLIT_3_STORY}»
+> - `/gsd-phase ${SPLIT_2_STORY}`
+> - `/gsd-phase ${SPLIT_3_STORY}`
 >
 > Each will be added to the end of the current milestone. You can then run
-> `/gsd mvp-phase <new-phase-number>` on each to plan them as MVP slices."
+> `/gsd-mvp-phase <new-phase-number>` on each to plan them as MVP slices."
 
 ## 9. Exit
 

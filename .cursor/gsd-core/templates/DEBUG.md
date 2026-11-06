@@ -21,8 +21,20 @@ hypothesis: [current theory being tested]
 test: [how testing it]
 expecting: [what result means if true/false]
 next_action: [immediate next step — be specific, not "continue investigating"]
+bug_class: null  <!-- assigned at Phase 1.75 — bohrbug|heisenbug-mandelbug|concurrency — routes investigation technique (see gsd-core/references/debugger-bug-taxonomy.md) -->
 reasoning_checkpoint: null  <!-- populated before every fix attempt — see structured_returns -->
 tdd_checkpoint: null  <!-- populated when tdd_mode is active after root cause confirmed -->
+
+## Session Loop
+<!-- Read and written only by the checkpoint loop that drives gsd-debugger (on Pi, the top-level session); gsd-debugger never edits it. OVERWRITE on each dispatch and each wait -->
+
+goal: find_and_fix | find_root_cause_only
+tdd_mode: false
+tdd_phase: none | green
+resume_count: 0
+awaiting: none | [header of the return whose question is open]
+question: none | [checkpoint type and the full question text shown to the user]
+last_next_action: [next_action seen before the last re-dispatch]
 
 ## Symptoms
 <!-- Written during gathering, then immutable -->
@@ -51,9 +63,10 @@ started: [when it broke / always broken]
 ## Resolution
 <!-- OVERWRITE as understanding evolves -->
 
-root_cause: [empty until found]
+root_cause: [empty until found — may hold one OR a small set of contributing causes when the AND-gate fires; see gsd-core/references/debugger-rca-branching.md]
 fix: [empty until applied]
-verification: [empty until verified]
+verification: [empty until verified — holds the nested per-signal fix-acceptance guardrail record (map shape) when active; see gsd-core/references/debugger-fix-acceptance.md]
+oracle_type: [empty until the regression test is written — specified|derived|metamorphic|implicit; the assertion's oracle classification per gsd-core/references/debugger-repro-hardening.md]
 files_changed: []
 ```
 
@@ -73,8 +86,13 @@ files_changed: []
 - If Claude reads this after /clear, it knows exactly where to resume
 - Fields: hypothesis, test, expecting, next_action, reasoning_checkpoint, tdd_checkpoint
 - `next_action`: must be concrete and actionable — bad: "continue investigating"; good: "Add logging at line 47 of auth.js to observe token value before jwt.verify()"
-- `reasoning_checkpoint`: OVERWRITE before every fix_and_verify — five-field structured reasoning record (hypothesis, confirming_evidence, falsification_test, fix_rationale, blind_spots)
+- `reasoning_checkpoint`: OVERWRITE before every fix_and_verify — seven-field structured reasoning record (hypothesis, confirming_evidence, falsification_test, fix_rationale, blind_spots, candidate_causes, and_gate) — see `gsd-debugger.md` Structured Reasoning Checkpoint
 - `tdd_checkpoint`: OVERWRITE during TDD red/green phases — test file, name, status, failure output
+
+**Session Loop:**
+- Owned by the checkpoint loop that drives `gsd-debugger`; on Pi that loop is the top-level session, which holds no state in memory between turns (#5638)
+- OVERWRITE on each dispatch and each wait; the debugger never edits it and `## Current Focus` rewrites never touch it
+- Fields: goal, tdd_mode, tdd_phase, resume_count, awaiting, question, last_next_action
 
 **Symptoms:**
 - Written during initial gathering phase

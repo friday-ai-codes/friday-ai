@@ -95,6 +95,7 @@ exports.CLUSTERS = Object.freeze({
         'undo',
         'fast',
         'quick',
+        'quick-batch',
         'autonomous',
         'config',
         'progress',

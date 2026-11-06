@@ -17,12 +17,28 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.setExplicitProjectRoot = setExplicitProjectRoot;
+exports.resolveProjectRoot = resolveProjectRoot;
 exports.findProjectRoot = findProjectRoot;
 exports.consentProjectRoot = consentProjectRoot;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_os_1 = __importDefault(require("node:os"));
 const FIND_PROJECT_ROOT_MAX_DEPTH = 10;
+// #4894: an operator-supplied `--project-dir` IS the project root — the
+// dispatcher validates it and skips the ancestor walk-up for `cwd`, but code
+// that derives a root from a PHASE DIRECTORY (verification) never sees `cwd`.
+// The dispatcher records the validated root here, once per process, and those
+// callers resolve through `resolveProjectRoot`. `null` (the default, and what
+// the dispatcher sets when the flag is absent) leaves `findProjectRoot`'s
+// walk-up as the only source of truth, so no-flag behavior is unchanged.
+let explicitProjectRoot = null;
+function setExplicitProjectRoot(root) {
+    explicitProjectRoot = root;
+}
+function resolveProjectRoot(startDir) {
+    return explicitProjectRoot ?? findProjectRoot(startDir);
+}
 function findProjectRoot(startDir) {
     let resolvedStart;
     try {
@@ -43,12 +59,35 @@ function findProjectRoot(startDir) {
     catch {
         // fall through
     }
+    // A `.planning` that is itself a symlink is a deliberate hop into a separate
+    // tree (the documented "keep planning content out of the tracked repo"
+    // convention: `.planning -> ~/.gsd-external-planning/<project>/`, its own git
+    // repo). `fs.existsSync(d + '/.git')` DEREFERENCES `d`, so at `d ===
+    // <the .planning symlink path>` it finds the EXTERNAL store's `.git`, and
+    // both isInsideGitRepo/nearestGitRoot misread it as a crossed nested-child-
+    // repo boundary (#2843's guard). `fs.lstatSync` does not dereference its
+    // final path component, so it answers "is `d` ITSELF a symlink" (#4815).
+    //
+    // Deliberately scoped to a symlink named `.planning`, NOT any symlinked
+    // directory: a nested child repo reached through some other symlinked
+    // ancestor is still a real repo boundary, and skipping it would reopen
+    // #2843 through a different trigger.
+    function isSymlinkedPlanningDir(d) {
+        if (node_path_1.default.basename(d) !== '.planning')
+            return false;
+        try {
+            return node_fs_1.default.lstatSync(d).isSymbolicLink();
+        }
+        catch {
+            return false;
+        }
+    }
     // Walk upward, mirroring isInsideGitRepo from the CJS reference.
     function isInsideGitRepo(candidateParent) {
         let d = resolvedStart;
         while (d !== fsRoot) {
             try {
-                if (node_fs_1.default.existsSync(d + node_path_1.default.sep + '.git'))
+                if (!isSymlinkedPlanningDir(d) && node_fs_1.default.existsSync(d + node_path_1.default.sep + '.git'))
                     return true;
             }
             catch {
@@ -62,6 +101,33 @@ function findProjectRoot(startDir) {
             d = next;
         }
         return false;
+    }
+    // #2843: nearest ancestor (including `from` itself) that contains a `.git`,
+    // bounded by `upTo` (exclusive). Returns the git-repo root, or null if none
+    // exists before `upTo` / the filesystem root. Used to detect a NESTED child
+    // repo whose root is strictly below a candidate ancestor `.planning/` — in
+    // that case the caller's repo boundary sits between start and the ancestor,
+    // so trusting the ancestor's `.planning/` would silently cross into a
+    // different project. (No `git` subprocess — fs walk only, matching
+    // isInsideGitRepo's deliberate no-spawn contract.)
+    function nearestGitRoot(from, upTo) {
+        let d = from;
+        while (d !== fsRoot) {
+            if (d === upTo)
+                break;
+            try {
+                if (!isSymlinkedPlanningDir(d) && node_fs_1.default.existsSync(d + node_path_1.default.sep + '.git'))
+                    return d;
+            }
+            catch {
+                // ignore
+            }
+            const next = node_path_1.default.dirname(d);
+            if (next === d)
+                break;
+            d = next;
+        }
+        return null;
     }
     let dir = resolvedStart;
     let depth = 0;
@@ -114,6 +180,18 @@ function findProjectRoot(startDir) {
             // claims our startDir — explicit sub_repos config takes precedence over the
             // implicit .git signal. (#1422)
             if (isInsideGitRepo(parent)) {
+                // #2843: do NOT cross a git-repo boundary. If the caller is inside its
+                // OWN nested repo whose root is strictly below `parent`, trusting
+                // `parent`'s .planning/ would silently resolve to a DIFFERENT project.
+                // isInsideGitRepo only proved SOME .git exists between start and parent;
+                // verify that .git is parent's own (or absent between), not a nested
+                // child repo. If nearestGitRoot finds a .git strictly below parent,
+                // the boundary is crossed — fall through (do not return parent).
+                if (nearestGitRoot(resolvedStart, parent) !== null) {
+                    dir = parent;
+                    depth += 1;
+                    continue;
+                }
                 // Lookahead: walk ancestors above `parent` to find a sub_repos claim.
                 let ancestor = node_path_1.default.dirname(parent);
                 let ancestorDepth = 0;
@@ -169,6 +247,15 @@ function findProjectRoot(startDir) {
         try {
             const candidatePlanning = parent2 + node_path_1.default.sep + '.planning';
             if (node_fs_1.default.existsSync(candidatePlanning) && node_fs_1.default.statSync(candidatePlanning).isDirectory()) {
+                // #2843: do not cross a git-repo boundary. If the caller is inside its
+                // own nested repo (a .git strictly below parent2), parent2's .planning/
+                // belongs to a DIFFERENT project — keep walking is wrong; stop and fall
+                // through to the startDir fallback instead of silently resolving to the
+                // ancestor project. (Reached only when no .git exists anywhere in the
+                // chain per the triage, but guard defensively.)
+                if (nearestGitRoot(resolvedStart, parent2) !== null) {
+                    break;
+                }
                 return parent2;
             }
         }

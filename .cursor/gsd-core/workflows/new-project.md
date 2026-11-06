@@ -15,57 +15,35 @@ Valid GSD subagent types (use exact names — do not fall back to 'general-purpo
 
 <auto_mode>
 
-## Auto Mode Detection
-
-Check if `--auto` flag is present in {{GSD_ARGS}}.
-
-**If auto mode:**
-
-- Skip brownfield mapping offer (assume greenfield)
-- Skip deep questioning (extract context from provided document)
-- Config: YOLO mode is implicit (skip that question), but ask granularity/git/agents FIRST (Step 2a)
-- After config: run Steps 6-9 automatically with smart defaults:
-  - Research: Always yes
-  - Requirements: Include all table stakes + features from provided document
-  - Requirements approval: Auto-approve
-  - Roadmap approval: Auto-approve
-
-**Document requirement:**
-Auto mode requires an idea document — either:
-
-- File reference: `/gsd-new-project --auto @prd.md`
-- Pasted/written text in the prompt
-
-If no document content provided, error:
-
-```
-Error: --auto requires an idea document.
-
-Usage:
-  /gsd-new-project --auto @your-idea.md
-  /gsd-new-project --auto [paste or write your idea here]
-
-The document should describe what you want to build.
-```
+If `section_manifest` is `null` or `"auto-mode-detection"` is in its `included` list: read and execute `gsd-core/workflows/new-project/steps/auto-mode-detection.md`. Otherwise skip — do not read the file.
 
 </auto_mode>
 
 <process>
+
+**Compact Content Gate.** Read and follow `gsd-core/references/compact-content-gate.md` now — it states the `workflow.compact_content` check and the resolution rule this spine defers to. When it directs a Read, read `gsd-core/workflows/new-project/detail/elaboration.md` in full before continuing past this point; its content elaborates on two sections below (Step 2b's prior spike/sketch detection, and Step 6's researcher/synthesizer prompts).
 
 ## 1. Setup
 
 **MANDATORY FIRST STEP — Execute these checks before ANY user interaction:**
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
-INIT=$(gsd_run query init.new-project)
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+AUTO_PARAM=""; if [[ "$GSD_ARGS" =~ (^|[[:space:]])--auto([[:space:]]|$) ]]; then AUTO_PARAM="--auto"; fi
+INIT=$(gsd_run query init.new-project $AUTO_PARAM)
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 AGENT_SKILLS_RESEARCHER=$(gsd_run query agent-skills gsd-project-researcher)
 AGENT_SKILLS_SYNTHESIZER=$(gsd_run query agent-skills gsd-research-synthesizer)
 AGENT_SKILLS_ROADMAPPER=$(gsd_run query agent-skills gsd-roadmapper)
 ```
 
-Parse JSON for: `researcher_model`, `synthesizer_model`, `roadmapper_model`, `commit_docs`, `project_exists`, `has_codebase_map`, `planning_exists`, `has_existing_code`, `has_package_file`, `is_brownfield`, `needs_codebase_map`, `has_git`, `git_worktree_root`, `in_nested_subdir`, `project_path`, `agents_installed`, `missing_agents`, `agent_runtime`, `agents_dir`, `required_agents`, `required_agents_installed`, `missing_required_agents`, `agent_skill_payloads_available`, `agent_skill_payload_agents`.
+Parse JSON for: `researcher_model`, `synthesizer_model`, `roadmapper_model`, `commit_docs`, `project_exists`, `has_codebase_map`, `planning_exists`, `has_existing_code`, `has_package_file`, `is_brownfield`, `needs_codebase_map`, `has_git`, `git_worktree_root`, `in_nested_subdir`, `project_path`, `agents_installed`, `missing_agents`, `agent_runtime`, `agents_dir`, `required_agents`, `required_agents_installed`, `missing_required_agents`, `agent_skill_payloads_available`, `agent_skill_payload_agents`, `requirements_exists`, `init_incomplete`, `requirements_path`, `roadmap_path`, `config_path`, `research_dir`, `response_language`.
+
+**If `response_language` is set:** All user-facing output of this workflow — narration between tool calls, status updates, progress notes, findings, questions, prompts, and explanations — MUST be presented in `{response_language}`. Technical terms, code, file paths, and subagent prompts stay in English — only user-facing output is translated.
 
 **If `agents_installed` is false:** Display a warning before proceeding:
 ```text
@@ -97,26 +75,30 @@ Skip Steps 6–7 (parallel research and synthesis) and proceed directly to roadm
 
 Derive `RUNTIME` from the invoking prompt's `execution_context` path:
 - Path contains `/.codex/` → `RUNTIME=codex`
-- Path contains `/.gemini/` → `RUNTIME=gemini`
+- Path contains `/.gemini/antigravity/`, `/.gemini/antigravity-ide/` or `/.gemini/antigravity-cli/` → `RUNTIME=antigravity`
 - Path contains `/.config/opencode/` or `/.opencode/` → `RUNTIME=opencode`
+- Path contains `/.trae/` → `RUNTIME=trae`
 - Otherwise → `RUNTIME=claude`
 
 If `execution_context` path is not available, fall back to env vars:
 ```bash
 if [ -n "$CODEX_HOME" ]; then RUNTIME="codex"
-elif [ -n "$GEMINI_CONFIG_DIR" ]; then RUNTIME="gemini"
+elif [ -n "$ANTIGRAVITY_CONFIG_DIR" ]; then RUNTIME="antigravity"
 elif [ -n "$OPENCODE_CONFIG_DIR" ] || [ -n "$OPENCODE_CONFIG" ]; then RUNTIME="opencode"
+elif [ -n "$TRAE_CONFIG_DIR" ]; then RUNTIME="trae"
 else RUNTIME="claude"; fi
 ```
 
-Set the instruction file variable:
+Set the instruction file variable via the shared runtime-name policy adapter (`gsd_run query project-instruction-file`, backed by `getProjectInstructionFile` in `runtime-name-policy.cjs` — the single source of truth shared with `profile-output.cjs`):
 ```bash
-if [ "$RUNTIME" = "codex" ]; then INSTRUCTION_FILE="AGENTS.md"; else INSTRUCTION_FILE=".cursor/rules/"; fi
+INSTRUCTION_FILE=$(gsd_run query project-instruction-file --runtime "$RUNTIME")
 ```
 
 All subsequent references to the project instruction file use `$INSTRUCTION_FILE`.
 
-**If `project_exists` is true:** Error — project already initialized. Use `/gsd-progress`.
+**If `project_exists` is true and `init_incomplete` is true (#4040 — interrupted bootstrap):** Resume initialization instead of erroring. `.planning/` exists but initialization stopped before all core artifacts landed. Keep the existing `PROJECT.md` and any already-created artifacts (`REQUIREMENTS.md` if present, `config.json`); skip the steps that would recreate them and continue the flow from the first missing artifact in init order — `REQUIREMENTS.md` → `ROADMAP.md` + `STATE.md` — until all exist. Do not error and do not bounce the user back to `/gsd-progress` (that routing loop is the #4040 bug).
+
+**If `project_exists` is true and `init_incomplete` is false:** Error — project already initialized. Use `/gsd-progress`.
 
 **Git init (#3491 — never nest `.git` inside an existing worktree):**
 
@@ -128,200 +110,17 @@ All subsequent references to the project instruction file use `$INSTRUCTION_FILE
 
 **If auto mode:** Skip to Step 4 (assume greenfield, synthesize PROJECT.md from provided document).
 
-**If `needs_codebase_map` is true** (from init — existing code detected but no codebase map):
-
-
-**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `conversational prompting` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Gemini CLI, etc.) where `conversational prompting` is not available.
-Use conversational prompting:
-
-- header: "Codebase"
-- question: "I detected existing code in this directory. Would you like to map the codebase first?"
-- options:
-  - "Map codebase first" — Run /gsd-map-codebase to understand existing architecture (Recommended)
-  - "Skip mapping" — Proceed with project initialization
-
-**If "Map codebase first":**
-
-```
-Run `/gsd-map-codebase` first, then return to `/gsd-new-project`
-```
-
-Exit command.
+If `section_manifest` is `null` or `"codebase-map-offer"` is in its `included` list: read and execute `gsd-core/workflows/new-project/steps/codebase-map-offer.md`. Otherwise skip — do not read the file.
 
 **If "Skip mapping" OR `needs_codebase_map` is false:** Continue to Step 3.
 
-## 2a. Auto Mode Config (auto mode only)
-
-**If auto mode:** Collect config settings upfront before processing the idea document.
-
-YOLO mode is implicit (auto = YOLO). Ask remaining config questions:
-
-**Round 1 — Core settings (3 questions, no Mode question):**
-
-```
-conversational prompting([
-  {
-    header: "Granularity",
-    question: "How finely should scope be sliced into phases?",
-    multiSelect: false,
-    options: [
-      { label: "Coarse (Recommended)", description: "Fewer, broader phases (3-5 phases, 1-3 plans each)" },
-      { label: "Standard", description: "Balanced phase size (5-8 phases, 3-5 plans each)" },
-      { label: "Fine", description: "Many focused phases (8-12 phases, 5-10 plans each)" }
-    ]
-  },
-  {
-    header: "Execution",
-    question: "Run plans in parallel?",
-    multiSelect: false,
-    options: [
-      { label: "Parallel (Recommended)", description: "Independent plans run simultaneously" },
-      { label: "Sequential", description: "One plan at a time" }
-    ]
-  },
-  {
-    header: "Git Tracking",
-    question: "Commit planning docs to git?",
-    multiSelect: false,
-    options: [
-      { label: "Yes (Recommended)", description: "Planning docs tracked in version control" },
-      { label: "No", description: "Keep .planning/ local-only (add to .gitignore)" }
-    ]
-  }
-])
-```
-
-**Round 2 — Workflow agents (same as Step 5):**
-
-```
-conversational prompting([
-  {
-    header: "Research",
-    question: "Research before planning each phase? (adds tokens/time)",
-    multiSelect: false,
-    options: [
-      { label: "Yes (Recommended)", description: "Investigate domain, find patterns, surface gotchas" },
-      { label: "No", description: "Plan directly from requirements" }
-    ]
-  },
-  {
-    header: "Plan Check",
-    question: "Verify plans will achieve their goals? (adds tokens/time)",
-    multiSelect: false,
-    options: [
-      { label: "Yes (Recommended)", description: "Catch gaps before execution starts" },
-      { label: "No", description: "Execute plans without verification" }
-    ]
-  },
-  {
-    header: "Verifier",
-    question: "Verify work satisfies requirements after each phase? (adds tokens/time)",
-    multiSelect: false,
-    options: [
-      { label: "Yes (Recommended)", description: "Confirm deliverables match phase goals" },
-      { label: "No", description: "Trust execution, skip verification" }
-    ]
-  },
-  {
-    header: "Drift Guard",
-    question: "Enable the plan drift-guard? It verifies that symbols your plans cite (decorators, classes, functions, CLI flags) actually exist in your source at review time, catching hallucinated names before execution. [Y/n]",
-    multiSelect: false,
-    options: [
-      { label: "Yes (Recommended)", description: "Resolve symbol references against live source during plan review — catches hallucinated names before execution" },
-      { label: "No", description: "Skip symbol grounding — plan review proceeds without source verification" }
-    ]
-  },
-  {
-    header: "AI Models",
-    question: "Which AI models for planning agents?",
-    multiSelect: false,
-    options: [
-      { label: "Balanced (Recommended)", description: "Sonnet for most agents — good quality/cost ratio" },
-      { label: "Quality", description: "Opus for research/roadmap — higher cost, deeper analysis" },
-      { label: "Budget", description: "Haiku where possible — fastest, lowest cost" },
-      { label: "Inherit", description: "Use the current session model for all agents (OpenCode /model)" }
-    ]
-  }
-])
-```
-
-**Round 3 — PR body onboarding:**
-
-Ask which optional PRD-style sections `/gsd-ship` should append to generated PR bodies. These map to `ship.pr_body_sections`; selected sections are written with `"enabled": true`, unselected seeded sections are written with `"enabled": false` so the project can enable them later without editing `ship.md`.
-
-Prefer lean/agile PRD sections that make the delivered increment clear: user stories, acceptance criteria, Definition of Done or release criteria, risks, dependencies, and stakeholder review.
-
-```
-conversational prompting([
-  {
-    header: "PR Body",
-    question: "Which optional PRD-style sections should /gsd-ship include in PR bodies?",
-    multiSelect: true,
-    options: [
-      { label: "User Stories & Acceptance Criteria", description: "Append user-facing stories and acceptance checks from REQUIREMENTS.md" },
-      { label: "Risks & Dependencies", description: "Append rollout risks, dependencies, and rollback notes from PLAN.md" },
-      { label: "Success Metrics & Release Criteria", description: "Append measurable Definition of Done and release checks for stakeholder review" },
-      { label: "Stakeholder Review & Approval", description: "Append approval checklist for projects that need sign-off traceability" }
-    ]
-  }
-])
-```
-
-Build `ship.pr_body_sections` from those choices. For selected options, set `enabled: true`; for seeded but unselected options, set `enabled: false`. If the user selects none, use `"ship":{"pr_body_sections":[]}`.
-
-Create `.planning/config.json` with all settings (CLI fills in remaining defaults automatically):
-
-```bash
-mkdir -p .planning
-gsd_run query config-new-project '{"mode":"yolo","granularity":"[selected]","parallelization":true|false,"commit_docs":true|false,"model_profile":"quality|balanced|budget|inherit","workflow":{"research":true|false,"plan_check":true|false,"verifier":true|false,"nyquist_validation":true|false,"auto_advance":true},"plan_review":{"source_grounding":true|false},"ship":{"pr_body_sections":[{"heading":"User Stories & Acceptance Criteria","enabled":true|false,"source":"REQUIREMENTS.md ## User Stories || REQUIREMENTS.md ## Acceptance Criteria","fallback":"- Acceptance criteria are covered by the linked requirements and verification evidence."},{"heading":"Risks & Dependencies","enabled":true|false,"source":"PLAN.md ## Risks || PLAN.md ## Dependencies","fallback":"- No known high-risk rollout dependencies."},{"heading":"Success Metrics & Release Criteria","enabled":true|false,"source":"REQUIREMENTS.md ## Definition of Done || VERIFICATION.md ## Release Criteria","fallback":"- Release when automated verification and required manual checks pass."},{"heading":"Stakeholder Review & Approval","enabled":true|false,"template":"- Product owner approval pending for {phase_name}."}]}}'
-```
-
-**If commit_docs = No:** Add `.planning/` to `.gitignore`.
-
-**Commit config.json:**
-
-```bash
-mkdir -p .planning
-gsd_run query commit "chore: add project config" --files .planning/config.json
-```
-
-**Persist auto-advance chain flag to config (survives context compaction):**
-
-```bash
-gsd_run query config-set workflow._auto_chain_active true
-```
-
-Proceed to Step 4 (skip Steps 3 and 5).
+If `section_manifest` is `null` or `"auto-mode-config"` is in its `included` list: read and execute `gsd-core/workflows/new-project/steps/auto-mode-config.md`. Otherwise skip — do not read the file.
 
 ## 2b. Prior Spike/Sketch Detection
 
-Check for existing spike and sketch work that should inform project setup:
+Check for a spike/sketch findings skill or raw `.planning/{spikes,sketches}/MANIFEST.md` files. If any exist, surface them before questioning (which findings-skill, if any, and any raw un-wrapped spikes/sketches worth `/gsd-spike --wrap-up` / `/gsd-sketch --wrap-up`), and if a findings skill exists, read its SKILL.md to inform the questioning phase — it carries validated patterns, constraints, and design decisions that should shape the project definition.
 
-```bash
-# Check for spike findings skill (project-local)
-SPIKE_SKILL=$(ls ./.cursor/skills/spike-findings-*/SKILL.md 2>/dev/null | head -1 || true)
-
-# Check for sketch findings skill (project-local)
-SKETCH_SKILL=$(ls ./.cursor/skills/sketch-findings-*/SKILL.md 2>/dev/null | head -1 || true)
-
-# Check for raw spikes/sketches in .planning/
-HAS_SPIKES=$(ls .planning/spikes/MANIFEST.md 2>/dev/null)
-HAS_SKETCHES=$(ls .planning/sketches/MANIFEST.md 2>/dev/null)
-```
-
-If any of these exist, surface them before questioning:
-
-```
-⚡ Prior exploration detected:
-{if SPIKE_SKILL}  ✓ Spike findings skill: {path} — validated patterns from experiments
-{if SKETCH_SKILL}  ✓ Sketch findings skill: {path} — validated design decisions
-{if HAS_SPIKES && !SPIKE_SKILL}  ◆ Raw spikes in .planning/spikes/ — consider `/gsd-spike --wrap-up` to package findings
-{if HAS_SKETCHES && !SKETCH_SKILL}  ◆ Raw sketches in .planning/sketches/ — consider `/gsd-sketch --wrap-up` to package findings
-
-These findings will be incorporated into project context and available to planning agents.
-```
-
-If spike/sketch findings skills exist, read their SKILL.md files to inform the questioning phase — they contain validated patterns, constraints, and design decisions that should shape the project definition.
+Exact detection commands and the surfaced-findings banner: `gsd-core/workflows/new-project/detail/elaboration.md` § 1.
 
 ## 3. Deep Questioning
 
@@ -330,9 +129,7 @@ If spike/sketch findings skills exist, read their SKILL.md files to inform the q
 **Display stage banner:**
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► QUESTIONING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► QUESTIONING
 ```
 
 **Open the conversation:**
@@ -500,10 +297,10 @@ gsd_run query commit "docs: initialize project" --files .planning/PROJECT.md
 
 **If auto mode:** Skip — config was collected in Step 2a. Proceed to Step 5.5.
 
-**Check for global defaults** at `~/.gsd/defaults.json`. If the file exists, read and display its contents before asking:
+**Check for global defaults** at `${GSD_HOME:-$HOME}/.gsd/defaults.json` (`~/.gsd/defaults.json` unless `GSD_HOME` is set). If the file exists, read and display its contents before asking:
 
 ```bash
-DEFAULTS_RAW=$(cat ~/.gsd/defaults.json 2>/dev/null)
+DEFAULTS_RAW=$(cat "${GSD_HOME:-$HOME}/.gsd/defaults.json" 2>/dev/null)
 ```
 
 Format the JSON into human-readable bullets using these label mappings:
@@ -717,6 +514,10 @@ These spawn additional agents during planning/execution. They add tokens and tim
 
 All recommended for important projects. Skip for quick experiments.
 
+A fourth question in this same round covers Compact Content (#4139) — not a spawned agent,
+but grouped here because it's the last general workflow-behavior toggle before the more
+involved AI-models round below.
+
 ```
 questions: [
   {
@@ -747,17 +548,59 @@ questions: [
     ]
   },
   {
+    header: "Compact Content",
+    question: "Use token-minimized instruction content where available? (smaller context footprint)",
+    multiSelect: false,
+    options: [
+      { label: "No (Recommended)", description: "Full instruction detail loaded every time. Best while evaluating GSD or on a large context window." },
+      { label: "Yes", description: "Terser instructions where a compact variant exists; canonical detail loads only when actually needed. Frees up context for long sessions or large codebases." }
+    ]
+  }
+]
+
+// Model profile uses a two-question split because conversational prompting enforces a hard
+// 4-option cap and there are 5 valid profiles (quality, balanced, budget, adaptive,
+// inherit). Q1 routes between adaptive/standard-tier/inherit; Q2 (shown only when
+// Q1 = "Standard tier…") picks among the three standard profiles. Mirrors the
+// /gsd-settings split (#3784, #1516).
+questions: [
+  {
     header: "AI Models",
     question: "Which AI models for planning agents?",
     multiSelect: false,
     options: [
-      { label: "Balanced (Recommended)", description: "Sonnet for most agents — good quality/cost ratio" },
-      { label: "Quality", description: "Opus for research/roadmap — higher cost, deeper analysis" },
-      { label: "Budget", description: "Haiku where possible — fastest, lowest cost" },
-      { label: "Inherit", description: "Use the current session model for all agents (OpenCode /model)" }
+      { label: "Adaptive (Recommended)", description: "Role-based cost optimization: heavy roles use the highest-tier model available on the active runtime, light roles use the cheapest. Best balance of quality and cost across all supported runtimes (Claude, Codex, Antigravity, OpenRouter, local)." },
+      { label: "Standard tier…", description: "Choose Quality, Balanced, or Budget — flat tier applied to all agents" },
+      { label: "Inherit", description: "Use the current session model for all agents (required for non-Claude runtimes: Codex, Antigravity, OpenCode /model, OpenRouter, local models)" }
     ]
   }
 ]
+
+**Conditional visibility — model_profile (Q2):**
+  Only ask this question when Q1's answer is "Standard tier…".
+  If Q1 = "Adaptive (Recommended)" → write model_profile=adaptive and SKIP Q2.
+  If Q1 = "Inherit"                → write model_profile=inherit and SKIP Q2.
+  If user cancels Q2 after picking "Standard tier…" → leave existing model_profile value unchanged.
+
+questions: [
+  {
+    question: "Which standard profile? (Quality / Balanced / Budget)",
+    header: "Model Tier",
+    multiSelect: false,
+    options: [
+      { label: "Quality", description: "Opus everywhere except verification (highest cost) — Claude only" },
+      { label: "Balanced", description: "Opus for planning, Sonnet for research/execution/verification — Claude only" },
+      { label: "Budget", description: "Sonnet for writing, Haiku for research/verification (lowest cost) — Claude only" }
+    ]
+  }
+]
+
+// Map UI choices → config values:
+//   Q1 "Adaptive (Recommended)"         → model_profile = "adaptive"
+//   Q1 "Inherit"                        → model_profile = "inherit"
+//   Q1 "Standard tier…" + Q2 "Quality"  → model_profile = "quality"
+//   Q1 "Standard tier…" + Q2 "Balanced" → model_profile = "balanced"
+//   Q1 "Standard tier…" + Q2 "Budget"   → model_profile = "budget"
 ```
 
 **PR body onboarding:** Ask which optional PRD-style sections `/gsd-ship` should append to generated PR bodies. Use the same `ship.pr_body_sections` mapping as Step 2a: selected sections get `enabled: true`, seeded-but-unselected sections get `enabled: false`, and selecting none writes an empty list. Prefer lean/agile PRD sections that make user value, acceptance criteria, Definition of Done, and stakeholder traceability explicit.
@@ -773,7 +616,7 @@ Create `.planning/config.json` with all settings (CLI fills in remaining default
 
 ```bash
 mkdir -p .planning
-gsd_run query config-new-project '{"mode":"[yolo|interactive]","granularity":"[selected]","parallelization":true|false,"commit_docs":true|false,"model_profile":"quality|balanced|budget|inherit","workflow":{"research":true|false,"plan_check":true|false,"verifier":true|false,"nyquist_validation":[false if granularity=coarse, true otherwise]},"plan_review":{"source_grounding":true|false},"ship":{"pr_body_sections":[{"heading":"User Stories & Acceptance Criteria","enabled":true|false,"source":"REQUIREMENTS.md ## User Stories || REQUIREMENTS.md ## Acceptance Criteria","fallback":"- Acceptance criteria are covered by the linked requirements and verification evidence."},{"heading":"Risks & Dependencies","enabled":true|false,"source":"PLAN.md ## Risks || PLAN.md ## Dependencies","fallback":"- No known high-risk rollout dependencies."},{"heading":"Success Metrics & Release Criteria","enabled":true|false,"source":"REQUIREMENTS.md ## Definition of Done || VERIFICATION.md ## Release Criteria","fallback":"- Release when automated verification and required manual checks pass."},{"heading":"Stakeholder Review & Approval","enabled":true|false,"template":"- Product owner approval pending for {phase_name}."}]}}'
+gsd_run query config-new-project '{"mode":"[yolo|interactive]","granularity":"[selected]","parallelization":true|false,"commit_docs":true|false,"model_profile":"quality|balanced|budget|adaptive|inherit","workflow":{"research":true|false,"plan_check":true|false,"verifier":true|false,"compact_content":true|false,"nyquist_validation":[false if granularity=coarse, true otherwise]},"plan_review":{"source_grounding":true|false},"ship":{"pr_body_sections":[{"heading":"User Stories & Acceptance Criteria","enabled":true|false,"source":"REQUIREMENTS.md ## User Stories || REQUIREMENTS.md ## Acceptance Criteria","fallback":"- Acceptance criteria are covered by the linked requirements and verification evidence."},{"heading":"Risks & Dependencies","enabled":true|false,"source":"PLAN.md ## Risks || PLAN.md ## Dependencies","fallback":"- No known high-risk rollout dependencies."},{"heading":"Success Metrics & Release Criteria","enabled":true|false,"source":"REQUIREMENTS.md ## Definition of Done || VERIFICATION.md ## Release Criteria","fallback":"- Release when automated verification and required manual checks pass."},{"heading":"Stakeholder Review & Approval","enabled":true|false,"template":"- Product owner approval pending for {phase_name}."}]}}'
 ```
 
 **Note:** Run `/gsd-settings` anytime to update model profile, workflow agents, branching strategy, and other preferences.
@@ -797,15 +640,18 @@ gsd_run query commit "chore: add project config" --files .planning/config.json
 
 **Detect multi-repo workspace:**
 
-Check for directories with their own `.git` folders (separate repos within the workspace):
+Check for directories with their own `.git` (separate repos within the workspace —
+this also finds linked git worktree children, whose `.git` is a file rather than a
+directory, unlike a plain `find -type d` predicate would):
 
 ```bash
-find . -maxdepth 1 -type d -not -name ".*" -not -name "node_modules" -exec test -d "{}/.git" \; -print
+gsd_run query init.new-project
 ```
 
-**If sub-repos found:**
+Read the `sub_repos_detected` array from the JSON output — each entry is a bare
+directory name already relative to the workspace root (e.g. `"backend"`).
 
-Strip the `./` prefix to get directory names (e.g., `./backend` → `backend`).
+**If sub-repos found:**
 
 Use conversational prompting:
 
@@ -846,9 +692,7 @@ Use conversational prompting:
 Display stage banner:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► RESEARCHING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► RESEARCHING
 
 Researching [domain] ecosystem...
 ```
@@ -876,171 +720,12 @@ Display spawning indicator:
   → Pitfalls research
 ```
 
-Spawn 4 parallel gsd-project-researcher agents with path references:
+Spawn 4 parallel gsd-project-researcher agents — one per dimension (Stack, Features, Architecture, Pitfalls) — each given the domain and greenfield/subsequent milestone context, a dimension-specific question, a downstream-consumer note (what the next stage needs from this file), and a quality gate; each writes its own file (STACK.md / FEATURES.md / ARCHITECTURE.md / PITFALLS.md) under `{research_dir}/` from its template.
 
-```text
-Agent(prompt="<research_type>
-Project Research — Stack dimension for [domain].
-</research_type>
-
-<milestone_context>
-[greenfield OR subsequent]
-
-Greenfield: Research the standard stack for building [domain] from scratch.
-Subsequent: Research what's needed to add [target features] to an existing [domain] app. Don't re-research the existing system.
-</milestone_context>
-
-<question>
-What's the standard 2025 stack for [domain]?
-</question>
-
-<files_to_read>
-- {project_path} (Project context and goals)
-</files_to_read>
-
-${AGENT_SKILLS_RESEARCHER}
-
-<downstream_consumer>
-Your STACK.md feeds into roadmap creation. Be prescriptive:
-- Specific libraries with versions
-- Clear rationale for each choice
-- What NOT to use and why
-</downstream_consumer>
-
-<quality_gate>
-- [ ] Versions are current (verify with Context7/official docs, not training data)
-- [ ] Rationale explains WHY, not just WHAT
-- [ ] Confidence levels assigned to each recommendation
-</quality_gate>
-
-<output>
-Write to: .planning/research/STACK.md
-Use template: ./.cursor/gsd-core/templates/research-project/STACK.md
-</output>
-", subagent_type="gsd-project-researcher", model="{researcher_model}", description="Stack research")
-
-Agent(prompt="<research_type>
-Project Research — Features dimension for [domain].
-</research_type>
-
-<milestone_context>
-[greenfield OR subsequent]
-
-Greenfield: What features do [domain] products have? What's table stakes vs differentiating?
-Subsequent: How do [target features] typically work? What's expected behavior?
-</milestone_context>
-
-<question>
-What features do [domain] products have? What's table stakes vs differentiating?
-</question>
-
-<files_to_read>
-- {project_path} (Project context)
-</files_to_read>
-
-${AGENT_SKILLS_RESEARCHER}
-
-<downstream_consumer>
-Your FEATURES.md feeds into requirements definition. Categorize clearly:
-- Table stakes (must have or users leave)
-- Differentiators (competitive advantage)
-- Anti-features (things to deliberately NOT build)
-</downstream_consumer>
-
-<quality_gate>
-- [ ] Categories are clear (table stakes vs differentiators vs anti-features)
-- [ ] Complexity noted for each feature
-- [ ] Dependencies between features identified
-</quality_gate>
-
-<output>
-Write to: .planning/research/FEATURES.md
-Use template: ./.cursor/gsd-core/templates/research-project/FEATURES.md
-</output>
-", subagent_type="gsd-project-researcher", model="{researcher_model}", description="Features research")
-
-Agent(prompt="<research_type>
-Project Research — Architecture dimension for [domain].
-</research_type>
-
-<milestone_context>
-[greenfield OR subsequent]
-
-Greenfield: How are [domain] systems typically structured? What are major components?
-Subsequent: How do [target features] integrate with existing [domain] architecture?
-</milestone_context>
-
-<question>
-How are [domain] systems typically structured? What are major components?
-</question>
-
-<files_to_read>
-- {project_path} (Project context)
-</files_to_read>
-
-${AGENT_SKILLS_RESEARCHER}
-
-<downstream_consumer>
-Your ARCHITECTURE.md informs phase structure in roadmap. Include:
-- Component boundaries (what talks to what)
-- Data flow (how information moves)
-- Suggested build order (dependencies between components)
-</downstream_consumer>
-
-<quality_gate>
-- [ ] Components clearly defined with boundaries
-- [ ] Data flow direction explicit
-- [ ] Build order implications noted
-</quality_gate>
-
-<output>
-Write to: .planning/research/ARCHITECTURE.md
-Use template: ./.cursor/gsd-core/templates/research-project/ARCHITECTURE.md
-</output>
-", subagent_type="gsd-project-researcher", model="{researcher_model}", description="Architecture research")
-
-Agent(prompt="<research_type>
-Project Research — Pitfalls dimension for [domain].
-</research_type>
-
-<milestone_context>
-[greenfield OR subsequent]
-
-Greenfield: What do [domain] projects commonly get wrong? Critical mistakes?
-Subsequent: What are common mistakes when adding [target features] to [domain]?
-</milestone_context>
-
-<question>
-What do [domain] projects commonly get wrong? Critical mistakes?
-</question>
-
-<files_to_read>
-- {project_path} (Project context)
-</files_to_read>
-
-${AGENT_SKILLS_RESEARCHER}
-
-<downstream_consumer>
-Your PITFALLS.md prevents mistakes in roadmap/planning. For each pitfall:
-- Warning signs (how to detect early)
-- Prevention strategy (how to avoid)
-- Which phase should address it
-</downstream_consumer>
-
-<quality_gate>
-- [ ] Pitfalls are specific to this domain (not generic advice)
-- [ ] Prevention strategies are actionable
-- [ ] Phase mapping included where relevant
-</quality_gate>
-
-<output>
-Write to: .planning/research/PITFALLS.md
-Use template: ./.cursor/gsd-core/templates/research-project/PITFALLS.md
-</output>
-", subagent_type="gsd-project-researcher", model="{researcher_model}", description="Pitfalls research")
-```
-
+<!-- gsd-protected -->
 > **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling all 4 researcher Agent() calls above, do NOT read research files or synthesize content independently while the subagents are active. Wait for all 4 researchers to complete before spawning the synthesizer. This prevents duplicate work and wasted context.
+
+**Model omission (#2517) applies to every one of these 5 spawns** (4 researchers + synthesizer): omit the `model=` parameter entirely when the value it would carry (`researcher_model`, `synthesizer_model`) is `"inherit"` or empty — passing it literally 404s on runtimes without native tier aliases (the default on non-Claude runtimes). Omitting `model=` inherits the orchestrator's model.
 
 After all 4 agents complete, spawn synthesizer to create SUMMARY.md:
 
@@ -1050,31 +735,40 @@ Agent(prompt="
 Synthesize research outputs into SUMMARY.md.
 </task>
 
-<files_to_read>
-- .planning/research/STACK.md
-- .planning/research/FEATURES.md
-- .planning/research/ARCHITECTURE.md
-- .planning/research/PITFALLS.md
-</files_to_read>
+<required_reading>
+- {research_dir}/STACK.md
+- {research_dir}/FEATURES.md
+- {research_dir}/ARCHITECTURE.md
+- {research_dir}/PITFALLS.md
+</required_reading>
 
 ${AGENT_SKILLS_SYNTHESIZER}
 
 <output>
-Write to: .planning/research/SUMMARY.md
-Use template: ./.cursor/gsd-core/templates/research-project/SUMMARY.md
+Write to: {research_dir}/SUMMARY.md
+Use template: .cursor/gsd-core/templates/research-project/SUMMARY.md
 Commit after writing.
 </output>
 ", subagent_type="gsd-research-synthesizer", model="{synthesizer_model}", description="Synthesize research")
 ```
 
+<!-- gsd-protected -->
 > **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling Agent() above, stop working on this task immediately. Do not read more files, edit code, or run tests related to this task while the subagent is active. Wait for the subagent to return its result. This prevents duplicate work, conflicting edits, and wasted context. Only resume when the subagent result is available.
+
+**Synthesizer output self-heal (#222) — verify SUMMARY.md materialized:** The synthesizer's canonical output is `.planning/research/SUMMARY.md` on disk; its brief structured return (`## SYNTHESIS COMPLETE` plus a few `###` confirmation lines) is NOT the file content. The restriction is not always fabricated: Cursor refuses a subagent's `Write` to a few exact basenames — `SUMMARY.md` among them — with `Subagents should return findings as text, not write report files` (observed on Cursor 2.1.301), and the synthesizer is told to return the full document inline when its `Write` hits that error; the refusal is real, not fabricated. It depends on the exact basename (`SUMMARY.md`, `REPORT.md`, `FINDINGS.md`, `ANALYSIS.md`, case-insensitive; a prefixed name such as `01-01-SUMMARY.md` and other agents' files write fine), so do not tell other agents to avoid `Write`. Either cause lands in step 2. A known LLM false-refusal (issue #222) sometimes makes the agent return the full SUMMARY.md document inline — fabricating a write restriction (e.g. "the runtime is blocking file writes") — instead of writing the file. Prompt hardening alone does not fully eliminate it, so the orchestrator MUST absorb either cause deterministically before spawning `gsd-roadmapper`:
+
+1. Verify `.planning/research/SUMMARY.md` exists AND is substantive — non-empty, and free of any leftover `<!-- gsd-write-continue -->` continuation sentinel (which marks a truncated/incomplete write). You may validate with `gsd_run verify-summary .planning/research/SUMMARY.md` — it exits 0 regardless, so check its JSON `passed` field (`"passed": false` means missing or invalid), not the process exit code. If it passes, continue normally.
+2. If it is MISSING or invalid AND the synthesizer's return message contains the FULL SUMMARY.md document — recognizable by the template's top-level markers `# Project Research Summary`, `## Key Findings`, `## Implications for Roadmap`, and `## Sources`, not merely the brief `## SYNTHESIS COMPLETE` confirmation — the synthesizer returned the document inline (the #222 false-refusal, or the runtime's real refusal of the name `SUMMARY.md`): write that returned document to `.planning/research/SUMMARY.md` with the Write tool, then commit ALL research artifacts the synthesizer owns (it commits on behalf of the four researchers) with `gsd_run query commit "docs: complete project research" --files .planning/research/` unless they are already committed. Log `⚠ #222 self-heal: synthesizer returned SUMMARY.md inline without writing it; orchestrator persisted the file.`
+3. If it is MISSING or invalid AND the return is only a brief confirmation (no full SUMMARY document to recover), the synthesizer genuinely failed — surface the error and stop; do NOT spawn `gsd-roadmapper` against a missing or incomplete SUMMARY.md.
+
+This guarantees `gsd-roadmapper` (which lists SUMMARY.md as required reading) never runs against a missing or truncated SUMMARY.md.
+
+Exact agent prompts (all four researcher dimensions): `gsd-core/workflows/new-project/detail/elaboration.md` § 2.
 
 Display research complete banner and key findings:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► RESEARCH COMPLETE ✓
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► RESEARCH COMPLETE ✓
 
 ## Key Findings
 
@@ -1092,9 +786,7 @@ Files: `.planning/research/`
 Display stage banner:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► DEFINING REQUIREMENTS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► DEFINING REQUIREMENTS
 ```
 
 **Load context:**
@@ -1261,9 +953,7 @@ When `TEXT_MODE=true` (per the workflow's existing TEXT_MODE handling for non-Cl
 Display stage banner:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► CREATING ROADMAP
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► CREATING ROADMAP
 
 ◆ Spawning roadmapper... (runs in a subagent — no output until it returns, ~1–5 min; expected, not a freeze)
 ```
@@ -1291,12 +981,12 @@ Spawn gsd-roadmapper agent with path references:
 Agent(prompt="
 <planning_context>
 
-<files_to_read>
-- .planning/PROJECT.md (Project context)
-- .planning/REQUIREMENTS.md (v1 Requirements)
-- .planning/research/SUMMARY.md (Research findings - if exists)
-- .planning/config.json (Granularity and mode settings)
-</files_to_read>
+<required_reading>
+- {project_path} (Project context)
+- {requirements_path} (v1 Requirements)
+- {research_dir}/SUMMARY.md (Research findings - if exists)
+- {config_path} (Granularity and mode settings)
+</required_reading>
 
 ${AGENT_SKILLS_ROADMAPPER}
 
@@ -1392,9 +1082,9 @@ Use conversational prompting:
   User feedback on roadmap:
   [user's notes]
 
-  <files_to_read>
-  - .planning/ROADMAP.md (Current roadmap to revise)
-  </files_to_read>
+  <required_reading>
+  - {roadmap_path} (Current roadmap to revise)
+  </required_reading>
 
   ${AGENT_SKILLS_ROADMAPPER}
 
@@ -1430,9 +1120,7 @@ gsd_run query commit "docs: create roadmap ([N] phases)" --files .planning/ROADM
 Present completion summary:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► PROJECT INITIALIZED ✓
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► PROJECT INITIALIZED ✓
 
 **[Project Name]**
 
@@ -1451,9 +1139,7 @@ Present completion summary:
 **If auto mode:**
 
 ```
-╔══════════════════════════════════════════╗
-║  AUTO-ADVANCING → DISCUSS PHASE 1        ║
-╚══════════════════════════════════════════╝
+### AUTO-ADVANCING → DISCUSS PHASE 1
 ```
 
 Exit skill and invoke SlashCommand("/gsd-discuss-phase 1 --auto")
@@ -1470,7 +1156,7 @@ PHASE1_HAS_UI=$(echo "$PHASE1_SECTION" | grep -qi "UI hint.*yes" && echo "true" 
 **If Phase 1 has UI (`PHASE1_HAS_UI` is `true`):**
 
 ```
-───────────────────────────────────────────────────────────────
+---
 
 ## ▶ Next Up — [${PROJECT_CODE}] ${PROJECT_TITLE}
 
@@ -1486,13 +1172,13 @@ PHASE1_HAS_UI=$(echo "$PHASE1_SECTION" | grep -qi "UI hint.*yes" && echo "true" 
 - /gsd-ui-phase 1 — generate UI design contract (recommended for frontend phases)
 - /gsd-plan-phase 1 — skip discussion, plan directly
 
-───────────────────────────────────────────────────────────────
+---
 ```
 
 **If Phase 1 has no UI:**
 
 ```
-───────────────────────────────────────────────────────────────
+---
 
 ## ▶ Next Up — [${PROJECT_CODE}] ${PROJECT_TITLE}
 
@@ -1507,7 +1193,7 @@ PHASE1_HAS_UI=$(echo "$PHASE1_SECTION" | grep -qi "UI hint.*yes" && echo "true" 
 **Also available:**
 - /gsd-plan-phase 1 — skip discussion, plan directly
 
-───────────────────────────────────────────────────────────────
+---
 ```
 
 </process>
@@ -1525,7 +1211,7 @@ PHASE1_HAS_UI=$(echo "$PHASE1_SECTION" | grep -qi "UI hint.*yes" && echo "true" 
 - `.planning/REQUIREMENTS.md`
 - `.planning/ROADMAP.md`
 - `.planning/STATE.md`
-- `$INSTRUCTION_FILE` (`AGENTS.md` for Codex, `.cursor/rules/` for all other runtimes)
+- `$INSTRUCTION_FILE` (runtime-derived via the shared `getProjectInstructionFile` policy: `AGENTS.md` for codex/opencode/kilo/kimi, `.github/copilot-instructions.md` for copilot, `GEMINI.md` for antigravity, `.claude/.cursor/rules/` for claude)
 
 </output>
 
@@ -1547,7 +1233,7 @@ PHASE1_HAS_UI=$(echo "$PHASE1_SECTION" | grep -qi "UI hint.*yes" && echo "true" 
 - [ ] ROADMAP.md created with phases, requirement mappings, success criteria
 - [ ] STATE.md initialized
 - [ ] REQUIREMENTS.md traceability updated
-- [ ] `$INSTRUCTION_FILE` generated with GSD workflow guidance (AGENTS.md for Codex, .cursor/rules/ otherwise)
+- [ ] `$INSTRUCTION_FILE` generated with GSD workflow guidance (runtime-derived via the shared `getProjectInstructionFile` policy — `AGENTS.md` for codex/opencode/kilo/kimi, `.github/copilot-instructions.md` for copilot, `GEMINI.md` for antigravity, `.claude/.cursor/rules/` for claude; an existing hand-crafted file without GSD markers is left untouched unless `--force`)
 - [ ] User knows next step is `/gsd-discuss-phase 1`
 
 **Atomic commits:** Each phase commits its artifacts immediately. If context is lost, artifacts persist.

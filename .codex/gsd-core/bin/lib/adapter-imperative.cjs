@@ -43,7 +43,14 @@ function createImperativeAdapter({ runtime }, options = {}) {
         runtime,
         registry,
         install(intent) {
-            installEngine.installRuntimeArtifacts(runtime, intent.configDir, intent.scope, intent.resolvedProfile, intent.resolveAttribution);
+            // #2322: thread the SAME composed registry (loaded above, includeInstalled:true)
+            // this adapter exposes via `.registry` into the engine call, so the skills
+            // kind's stage() closure can bind an installed third-party capability
+            // skill to its declaring capId at staging time — this is the PRIMARY
+            // install path (bin/install.js prefers the adapter over the direct
+            // installRuntimeArtifacts fallback), so without this the adapter path
+            // never staged a third-party capability skill regardless of registration.
+            installEngine.installRuntimeArtifacts(runtime, intent.configDir, intent.scope, intent.resolvedProfile, intent.resolveAttribution, registry);
         },
         uninstall(intent) {
             installEngine.uninstallRuntimeArtifacts(runtime, intent.configDir, intent.scope);

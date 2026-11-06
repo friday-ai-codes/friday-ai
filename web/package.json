@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.0.1",
   "private": true,
-  "packageManager": "pnpm@10.34.2",
+  "packageManager": "pnpm@10.34.9",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
@@ -21,7 +21,7 @@
     "gen:node-fixture": "cd ../server && uv run python manage.py dump_node_fixture"
   },
   "dependencies": {
-    "3d-force-graph": "^1.80.0",
+    "3d-force-graph": "^1.80.2",
     "@codemirror/autocomplete": "catalog:",
     "@codemirror/lang-json": "catalog:",
     "@codemirror/lang-markdown": "catalog:",
@@ -86,8 +86,8 @@
     "lowlight": "catalog:",
     "lucide-vue-next": "catalog:",
     "markdown-it": "catalog:",
-    "medium-zoom": "^1.1.0",
-    "mermaid": "^11.16.0",
+    "medium-zoom": "^1.1.2",
+    "mermaid": "^11.17.2",
     "nanoid": "catalog:",
     "pinia": "catalog:",
     "shiki": "catalog:",

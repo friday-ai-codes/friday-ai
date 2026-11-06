@@ -71,7 +71,7 @@ function routeAuditOpen({ args, cwd, raw, error, _audit, _core }) {
     routeHubCommandFamily({
         family: 'audit-open',
         args: hubArgs,
-        subcommands: ['run'],
+        subcommands: ['run', 'acknowledge'],
         defaultSubcommand: 'run',
         handlers: {
             run: () => {
@@ -86,8 +86,15 @@ function routeAuditOpen({ args, cwd, raw, error, _audit, _core }) {
                     c.output(null, true, a.formatAuditReport(result));
                 }
             },
+            // #3458 follow-up (design point A4): `audit-open acknowledge --category
+            // ... --milestone ...` writes/refreshes an `audit_acknowledged`
+            // suppression marker. `hubArgs.slice(2)` drops the family token and the
+            // `acknowledge` subcommand token itself, leaving just this
+            // subcommand's OWN `--flag value` pairs — the same slice
+            // `routeHubCommandFamily` itself passes to `hub.dispatch`'s `args`.
+            acknowledge: () => a.cmdAuditAcknowledge(cwd, hubArgs.slice(2), raw),
         },
-        unknownMessage: (subcommand) => `Unknown audit-open subcommand: "${subcommand}". audit-open takes no subcommands (use --json for JSON output).`,
+        unknownMessage: (subcommand) => `Unknown audit-open subcommand: "${subcommand}". Available: run (default, use --json for JSON output), acknowledge.`,
         error,
         cwd,
         raw,

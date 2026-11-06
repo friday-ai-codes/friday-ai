@@ -13,17 +13,30 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const command_aliases_cjs_1 = require("./command-aliases.cjs");
+const frontmatter_fence_cjs_1 = require("./frontmatter-fence.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cjsCommandRouterAdapter = require("./cjs-command-router-adapter.cjs");
 const { routeCjsCommandFamily } = cjsCommandRouterAdapter;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const roadmapUpgrade = require("./roadmap-upgrade.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const phaseIdCardMod = require("./phase-id-card.cjs");
+const { phaseIdCard } = phaseIdCardMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
 const { planningDir } = planningWorkspace;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const configLoaderMod = require("./config-loader.cjs");
 const { loadConfig } = configLoaderMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cliExitMod = require("./cli-exit.cjs");
+const { ExitError } = cliExitMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const roadmapParserMod = require("./roadmap-parser.cjs");
+const { extractCurrentMilestoneScoped, hasPhaseEntries } = roadmapParserMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const planningScopeMod = require("./planning-scope.cjs");
+const { SCOPE } = planningScopeMod;
 // ─── W021 Implementation ──────────────────────────────────────────────────────
 /**
  * Check each phase entry in a milestone-prefixed ROADMAP.md for W021 violations.
@@ -106,20 +119,47 @@ function routeRoadmapCommand({ roadmap, args, cwd, raw, error }) {
         handlers: {
             'get-phase': () => roadmap.cmdRoadmapGetPhase(cwd, args[2], raw),
             analyze: () => roadmap.cmdRoadmapAnalyze(cwd, raw),
+            // #3262: read-only milestone-window identity probe — the capture/compare
+            // signal for the edit-phase workflow's write-time milestone-scope guard.
+            'milestone-scope': () => roadmap.cmdRoadmapMilestoneScope(cwd, raw),
             'update-plan-progress': () => roadmap.cmdRoadmapUpdatePlanProgress(cwd, args[2], raw),
             'annotate-dependencies': () => roadmap.cmdRoadmapAnnotateDependencies(cwd, args[2], raw),
             'validate': () => {
                 const roadmapPath = node_path_1.default.join(planningDir(cwd), 'ROADMAP.md');
-                let roadmapContent = '';
+                const warnings = [];
+                // #2978: structural validation. A verb named "validate" that cannot
+                // produce a negative result provides false assurance. Before the
+                // opt-in milestone-prefix check, verify the file is structurally a
+                // roadmap at all.
+                let roadmapContent;
                 try {
                     roadmapContent = node_fs_1.default.readFileSync(roadmapPath, 'utf8');
                 }
                 catch {
-                    // ROADMAP.md missing — return empty warnings
+                    // ROADMAP.md missing — not silent success.
+                    warnings.push({ code: 'V001', message: 'ROADMAP.md not found or unreadable' });
+                    const result = { warnings };
+                    process.stdout.write(raw ? JSON.stringify(result) : JSON.stringify(result, null, 2));
+                    throw new ExitError(1);
                 }
-                // W021 only fires when phase_id_convention is explicitly 'milestone-prefixed'.
-                // Authoritative source: .planning/config.json (set by the upgrade command).
-                // Fallback: ROADMAP.md frontmatter (for projects that set the field there directly).
+                // Empty or whitespace-only.
+                if (roadmapContent.trim() === '') {
+                    warnings.push({ code: 'V002', message: 'ROADMAP.md is empty' });
+                }
+                // Malformed frontmatter — a `---` opener with no matching closer, as the one fence
+                // owner reads it (a leading BOM, #3057, is tolerated there).
+                const roadmapFence = (0, frontmatter_fence_cjs_1.locateFrontmatterFence)(roadmapContent);
+                // The milestone-window read below sees the document without its leading BOM (#3057).
+                const contentAfterBom = roadmapContent.charCodeAt(0) === 0xFEFF ? roadmapContent.slice(1) : roadmapContent;
+                if (roadmapFence && !roadmapFence.closed) {
+                    warnings.push({ code: 'V003', message: 'ROADMAP.md frontmatter is malformed (unterminated --- fence)' });
+                }
+                // #3641: resolve phase_id_convention ONCE, ahead of every consumer in
+                // this validate pass — V004's entry check and V005's scope classifier
+                // below, and the W021 milestone-prefix check after them.
+                // Authoritative source: .planning/config.json (set by the upgrade
+                // command). Fallback: ROADMAP.md frontmatter (for projects that set
+                // the field there directly).
                 let convention;
                 try {
                     const cfg = loadConfig(cwd);
@@ -129,10 +169,11 @@ function routeRoadmapCommand({ roadmap, args, cwd, raw, error }) {
                     convention = undefined;
                 }
                 if (convention === undefined || convention === null) {
-                    // Fallback: read from ROADMAP.md frontmatter
-                    const fmMatch = roadmapContent.match(/^---\r?\n([\s\S]+?)\r?\n---/);
-                    if (fmMatch) {
-                        const kvMatch = fmMatch[1].match(/^phase_id_convention:\s*(.*)$/m);
+                    // Fallback: read from ROADMAP.md frontmatter — the block the one fence owner finds,
+                    // exactly as cmdRoadmapMilestoneScope reads it (#3641 review NEW-1: two copies of
+                    // this read disagreed on long frontmatter, diverging validate from the probe).
+                    if (roadmapFence?.closed) {
+                        const kvMatch = roadmapContent.slice(roadmapFence.openEnd, roadmapFence.bodyEnd).match(/^phase_id_convention:\s*(.*)$/m);
                         if (kvMatch) {
                             const val = kvMatch[1].trim();
                             if (val !== 'null' && val !== '') {
@@ -141,19 +182,60 @@ function routeRoadmapCommand({ roadmap, args, cwd, raw, error }) {
                         }
                     }
                 }
-                const warnings = (convention === 'milestone-prefixed')
-                    ? checkW021(roadmapContent)
-                    : [];
+                // No recognizable phase structure. #3641: routed through the
+                // roadmap-parser owner (`hasPhaseEntries` — headings, #2199 bullets,
+                // #3577 table rows) instead of a private inline heading regex, so the
+                // document-level check and the V005 scope axis below can never
+                // disagree about what a phase entry is — and so a bracket-convention
+                // project's `### [GSD.04] 01:` entries are entries here too.
+                const hasPhaseEntry = hasPhaseEntries(roadmapContent, convention);
+                if (!hasPhaseEntry && !warnings.some((w) => w.code === 'V002')) {
+                    warnings.push({ code: 'V004', message: 'ROADMAP.md contains no recognizable phase entries (no phase headings, bullet entries, or table rows)' });
+                }
+                // #3263: a whole-document phase check (V004 above) is satisfied by a
+                // document whose phase entries live OUTSIDE the active milestone's
+                // resolved window — e.g. an intervening version-bearing heading closes
+                // the window before its own `### Phase N:` sections. That truncation
+                // is exactly what the #3184 scope discriminator classifies, so ask
+                // the single owner (never re-derive the window shape here —
+                // lint-milestone-window-drift bans local copies) and surface a
+                // non-COMPLETE-but-not-empty verdict. TRUNCATED only: a genuinely
+                // phase-less milestone classifies COMPLETE (V004 owns that case) and
+                // an unscoped/unreadable window is a different failure mode with a
+                // different remediation, deliberately not warned here.
+                try {
+                    // #3641: thread the resolved convention so the scope axis's
+                    // hasPhaseEntries comparison recognizes bracket phase entries.
+                    const scoped = extractCurrentMilestoneScoped(contentAfterBom, cwd, undefined, convention);
+                    if (scoped.scope === SCOPE.TRUNCATED) {
+                        warnings.push({
+                            code: 'V005',
+                            message: 'Active milestone window is truncated: phase entries exist in ROADMAP.md but are excluded from the ' +
+                                'active milestone\'s resolved window (check for a heading between the milestone heading and its phase-entry sections)',
+                        });
+                    }
+                }
+                catch {
+                    // The classifier is best-effort here — a throw must not mask the
+                    // structural warnings already collected above.
+                }
+                // W021 only fires when phase_id_convention is explicitly
+                // 'milestone-prefixed' — the same hoisted resolution above (#3641).
+                if (convention === 'milestone-prefixed') {
+                    warnings.push(...checkW021(roadmapContent));
+                }
                 const result = { warnings };
-                if (raw)
-                    process.stdout.write(JSON.stringify(result));
-                else
-                    process.stdout.write(JSON.stringify(result, null, 2));
+                process.stdout.write(raw ? JSON.stringify(result) : JSON.stringify(result, null, 2));
+                // #2978: exit non-zero on any warning, per the documented contract
+                // ("exits non-zero on any error or warning").
+                if (warnings.length > 0) {
+                    throw new ExitError(1);
+                }
             },
             'upgrade': () => {
                 const dryRun = !args.includes('--apply');
                 // Parse `--convention <value>` and `--convention=<value>`. When the flag is
-                // absent entirely, default to the only supported convention; when present
+                // absent entirely, default to the legacy supported convention; when present
                 // with a missing/unsupported value, fall through to the rejection below
                 // (fail-closed — never silently run a migration the user did not request).
                 let convention = 'milestone-prefixed';
@@ -164,13 +246,18 @@ function routeRoadmapCommand({ roadmap, args, cwd, raw, error }) {
                         ? token.slice(token.indexOf('=') + 1)
                         : (args[conventionFlagIdx + 1] ?? '');
                 }
-                if (convention !== 'milestone-prefixed') {
+                if (convention !== 'milestone-prefixed' && convention !== 'bracket') {
                     // No-throw hub contract (ADR-0012): a hub-dispatched handler must not call
                     // process.exit. Throw instead — the hub converts this to HandlerFailure and
                     // the adapter routes it through the injected error() boundary.
-                    throw new Error('Only --convention milestone-prefixed is supported');
+                    throw new Error('Only --convention milestone-prefixed or bracket is supported');
                 }
-                const plan = roadmapUpgrade.computeMigrationPlan(cwd);
+                if (convention === 'bracket') {
+                    // Keep stdout machine-readable for the dry-run JSON plan. The card is
+                    // human guidance emitted at command start for both dry-run and apply.
+                    process.stderr.write(`${phaseIdCard({ title: 'Bracket phase-ID convention' })}\n`);
+                }
+                const plan = roadmapUpgrade.computeMigrationPlan(cwd, { convention });
                 roadmapUpgrade.applyMigration(cwd, plan, { dryRun });
             },
         },

@@ -70,6 +70,7 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.readHostVersion = readHostVersion;
+exports.crossValidationSeed = crossValidationSeed;
 exports.loadRegistry = loadRegistry;
 const fs = __importStar(require("node:fs"));
 const os = __importStar(require("node:os"));
@@ -366,6 +367,139 @@ function ledgerOverlayIds(ledger, rootDir) {
     catch { /* missing/invalid/non-regular/oversized ledger — no pending, no committed (fail closed) */ }
     return { pending, committed };
 }
+// ─── #3929: install-time cross-capability validation seed ──────────────────
+/** First-party capabilities from the frozen registry, keyed by id. */
+function firstPartyCaps() {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const base = require('./capability-registry.cjs');
+    return base.capabilities ?? {};
+}
+/**
+ * Central config-schema validKeys for the ownership-exclusivity check — the
+ * same source `loadRegistry`'s generator path reads, with the same
+ * missing-schema fallback (empty set). Memoized per process: the manifest is
+ * static for the lifetime of the runtime.
+ */
+let _centralKeysMemo = null;
+function centralConfigKeys() {
+    if (_centralKeysMemo === null) {
+        // Same generator seam loadRegistry uses (including the test override), so
+        // install-time and load-time central keys cannot diverge when the
+        // generator is stubbed.
+        if (_generatorOverride) {
+            _centralKeysMemo = _generatorOverride.loadCentralConfigKeys();
+        }
+        else {
+            try {
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                const mod = require('../../../scripts/gen-capability-registry.cjs');
+                _centralKeysMemo = mod.loadCentralConfigKeys();
+            }
+            catch {
+                _centralKeysMemo = new Set();
+            }
+        }
+    }
+    return _centralKeysMemo;
+}
+/**
+ * #3929: the validation seed `capability-source.stageValidated` runs the
+ * cross-capability suite against. Built the way `loadRegistry` builds its
+ * accepted map: first-party registry capabilities, then each COMMITTED overlay
+ * of the TARGET (global) install scope accepted INCREMENTALLY — structural
+ * validation, engines.gsd against the running host, then the FULL
+ * cross-capability suite; an overlay joins only if the suite stays clean
+ * after adding it (load's invariant: first-party alone is clean, so any new
+ * error is that overlay's fault — skip it, never fail the seed). The seed is
+ * therefore CLEAN BY CONSTRUCTION: pre-existing junk in the install scope
+ * (colliding entries, shape-invalid manifests, engines-incompatible bundles)
+ * is skipped exactly as load skips it and can never fail or skew a
+ * candidate's install decision — a repo-planted ledger cannot veto installs
+ * (#1459 CB-3).
+ *
+ * Scope: only the install TARGET scope is walked — `stageValidated` promotes
+ * into `${gsdHome}/.gsd/capabilities`, so target scope == global.
+ * Project-scope overlays are deliberately NOT seeded (they additionally
+ * require user consent to activate at load; the issue asks for overlays "in
+ * the target scope"). The candidate is added by the caller LAST, mirroring
+ * `acceptedMap.set(id, cap)`.
+ *
+ * Exported (not inlined in the installer) so the semantics this reuses —
+ * `overlayRoots`, `ledgerOverlayIds`, the shared bounded manifest reader, and
+ * the incremental-accept rules — have exactly one owner and cannot drift from
+ * the loader's load-time rules.
+ */
+function crossValidationSeed(cwd, gsdHome, hostVersion, validator, semver) {
+    const fp = firstPartyCaps();
+    const capMap = new Map(Object.entries(fp));
+    const centralKeys = centralConfigKeys();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const ledger = require('./capability-ledger.cjs');
+    for (const root of overlayRoots(cwd, gsdHome)) {
+        if (root.scope !== 'global')
+            continue; // seed the TARGET scope only
+        const { committed } = ledgerOverlayIds(ledger, root.dir);
+        for (const id of committed) {
+            // First-party always wins (CONTEXT.md capability-loader entry): an
+            // overlay claiming a first-party id — or a reserved first-party prefix
+            // — is rejected at load, so it must not join the validation set.
+            if (Object.prototype.hasOwnProperty.call(fp, id))
+                continue;
+            if (RESERVED_ID_PREFIX.test(id))
+                continue;
+            let cap;
+            try {
+                const manifestPath = path.join(root.dir, id, 'capability.json');
+                const raw = ledger.readSmallRegularFile(manifestPath, MANIFEST_MAX_BYTES);
+                if (raw === null)
+                    continue; // missing/non-regular/oversized — skip fail-closed
+                cap = JSON.parse(raw);
+            }
+            catch {
+                continue; // unreadable overlay — skip (same rule as load)
+            }
+            // Same per-overlay pre-filters load applies before the cross suite:
+            // structural validity, then engines.gsd against the running host.
+            // validateCapability itself is not total over malformed array entries
+            // (#1461 finding 1) — a throw skips the overlay, as load skips it.
+            try {
+                if (validator.validateCapability(cap, id).length > 0)
+                    continue;
+            }
+            catch {
+                continue;
+            }
+            const engines = cap['engines'];
+            if (engines && typeof engines === 'object' && !Array.isArray(engines)) {
+                const range = engines['gsd'];
+                if (typeof range === 'string' && range && !semver.semverSatisfies(hostVersion, range))
+                    continue;
+            }
+            // Incremental accept: the overlay joins only if the FULL suite stays
+            // clean after adding it; any error is that overlay's fault — skip it.
+            capMap.set(id, cap);
+            let errs = [];
+            try {
+                errs = [
+                    ...validator.validateConsumesGlobal(capMap),
+                    ...validator.validateCrossCapability(capMap, centralKeys),
+                ];
+            }
+            catch {
+                // The cross validators are not total over arbitrary shapes (#1461
+                // finding 1 — e.g. the duplicate-producer invariant throws). A
+                // throwing overlay must be REMOVED here, exactly as load's
+                // acceptedMap.delete(id) does — retaining it would leave poisoning
+                // content in the seed and attribute pre-existing junk to the
+                // candidate.
+                capMap.delete(id);
+            }
+            if (errs.length > 0)
+                capMap.delete(id);
+        }
+    }
+    return { capMap, centralKeys };
+}
 /** Shallow-attach overlay diagnostics WITHOUT mutating the frozen registry module. */
 function withOverlayMeta(reg, meta) {
     return Object.assign({}, reg, { _overlay: meta });
@@ -426,6 +560,8 @@ function loadRegistry(options = {}) {
     // consent the CLI records is the consent the loader checks. The consent store NEVER lives in a repo.
     const gsdHome = options.gsdHome || process.env['GSD_HOME'] || os.homedir();
     const warnings = [];
+    // ADR-2782 D4.3 — non-fatal notices for capabilities that are ACCEPTED (see OverlayMeta).
+    const diagnostics = [];
     const incompatibleGateCapIds = [];
     const blockedGates = [];
     const commandRoots = {};
@@ -719,6 +855,26 @@ function loadRegistry(options = {}) {
                     }
                 }
                 // Accepted.
+                //
+                // ADR-2782 D4.3: an unknown field inside a `reviewer` body is IGNORED WITH A
+                // WARNING rather than failing validation, so a lane built for a newer GSD
+                // degrades to accepted-but-partially-understood instead of being rejected.
+                // That case validates cleanly, so without this call it would surface
+                // nowhere at runtime — the build-time generator only ever sees first-party
+                // in-repo manifests, never an installed third-party overlay. Guarded on
+                // presence so an older built validator without the function still loads,
+                // and wrapped because the never-crash contract (ADR-1244 D2) outranks a
+                // diagnostic: a throwing collector must not cost the user a working lane.
+                if (typeof validator.collectReviewerWarnings === 'function') {
+                    try {
+                        for (const w of validator.collectReviewerWarnings(cap) || []) {
+                            diagnostics.push(`${root.scope}:${id}: ${w}`);
+                        }
+                    }
+                    catch {
+                        // A diagnostic that cannot be produced is not worth failing an install over.
+                    }
+                }
                 overlayCaps.push(cap);
                 acceptedIds.add(id);
                 for (const s of skills)
@@ -752,7 +908,7 @@ function loadRegistry(options = {}) {
             }
         }
     }
-    const meta = { warnings, incompatibleGateCapIds, blockedGates, commandRoots };
+    const meta = { warnings, diagnostics, incompatibleGateCapIds, blockedGates, commandRoots };
     if (overlayCaps.length === 0) {
         // Nothing to compose. Return the frozen registry unchanged when there is
         // also nothing to report (identity-stable); otherwise attach diagnostics.
@@ -799,4 +955,4 @@ function loadRegistry(options = {}) {
     }
 }
 // readHostVersion is exported for the #1920 regression (VERSION-first host-version resolution).
-module.exports = { loadRegistry, readHostVersion, _setValidatorForTest, _setGeneratorForTest };
+module.exports = { loadRegistry, readHostVersion, crossValidationSeed, _setValidatorForTest, _setGeneratorForTest };

@@ -6,7 +6,7 @@
  * Unsupported in this router:
  * - scaffold: routed through top-level scaffold command.
  *
- * CJS-only subcommands: mvp-mode (dispatched directly, before hub).
+ * CJS-only subcommands: mvp-mode, tdd-applicable (dispatched directly, before hub).
  *
  * #3788: dispatch is mediated by CommandRoutingHub. The public entry point
  * and observable CLI behaviour are unchanged.
@@ -20,6 +20,14 @@ const command_aliases_cjs_1 = require("./command-aliases.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const commandRoutingHub = require("./command-routing-hub.cjs");
 const { createHub, ERROR_KINDS, makeInvalidArgs } = commandRoutingHub;
+// #2620 (ADR-0174 §6): inject the reference DispatchLogger on the live phase
+// dispatch path, but only when observability is opt-in enabled; otherwise the
+// Hub stays byte-for-byte silent via its no-op fallback. #4975: the opt-in is
+// GSD_AUDIT=1 or `audit.enabled` in the project config — resolveDispatchLogger
+// owns that whole decision for every live seam.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const observabilityLogger = require("./observability/logger.cjs");
+const { resolveDispatchLogger } = observabilityLogger;
 // ─── Implementation ───────────────────────────────────────────────────────────
 function routePhaseCommand({ phase, args, cwd, raw, error }) {
     // ── Unsupported subcommands ─────────────────────────────────────────────────
@@ -49,6 +57,13 @@ function routePhaseCommand({ phase, args, cwd, raw, error }) {
     // exit code, correct JSON error reason code, correct ROADMAP scan).
     if (subcommand === 'mvp-mode') {
         phase.cmdPhaseMvpMode(cwd, args.slice(2), raw);
+        return;
+    }
+    // `tdd-applicable` (#4273): same CJS-native dispatch shape as `mvp-mode`
+    // immediately above — a precedence cascade over plan/task/config sources
+    // with its own typed JSON result, not routed through the SDK query layer.
+    if (subcommand === 'tdd-applicable') {
+        phase.cmdPhaseTddApplicable(cwd, args.slice(2), raw);
         return;
     }
     // ── Build the CJS registry ──────────────────────────────────────────────────
@@ -113,7 +128,13 @@ function routePhaseCommand({ phase, args, cwd, raw, error }) {
                 if (args.includes('--dry-run')) {
                     return makeInvalidArgs('--dry-run', 'phase insert does not support --dry-run');
                 }
-                phase.cmdPhaseInsert(cwd, args[2], args.slice(3).join(' '), raw);
+                // #4569: --sibling opts into joining afterPhase's parent decimal level
+                // instead of nesting one level deeper. Filtered out like other
+                // boolean flags (see `remove`'s --force handling above) so it never
+                // leaks into the free-text description.
+                const sibling = args.includes('--sibling');
+                const insertArgs = args.slice(2).filter(token => token !== '--sibling');
+                phase.cmdPhaseInsert(cwd, insertArgs[0], insertArgs.slice(1).join(' '), raw, sibling ? 'sibling' : 'nested');
                 return { ok: true, data: null };
             },
             remove: (_ctx) => {
@@ -167,10 +188,15 @@ function routePhaseCommand({ phase, args, cwd, raw, error }) {
             },
             'uat-passed': (_ctx) => {
                 let requireVerification = false;
+                let uatOnly = false;
                 const positional = [];
                 for (const token of args.slice(2)) {
                     if (token === '--require-verification') {
                         requireVerification = true;
+                    }
+                    else if (token === '--uat-only') {
+                        // #4663: evaluate UAT rows only (verification-status blockers skipped).
+                        uatOnly = true;
                     }
                     else if (token === '--raw') {
                         // --raw is handled by the outer CLI layer; accepted here silently
@@ -182,7 +208,10 @@ function routePhaseCommand({ phase, args, cwd, raw, error }) {
                         positional.push(token);
                     }
                 }
-                phase.cmdPhaseUatPassed(cwd, positional[0], raw, { policy: { requireVerification } });
+                if (requireVerification && uatOnly) {
+                    return makeInvalidArgs('--uat-only', '--uat-only and --require-verification are mutually exclusive');
+                }
+                phase.cmdPhaseUatPassed(cwd, positional[0], raw, { policy: { requireVerification, uatOnly } });
                 return { ok: true, data: null };
             },
             // #1437 — list plan files for a phase
@@ -218,18 +247,21 @@ function routePhaseCommand({ phase, args, cwd, raw, error }) {
     // ── Build manifest (available subcommands for UnknownCommand detection) ─────
     // `availableSubcommands` is what the error message shows. It excludes
     // unsupported commands (already handled above) but does NOT include 'mvp-mode'
-    // because it was absent from PHASE_SUBCOMMANDS in the original and was not
-    // shown in the "Available:" list there either.
+    // or 'tdd-applicable' (#4273) because both are absent from PHASE_SUBCOMMANDS
+    // and were not shown in the "Available:" list there either.
     //
     // `manifestSubcommands` is the full routing set for the hub — it includes
-    // 'mvp-mode' (which the original code routed via a handler even without a
-    // manifest entry) so the hub's UnknownCommand check passes for it.
+    // 'mvp-mode' and 'tdd-applicable' (both routed via a handler even without a
+    // manifest entry) so the hub's UnknownCommand check passes for them.
     const availableSubcommands = command_aliases_cjs_1.PHASE_SUBCOMMANDS.filter(s => !UNSUPPORTED[s]);
-    const manifestSubcommands = ['mvp-mode', ...availableSubcommands];
+    const manifestSubcommands = ['mvp-mode', 'tdd-applicable', ...availableSubcommands];
     const manifest = { phase: manifestSubcommands };
     // ── Construct hub ──────────────────────────────────────────────────────────
     // #175: Hub is CJS-only — no mode param, no sdkLoader.
-    const hub = createHub({ cjsRegistry, manifest });
+    // #2620: wire the reference logger (ADR-0174 §6) only when observability is
+    // opt-in enabled; otherwise leave it unset so the Hub stays byte-for-byte
+    // silent via its no-op fallback. #4975: GSD_AUDIT=1 or `audit.enabled`.
+    const hub = createHub({ cjsRegistry, manifest, logger: resolveDispatchLogger(cwd) });
     // ── Dispatch ────────────────────────────────────────────────────────────────
     const result = hub.dispatch({
         family: 'phase',
@@ -250,6 +282,11 @@ function routePhaseCommand({ phase, args, cwd, raw, error }) {
         if (result.kind === ERROR_KINDS.InvalidArgs || result.kind === ERROR_KINDS.HandlerRefusal) {
             // #176: typed payload — reason holds the human-readable message
             error(result.reason);
+            return;
+        }
+        if (result.kind === ERROR_KINDS.VerificationStatusInvalid) {
+            // #5118: typed reason survives to the CLI surface
+            error(result.message, result.reason);
             return;
         }
         // HandlerFailure: message field

@@ -34,6 +34,8 @@ Every expected cross-phase connection must resolve to WIRED (verified end-to-end
 **Context budget:** Load project skills first (lightweight). Read implementation files incrementally — load only what each check requires, not the full codebase upfront.
 
 **Project skills:** Check `.cursor/skills/` or `.agents/skills/` directory if either exists:
+
+**agent_skills:** self-load per @.cursor/gsd-core/references/agent-skills-bootstrap.md (agent type: `gsd-integration-checker`)
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill (lightweight index ~130 lines)
 3. Load specific `rules/*.md` files as needed during implementation
@@ -91,6 +93,9 @@ For each phase, extract what it provides and what it should consume.
 **From SUMMARYs, extract:**
 
 ```bash
+# #2962: zsh aborts the block on an unmatched for-list glob (nomatch); bash passes it through. nullglob both.
+shopt -s nullglob 2>/dev/null; setopt NULL_GLOB 2>/dev/null
+
 # Key exports from each phase
 for summary in .planning/phases/*/*-SUMMARY.md; do
   echo "=== $summary ==="

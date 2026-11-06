@@ -19,6 +19,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { ExitError, runMain } = require('./lib/cli-exit.cjs');
+const { normalizeEol } = require('../gsd-core/bin/lib/text-lines.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const CAPABILITIES_DIR = path.join(ROOT, 'capabilities');
@@ -32,11 +33,12 @@ const CONFIG_SCHEMA_PATH = path.join(ROOT, 'gsd-core', 'bin', 'shared', 'config-
 // registry generator and the loop-host-contract generator share one source of truth.
 const { LOOP_HOST_CONTRACT } = require('../gsd-core/bin/lib/loop-host-contract.cjs');
 
-// Wired-points helper — tells us which points actually have render-hooks call sites.
-const { getWiredLoopPoints } = require('./gen-loop-host-contract.cjs');
+// Wired-kinds helper — per point, which hook kinds the render-hooks call sites' dispatch text covers.
+const { getWiredKinds } = require('./gen-loop-host-contract.cjs');
 
 // Capability validator — shared runtime-callable module extracted per ADR-1244 D2.
 const capValidator = require('../gsd-core/bin/lib/capability-validator.cjs');
+const { transformContentToHyphen, readCmdNames } = require('./fix-slash-commands.cjs');
 // Destructure only what the generator's own function bodies reference directly.
 // Everything else is re-exported from capValidator in module.exports below.
 const {
@@ -71,6 +73,7 @@ const {
   validateArtifactKindEntry,
   validateArtifactLayout,
   validateRuntimeBody,
+  collectReviewerWarnings,
   materializeHookFragments,
   validateAgainstContract,
   validateConsumesGlobal,
@@ -126,6 +129,71 @@ function loadCentralConfigKeys(schemaPath = CONFIG_SCHEMA_PATH) {
   }
 
   return new Set(Array.isArray(manifest.validKeys) ? manifest.validKeys : []);
+}
+
+/**
+ * Loads the central config-schema's DYNAMIC key patterns (#2797).
+ *
+ * `loadCentralConfigKeys` above reads `validKeys` only, so a federated key
+ * claimed by a central *pattern* was invisible to the exclusivity check. That is
+ * not a cosmetic gap: `isCentralConfigKey` consults these same patterns, and
+ * `mergeFederatedConfig` skips every key for which it returns true — so an
+ * overlapping slice is inert while the build stays green.
+ *
+ * The patterns are read from the SAME manifest the runtime reads and compiled
+ * with the same `source`, rather than re-implementing a matcher here, so the two
+ * cannot drift.
+ *
+ * Failure contract MATCHES `loadCentralConfigKeys` above deliberately — the two
+ * read the same file and must not disagree about what a broken one means:
+ *   - ENOENT → empty list. Legitimately absent.
+ *   - Any other read error, or a JSON parse error → prominent stderr + throw.
+ *
+ * An earlier revision swallowed the parse error and returned []. That is
+ * fail-OPEN on the gate this function exists to feed: with zero patterns,
+ * `validateCrossCapability`'s pattern-collision check silently passes and an
+ * inert federated slice ships green. It was masked in the one production call
+ * site only because `loadCentralConfigKeys` runs first against the same path and
+ * throws — a coincidence of ordering, not a guarantee, and this function is
+ * exported and called standalone.
+ *
+ * A single unparseable PATTERN is still skipped rather than fatal: that is a
+ * per-entry defect the central schema's own tests own, and skipping one pattern
+ * degrades to "checked less" rather than blocking every build.
+ */
+function loadCentralConfigPatterns(schemaPath = CONFIG_SCHEMA_PATH) {
+  let raw;
+  try {
+    raw = fs.readFileSync(schemaPath, 'utf8');
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return [];
+    process.stderr.write(
+      '  ERROR  Failed to read config-schema manifest at ' + schemaPath + ': ' + err.message + '\n',
+    );
+    throw new ExitError(1, 'could not read config-schema manifest');
+  }
+
+  let manifest;
+  try {
+    manifest = JSON.parse(raw);
+  } catch (err) {
+    process.stderr.write(
+      '  ERROR  Config-schema manifest at ' + schemaPath + ' is broken (JSON parse error): ' + err.message + '\n',
+    );
+    throw new ExitError(1, 'config-schema manifest JSON is malformed');
+  }
+  const declared = Array.isArray(manifest.dynamicKeyPatterns) ? manifest.dynamicKeyPatterns : [];
+  const out = [];
+  for (const entry of declared) {
+    const src = entry && typeof entry.source === 'string' ? entry.source : null;
+    if (!src) continue;
+    try {
+      out.push(new RegExp(src));
+    } catch {
+      // Unparseable pattern — the central schema's own tests own that failure.
+    }
+  }
+  return out;
 }
 
 // ─── ADR-857 Phase 4a: Derived views ─────────────────────────────────────────
@@ -335,19 +403,28 @@ function runConsistencyGate(capabilityClusters, profileMembership, capMap) {
  *   (used during 3a-impl while migration is in-progress).
  * @param {string} [capabilitiesDir]    Override capabilities dir (for testing with fixtures).
  */
-function loadAndValidate(centralKeys, capabilitiesDir) {
+function loadAndValidate(centralKeys, capabilitiesDir, centralPatterns) {
   const resolvedCentralKeys = centralKeys !== undefined ? centralKeys : loadCentralConfigKeys();
+  // #2797: patterns default to the real manifest unless a caller passes its own
+  // (tests pass [] to isolate the exact-key path).
+  const resolvedCentralPatterns = centralPatterns !== undefined ? centralPatterns : loadCentralConfigPatterns();
   const resolvedCapDir = capabilitiesDir !== undefined ? capabilitiesDir : CAPABILITIES_DIR;
   const errors = [];
   const capMap = new Map();
+  // ADR-2782 D4 — non-fatal diagnostics (e.g. an unknown field inside a reviewer
+  // body). These NEVER fail the build; they surface on stderr so a forward-built
+  // manifest degrades visibly instead of silently.
+  const warnings = [];
 
   if (!fs.existsSync(resolvedCapDir)) {
-    return { capMap, errors };
+    return { capMap, errors, warnings };
   }
 
-  // Compute wired points ONCE before iterating capabilities so the filesystem
-  // scan is not repeated per-capability. ROOT is the repo root (defined at top of file).
-  const wiredSet = getWiredLoopPoints(ROOT);
+  // Compute wired points + covered kinds ONCE before iterating capabilities so
+  // the filesystem scan is not repeated per-capability. ROOT is the repo root
+  // (defined at top of file). #3606: the kinds map carries, per point, which
+  // hook kinds the call sites' dispatch text actually covers.
+  const wiredKinds = getWiredKinds(ROOT);
 
   const folderEntries = fs.readdirSync(resolvedCapDir, { withFileTypes: true })
     .filter((e) => e.isDirectory())
@@ -366,6 +443,10 @@ function loadAndValidate(centralKeys, capabilitiesDir) {
       continue;
     }
 
+    // Collected BEFORE the error short-circuit below so a manifest that is both
+    // forward-built and invalid still reports why it looked unfamiliar.
+    for (const w of collectReviewerWarnings(cap)) warnings.push(folderId + '/capability.json: ' + w);
+
     const capErrors = validateCapability(cap, folderId);
     if (capErrors.length > 0) {
       for (const e of capErrors) errors.push(folderId + '/capability.json: ' + e);
@@ -381,7 +462,7 @@ function loadAndValidate(centralKeys, capabilitiesDir) {
     }
 
     // Gen-time wired guard: reject hooks that declare a valid point with no call site.
-    const wiredErrors = validateHooksWired(cap, wiredSet);
+    const wiredErrors = validateHooksWired(cap, wiredKinds);
     if (wiredErrors.length > 0) {
       for (const e of wiredErrors) errors.push(folderId + '/capability.json: ' + e);
       continue;
@@ -397,7 +478,7 @@ function loadAndValidate(centralKeys, capabilitiesDir) {
   }
 
   // Cross-capability invariants — capMap contains only fully-valid capabilities at this point.
-  const crossErrors = validateCrossCapability(capMap, resolvedCentralKeys);
+  const crossErrors = validateCrossCapability(capMap, resolvedCentralKeys, resolvedCentralPatterns);
   errors.push(...crossErrors);
 
   // C2: Global consumes-satisfiability — runs after capMap is fully built so cross-capability
@@ -406,7 +487,7 @@ function loadAndValidate(centralKeys, capabilitiesDir) {
   const consumesErrors = validateConsumesGlobal(capMap);
   errors.push(...consumesErrors);
 
-  return { capMap, errors };
+  return { capMap, errors, warnings };
 }
 
 /**
@@ -446,6 +527,46 @@ function buildRegistry(capMap) {
     if (capId === '__proto__' || capId === 'constructor' || capId === 'prototype') continue;
     capabilities[capId] = cap;
 
+    // Federated config slice — harvested from ANY role that declares one.
+    //
+    // ADR-2782 D1/D9: this loop was nested inside the `role === 'feature'` branch,
+    // so a `role: "runtime"` capability's `config` was read by nothing and dropped
+    // in silence — the actual reason reviewer config keys are stranded in the
+    // central schema. (The often-cited reason, that the runtime body forbids
+    // feature-only fields, does not apply: `config` is NOT in
+    // FEATURE_FIELDS_FORBIDDEN_ON_RUNTIME.) Owning a config slice is a property of
+    // DECLARING one, not of being a feature. Verified inert at introduction — no
+    // shipped capability declares `config` on a non-feature role — so this changes
+    // no existing key; it stops a latent silent drop and unblocks Phase 4 (#2797).
+    for (const key of Object.keys(cap.config || {})) {
+      // S2b: inline literal guard at each write site (CodeQL barrier)
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+      configKeys[key] = capId;
+
+      // Build configSchema entry — validate the slice first (throw on violation)
+      const slice = (cap.config || {})[key];
+      const sliceErrors = validateConfigSliceEntry(capId, key, slice);
+      if (sliceErrors.length > 0) {
+        throw new Error(
+          'configSchema validation failed during registry build:\n' +
+          sliceErrors.map((e) => '  ' + e).join('\n'),
+        );
+      }
+      // S2b: inline literal guard for configSchema write site
+      if (key !== '__proto__' && key !== 'constructor' && key !== 'prototype') {
+        configSchema[key] = {
+          owner: capId,
+          type: slice.type,
+          default: slice.default,
+          description: slice.description,
+        };
+        // Preserve values array for enum types if present
+        if (slice.type === 'enum' && Array.isArray(slice.values)) {
+          configSchema[key].values = slice.values;
+        }
+      }
+    }
+
     if (cap.role === 'feature') {
       for (const skill of (cap.skills || [])) {
         // S2b: inline literal guard at each write site (CodeQL barrier)
@@ -456,34 +577,6 @@ function buildRegistry(capMap) {
         // S2b: inline literal guard at each write site (CodeQL barrier)
         if (agent === '__proto__' || agent === 'constructor' || agent === 'prototype') continue;
         byAgent[agent] = capId;
-      }
-      for (const key of Object.keys(cap.config || {})) {
-        // S2b: inline literal guard at each write site (CodeQL barrier)
-        if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
-        configKeys[key] = capId;
-
-        // Build configSchema entry — validate the slice first (throw on violation)
-        const slice = (cap.config || {})[key];
-        const sliceErrors = validateConfigSliceEntry(capId, key, slice);
-        if (sliceErrors.length > 0) {
-          throw new Error(
-            'configSchema validation failed during registry build:\n' +
-            sliceErrors.map((e) => '  ' + e).join('\n'),
-          );
-        }
-        // S2b: inline literal guard for configSchema write site
-        if (key !== '__proto__' && key !== 'constructor' && key !== 'prototype') {
-          configSchema[key] = {
-            owner: capId,
-            type: slice.type,
-            default: slice.default,
-            description: slice.description,
-          };
-          // Preserve values array for enum types if present
-          if (slice.type === 'enum' && Array.isArray(slice.values)) {
-            configSchema[key].values = slice.values;
-          }
-        }
       }
 
       for (const step of (cap.steps || [])) {
@@ -703,7 +796,12 @@ function serializeRegistry(registry, capMap) {
   lines.push('};');
   lines.push('');
 
-  return lines.join('\n');
+  // #4859: capability descriptions and fragment `inline` text are compiled into this
+  // file and printed verbatim — the install-time conversion of markdown artifacts never
+  // reaches them — so the colon form `/gsd:<cmd>` (the repo-source spelling, which no
+  // install route registers) is rewritten to the hyphen form here. Same-length rewrite,
+  // restricted to known command names, so `/gsd:section` and other tokens are untouched.
+  return transformContentToHyphen(lines.join('\n'), readCmdNames());
 }
 
 // ─── --check diff helper ──────────────────────────────────────────────────────
@@ -719,19 +817,6 @@ function stripGeneratedComment(content) {
     .join('\n');
 }
 
-/**
- * Normalize line endings to LF.
- * The generator always writes LF, but Windows git (autocrlf) checks out committed files with
- * CRLF. The --check comparison must be line-ending-agnostic so it only fails on REAL content
- * differences, not on checkout-introduced whitespace differences.
- *
- * @param {string} content
- * @returns {string}
- */
-function normalizeLineEndings(content) {
-  return content.replace(/\r/g, '');
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 
@@ -741,7 +826,11 @@ function main() {
   if (flag === '--check') {
     // Fix #3: read the REAL central config keys so collision detection fires and is visible.
     const centralKeys = loadCentralConfigKeys();
-    const { capMap, errors } = loadAndValidate(centralKeys);
+    const { capMap, errors, warnings } = loadAndValidate(centralKeys);
+
+    // ADR-2782 D4 — non-fatal manifest diagnostics. Emitted BEFORE the hard-error
+    // exit so a forward-built manifest still explains itself on a failing build.
+    for (const w of warnings) process.stderr.write(w + '\n');
 
     // Separate pending-migration warnings from hard errors
     const { hardErrors, pendingMigrationWarnings } = classifyCrossErrors(errors);
@@ -766,7 +855,7 @@ function main() {
     }
 
     const committed = fs.readFileSync(REGISTRY_PATH, 'utf8');
-    if (normalizeLineEndings(stripGeneratedComment(committed)) !== normalizeLineEndings(stripGeneratedComment(live))) {
+    if (normalizeEol(stripGeneratedComment(committed)) !== normalizeEol(stripGeneratedComment(live))) {
       process.stderr.write(
         'gsd-core/bin/lib/capability-registry.cjs is stale. Run:\n' +
         '  node scripts/gen-capability-registry.cjs --write\n',
@@ -778,7 +867,11 @@ function main() {
   } else if (flag === '--write') {
     // Fix #3: read the REAL central config keys so collision detection fires and is visible.
     const centralKeys = loadCentralConfigKeys();
-    const { capMap, errors } = loadAndValidate(centralKeys);
+    const { capMap, errors, warnings } = loadAndValidate(centralKeys);
+
+    // ADR-2782 D4 — non-fatal manifest diagnostics. Emitted BEFORE the hard-error
+    // exit so a forward-built manifest still explains itself on a failing build.
+    for (const w of warnings) process.stderr.write(w + '\n');
 
     // Separate pending-migration warnings from hard errors
     const { hardErrors, pendingMigrationWarnings } = classifyCrossErrors(errors);
@@ -828,12 +921,13 @@ module.exports = {
   validateCrossCapability,
   classifyCrossErrors,
   loadCentralConfigKeys,
+  loadCentralConfigPatterns,
   loadAndValidate,
   buildRegistry,
   serializeRegistry,
   computeRequiresClosure,
   topoSortSteps,
-  normalizeLineEndings,
+  normalizeLineEndings: normalizeEol,
   stripGeneratedComment,
   validateConfigSliceEntry,
   VALID_CONFIG_SLICE_TYPES,

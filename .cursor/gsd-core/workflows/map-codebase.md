@@ -1,3 +1,5 @@
+@.cursor/gsd-core/references/response-language-directive.md
+
 <purpose>
 Orchestrate parallel codebase mapper agents to analyze codebase and produce structured documents in .planning/codebase/
 
@@ -39,8 +41,9 @@ operates in **incremental-remap mode**:
 - Reject path values that contain `..`, start with `/`, or include shell
   metacharacters (`;`, `` ` ``, `$`, `&`, `|`, `<`, `>`). If all provided
   paths are invalid, fall back to a normal whole-repo run.
-- On write, each mapper stamps `last_mapped_commit: <HEAD sha>` into the YAML
-  frontmatter of every document it produces (see `bin/lib/drift.cjs:writeMappedCommit`).
+- The `last_mapped_commit` baseline is NOT the mapper's job. It is stamped
+  deterministically by the `stamp_codebase_map` step below, on every run,
+  incremental or full. See that step for why.
 
 **Explicit contract — propagate `--paths` through a single normalized
 variable.** Downstream steps (`spawn_agents`, `sequential_mapping`, and any
@@ -69,10 +72,15 @@ documents refreshed.
 Load codebase mapping context:
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
-INIT=$(gsd_run query init.map-codebase)
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+INIT=$(gsd_run query init.map-codebase ${GSD_WS:+--ws=${GSD_WS##* }})
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
-AGENT_SKILLS_MAPPER=$(gsd_run query agent-skills gsd-codebase-mapper)
+AGENT_SKILLS_MAPPER=$(gsd_run query agent-skills gsd-codebase-mapper ${GSD_WS:+--ws=${GSD_WS##* }})
 ```
 
 Extract from init JSON: `mapper_model`, `commit_docs`, `codebase_dir`, `existing_maps`, `has_maps`, `codebase_dir_exists`, `subagent_timeout`, `date`.
@@ -101,8 +109,20 @@ What's next?
 Wait for user response.
 
 If "Refresh": Delete .planning/codebase/, continue to create_structure
-If "Update": Ask which documents to update, continue to spawn_agents (filtered)
+If "Update": Ask which documents to update, then record the selection for the
+stamp step below and continue to spawn_agents (filtered):
+
+```bash
+# Comma-separated filenames the user selected, e.g. "STACK.md,CONCERNS.md":
+UPDATED_DOCS="<selected documents>"
+```
+
 If "Skip": Exit workflow
+
+`UPDATED_DOCS` narrows `stamp_codebase_map`. Leave it empty on every other
+path (Refresh, first run, `--paths`), which regenerate all seven documents.
+An Update run does not touch the documents the user did not select, so
+stamping those at HEAD would claim a freshness they do not have.
 
 **If doesn't exist:**
 Continue to create_structure.
@@ -140,6 +160,14 @@ Before spawning agents, detect whether the current runtime supports the `Agent` 
 <step name="spawn_agents" condition="Agent tool is available">
 Spawn 4 parallel gsd-codebase-mapper agents.
 
+<!-- #2508 runtime-aware-dispatch -->
+
+> **Runtime-aware dispatch (#2508 Phase 4).** GSD workflows dispatch specialized subagents by role. Before dispatching on a built-in-only runtime (kimi-code — three built-ins only), resolve the role to a built-in via `gsd_run query resolve-dispatch-type --requested <role> --raw`. On named-dispatch runtimes (Claude/OpenCode/…) the role is returned unchanged; on kimi-code it maps to `coder`/`explore`/`plan` by role-suffix. The persona rides `${AGENT_SKILLS_<ROLE>}` (Phase 3) regardless. See @gsd-core/references/runtime-aware-dispatch.md.
+
+<!-- #2517 model-omit-on-inherit -->
+
+> **Model omission (#2517).** Omit the `model` parameter entirely when the value it would carry (`mapper_model`) is `"inherit"` or empty. An empty value 404s on runtimes without native tier aliases — the default on non-Claude runtimes. Omitting it inherits the orchestrator's model. See @gsd-core/references/model-profile-resolution.md.
+
 Use Agent tool with `subagent_type="gsd-codebase-mapper"`, `model="{mapper_model}"`, and `run_in_background=true` for parallel execution.
 
 **CRITICAL:** Use the dedicated `gsd-codebase-mapper` agent, NOT `Explore` or `browser_subagent`. The mapper agent writes documents directly.
@@ -159,11 +187,11 @@ Today's date: {date}
 
 Analyze this codebase for technology stack and external integrations.
 
-Write these documents to .planning/codebase/:
+Write these documents to {codebase_dir}/:
 - STACK.md - Languages, runtime, frameworks, dependencies, configuration
 - INTEGRATIONS.md - External APIs, databases, auth providers, webhooks
 
-IMPORTANT: Use {date} for all [YYYY-MM-DD] date placeholders in documents.
+IMPORTANT: Set all date stamps (`**Analysis Date:**`, footer `*... analysis: ...*`, `<!-- refreshed: ... -->`) to {date}, overwriting any existing date.
 
 Scope: ${PATH_SCOPE_HINT:-(full repo)} — when --paths is supplied, restrict exploration to those prefixes only.
 
@@ -185,11 +213,11 @@ Today's date: {date}
 
 Analyze this codebase architecture and directory structure.
 
-Write these documents to .planning/codebase/:
+Write these documents to {codebase_dir}/:
 - ARCHITECTURE.md - Pattern, layers, data flow, abstractions, entry points
 - STRUCTURE.md - Directory layout, key locations, naming conventions
 
-IMPORTANT: Use {date} for all [YYYY-MM-DD] date placeholders in documents.
+IMPORTANT: Set all date stamps (`**Analysis Date:**`, footer `*... analysis: ...*`, `<!-- refreshed: ... -->`) to {date}, overwriting any existing date.
 
 Scope: ${PATH_SCOPE_HINT:-(full repo)} — when --paths is supplied, restrict exploration to those prefixes only.
 
@@ -211,11 +239,11 @@ Today's date: {date}
 
 Analyze this codebase for coding conventions and testing patterns.
 
-Write these documents to .planning/codebase/:
+Write these documents to {codebase_dir}/:
 - CONVENTIONS.md - Code style, naming, patterns, error handling
 - TESTING.md - Framework, structure, mocking, coverage
 
-IMPORTANT: Use {date} for all [YYYY-MM-DD] date placeholders in documents.
+IMPORTANT: Set all date stamps (`**Analysis Date:**`, footer `*... analysis: ...*`, `<!-- refreshed: ... -->`) to {date}, overwriting any existing date.
 
 Scope: ${PATH_SCOPE_HINT:-(full repo)} — when --paths is supplied, restrict exploration to those prefixes only.
 
@@ -237,10 +265,10 @@ Today's date: {date}
 
 Analyze this codebase for technical debt, known issues, and areas of concern.
 
-Write this document to .planning/codebase/:
+Write this document to {codebase_dir}/:
 - CONCERNS.md - Tech debt, bugs, security, performance, fragile areas
 
-IMPORTANT: Use {date} for all [YYYY-MM-DD] date placeholders in documents.
+IMPORTANT: Set all date stamps (`**Analysis Date:**`, footer `*... analysis: ...*`, `<!-- refreshed: ... -->`) to {date}, overwriting any existing date.
 
 Scope: ${PATH_SCOPE_HINT:-(full repo)} — when --paths is supplied, restrict exploration to those prefixes only.
 
@@ -255,21 +283,19 @@ Continue to collect_confirmations.
 </step>
 
 <step name="collect_confirmations">
-Wait for all 4 agents to complete using TaskOutput tool.
+Wait for all 4 background agents to finish, then read each agent's output file to collect confirmations.
 
-**For each agent task_id returned by the Agent tool calls above:**
+Each `Agent(...)` call above with `run_in_background=true` returns an `async_launched` result that carries an `outputFile` path (and `canReadOutputFile: true`). The 4 agents run concurrently and each one's completion arrives as a message in this conversation when it finishes — do NOT issue a separate blocking call to wait for them.
+
+**Once all 4 agents have reported completion, read each agent's output file (single message with 4 Read calls):**
 ```
-TaskOutput tool:
-  task_id: "{task_id from Agent result}"
-  block: true
-  timeout: {subagent_timeout from init context, default 300000}
+Read tool:
+  file_path: "{outputFile from that agent's async_launched result}"
 ```
 
-> The timeout is configurable via `workflow.subagent_timeout` in `.planning/config.json` (milliseconds). Default: 300000 (5 minutes). Increase for large codebases or slower models.
+> Allow up to `workflow.subagent_timeout` for the slowest agent to finish before treating it as failed. The timeout is configurable via `workflow.subagent_timeout` in `.planning/config.json` (milliseconds). Default: 300000 (5 minutes). Increase for large codebases or slower models.
 
-Call TaskOutput for all 4 agents in parallel (single message with 4 TaskOutput calls).
-
-Once all TaskOutput calls return, read each agent's output file to collect confirmations.
+Each output file contains that agent's completion confirmation. Parse the confirmation marker (see below) from the file contents.
 
 **Expected confirmation format from each agent:**
 ```
@@ -290,12 +316,12 @@ If any agent failed, note the failure and continue with successful documents.
 Continue to verify_output.
 </step>
 
-<step name="sequential_mapping" condition="Agent tool is NOT available (e.g. Antigravity, Gemini CLI, Codex)">
+<step name="sequential_mapping" condition="Agent tool is NOT available (e.g. Antigravity, Codex)">
 When the `Agent` tool is unavailable, perform codebase mapping sequentially in the current context. This replaces `spawn_agents` and `collect_confirmations`.
 
 **IMPORTANT:** Do NOT use `browser_subagent`, `Explore`, or any browser-based tool. Use only file system tools (Read, Bash, Write, Grep, Glob, list_dir, view_file, grep_search, or equivalent tools available in your runtime).
 
-**IMPORTANT:** Use `{date}` from init context for all `[YYYY-MM-DD]` date placeholders in documents. NEVER guess the date.
+**IMPORTANT:** Set all date stamps (`**Analysis Date:**`, footer, `<!-- refreshed -->`) to `{date}` from init context, overwriting any existing date — Update runs seed from files with concrete prior dates, so merely replacing `[YYYY-MM-DD]` placeholders is not sufficient. NEVER guess the date.
 
 **SCOPE:** When `${PATH_SCOPE_HINT}` is non-empty (i.e. `--paths` was supplied), restrict every pass below to the validated path prefixes in `${SCOPED_PATHS}`. Do NOT scan files outside those prefixes. When `${PATH_SCOPE_HINT}` is empty, perform a full-repo scan.
 
@@ -338,6 +364,40 @@ wc -l .planning/codebase/*.md
 - No empty documents (each should have >20 lines)
 
 If any documents missing or empty, note which agents may have failed.
+
+Continue to stamp_codebase_map.
+</step>
+
+<step name="stamp_codebase_map">
+Stamp the drift baseline into every document that was just written:
+
+```bash
+gsd_run stamp-codebase-map ${UPDATED_DOCS:+--files "$UPDATED_DOCS"}
+```
+
+This writes `last_mapped_commit: <HEAD sha>` and `last_mapped_at: <date>` into
+the YAML frontmatter of each `.planning/codebase/*.md` that exists. It runs on
+every mapping run, incremental (`--paths`) and full alike. `--files` narrows it
+to the documents an Update run actually refreshed; `--paths` needs no narrowing
+because all seven are regenerated, just scoped in content.
+
+**Why this is a shell step and not an instruction to the mapper.** The stamp is
+the only machine-readable freshness marker: the `verify codebase-drift` gate
+reads it to decide what to diff HEAD against. The human-readable markers the
+mapper writes (`**Analysis Date:**`, `<!-- refreshed: ... -->`) are restamped
+unconditionally on an Update run, so a mapper that decides its work is already
+done and rewrites only the dates still looks fresh to a human. Leaving the
+machine-readable stamp to the same agent reproduces exactly the failure the
+stamp exists to detect. A shell step cannot be skipped by a confident agent.
+
+The command is non-blocking: it emits `skipped` with a `reason` outside a git
+repo or when no documents exist. Report `stamped` and `commit` in the summary
+if any entry in `failed` is non-empty; otherwise continue silently.
+
+Run in this position, before `commit_codebase_map`, the stamp lands on
+documents the mapper just wrote, so its markdown whitespace normalization is
+folded into the same commit. Running `stamp-codebase-map` by hand against an
+already-committed map reflows that map's whitespace as a side effect.
 
 Continue to scan_for_secrets.
 </step>
@@ -408,7 +468,6 @@ Created .planning/codebase/:
 - TESTING.md ([N] lines) - Test structure and practices
 - INTEGRATIONS.md ([N] lines) - External services and APIs
 - CONCERNS.md ([N] lines) - Technical debt and issues
-
 
 ---
 

@@ -1,3 +1,5 @@
+Apply response_language to all user-facing prose — narration between tool calls, status updates, progress notes, and findings included; preserve code, paths, and identifiers.
+
 # --auto mode — fully autonomous discuss-phase
 
 > **Lazy-loaded.** Read this file from `workflows/discuss-phase.md` when
@@ -37,12 +39,6 @@ writing CONTEXT.md once, you are DONE — proceed immediately to
 find "gaps", "undefined types", or "missing decisions" and run additional
 passes. This creates a self-feeding loop where each pass generates references
 that the next pass treats as gaps, consuming unbounded time and resources.
-
-Check the pass cap from config:
-```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
-MAX_PASSES=$(gsd_run query config-get workflow.max_discuss_passes 2>/dev/null || echo "3")
-```
 
 If you have already written and committed CONTEXT.md, the discuss step is
 complete. Move on.

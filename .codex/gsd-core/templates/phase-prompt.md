@@ -19,6 +19,13 @@ type: execute
 wave: N                     # Execution wave (1, 2, 3...). Pre-computed at plan time.
 depends_on: []              # Plan IDs this plan requires (e.g., ["01-01"]).
 files_modified: []          # Files this plan modifies.
+files_deleted: []           # OPTIONAL. Files this plan REMOVES. Declaring a path here is what
+                            # lets worktree cleanup-wave merge the branch that deletes it; an
+                            # undeclared deletion still blocks. Exact paths, not globs or dirs.
+coupling_justified: []      # OPTIONAL. Deliberate, order-independent same-wave couplings: one
+                            # "plan-id: reason" string per coupled peer, e.g.
+                            # ["03-02: both append independent config keys"]. Exempts the pair
+                            # from the plan-checker's Dimension 3b advisory (#3724).
 autonomous: true            # false if plan has checkpoints requiring user interaction
 requirements: []            # REQUIRED — Requirement IDs from ROADMAP this plan addresses. MUST NOT be empty.
 user_setup: []              # Human-required setup the agent cannot automate (see below)
@@ -38,10 +45,10 @@ Output: [What artifacts will be created]
 </objective>
 
 <execution_context>
-@./.codex/gsd-core/workflows/execute-plan.md
-@./.codex/gsd-core/templates/summary.md
+@.codex/gsd-core/workflows/execute-plan.md
+@.codex/gsd-core/templates/summary.md
 [If plan contains checkpoint tasks (type="checkpoint:*"), add:]
-@./.codex/gsd-core/references/checkpoints.md
+@.codex/gsd-core/references/checkpoints.md
 </execution_context>
 
 <context>
@@ -85,7 +92,7 @@ Output: [What artifacts will be created]
   <done>[Acceptance criteria]</done>
 </task>
 
-<!-- For checkpoint task examples and patterns, see @./.codex/gsd-core/references/checkpoints.md -->
+<!-- For checkpoint task examples and patterns, see @.codex/gsd-core/references/checkpoints.md -->
 
 <task type="checkpoint:decision" gate="blocking">
   <decision>[What needs deciding]</decision>
@@ -187,7 +194,7 @@ autonomous: true
 
 # Plan 02 - Protected features (needs auth)
 wave: 2
-depends_on: ["01"]
+depends_on: ["01-01"]
 files_modified: [src/features/dashboard.ts]
 autonomous: true
 ```
@@ -199,7 +206,7 @@ Plan 02 in Wave 2 waits for Plan 01 in Wave 1 - genuine dependency on auth types
 ```yaml
 # Plan 03 - UI with verification
 wave: 3
-depends_on: ["01", "02"]
+depends_on: ["01-01", "01-02"]
 files_modified: [src/components/Dashboard.tsx]
 autonomous: false  # Has checkpoint:human-verify
 ```
@@ -278,7 +285,7 @@ TDD features get dedicated plans with `type: tdd`.
 → Yes: Create a TDD plan
 → No: Standard task in standard plan
 
-See `./.codex/gsd-core/references/tdd.md` for TDD plan structure.
+See `.codex/gsd-core/references/tdd.md` for TDD plan structure.
 
 ---
 
@@ -382,9 +389,9 @@ Output: Working dashboard component.
 </objective>
 
 <execution_context>
-@./.codex/gsd-core/workflows/execute-plan.md
-@./.codex/gsd-core/templates/summary.md
-@./.codex/gsd-core/references/checkpoints.md
+@.codex/gsd-core/workflows/execute-plan.md
+@.codex/gsd-core/templates/summary.md
+@.codex/gsd-core/references/checkpoints.md
 </execution_context>
 
 <context>
@@ -540,7 +547,7 @@ user_setup:
 
 **Result:** Execute-plan generates `{phase}-USER-SETUP.md` with checklist for the user.
 
-See `./.codex/gsd-core/templates/user-setup.md` for full schema and examples
+See `.codex/gsd-core/templates/user-setup.md` for full schema and examples
 
 ---
 
@@ -606,5 +613,3 @@ Task completion ≠ Goal achievement. A task "create chat component" can complet
 4. Verification subagent checks must_haves against codebase
 5. Gaps found → fix plans created → execute → re-verify
 6. All must_haves pass → phase complete
-
-See `./.codex/gsd-core/workflows/verify-phase.md` for verification logic.

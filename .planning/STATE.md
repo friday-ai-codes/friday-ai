@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.26.0
 milestone_name: MCP 全链路开放与稳定性
-status: planning
-last_updated: "2026-09-14T01:19:00.000Z"
-last_activity: 2026-09-14
+status: executing
+last_updated: "2026-11-06T03:19:25Z"
+last_activity: 2026-11-06
 progress:
   total_phases: 7
   completed_phases: 0
-  total_plans: 0
+  total_plans: 6
   completed_plans: 0
   percent: 0
 ---
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md（v0.26.0 started 2026-09-14）。上一里程碑归�
 ## Current Position
 
 Phase: 146 of 152（里程碑第 1/7 相位：契约注册表与生成目录）
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-09-14 — v0.26.0 roadmap created，47/47 requirements mapped
+Plan: 0/6 验收归档。Phase 146 的计划、研究与验证策略已就绪。
+Status: Ready to execute
+Last activity: 2026-11-06 — 核对 10 月 9 日合并的 PR #4 和 npm 工具目录。仓库 stdio 客户端可列出 55 个工具，已发布的 0.6.0 可列出 42 个。
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -35,7 +35,7 @@ Progress: [░░░░░░░░░░] 0%
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 146 | 契约注册表与生成目录 | PUB-01~06 | Not started |
+| 146 | 契约注册表与生成目录 | PUB-01~06 | Planned（6 个计划，0 份执行总结） |
 | 147 | 共享服务与安全边界 | SEC-01~05 | Not started |
 | 148 | Operation 与幂等控制面 | OPS-01~05 | Not started |
 | 149 | 全链状态、产物与诊断 | STAT-01~07, GATE-01 | Not started |
@@ -1078,6 +1078,7 @@ Decisions are logged in PROJECT.md Key Decisions table; v0.2.0 full phase detail
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 261106-ezo | 更新项目 GSD、飞书技能锁和应用依赖，核对实际发布目录与阶段进度 | 2026-11-06 | d3e8c5797 | [依赖维护与验证](./quick/261106-ezo-refresh-project-dependencies-and-gsd/261106-ezo-SUMMARY.md) |
 | 260907-erf | 蓝图流水线七个平台问题复核完成并补齐四个边界回归测试 | 2026-09-13 | 未提交 | [260907-erf-blueprint-pipeline-fixes](./quick/260907-erf-blueprint-pipeline-fixes/) |
 | 260909-qv4 | 交付小队角色名册与三份指令能力介绍改写 | 2026-09-09 | 未提交 | [260909-qv4-workflow_suite-squad-role-intro](./quick/260909-qv4-workflow_suite-squad-role-intro/) |
 | 260909-nc9 | 交付小队人类可读输出合同，标题、简介与回执分两层写 | 2026-09-09 | 未提交 | [260909-nc9-human-writing-agent-loop](./quick/260909-nc9-human-writing-agent-loop/) |

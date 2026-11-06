@@ -50,6 +50,7 @@ const { planningDir } = planningWorkspaceMod;
 const nodefs = require("fs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const nodepath = require("path");
+const runtime_slash_cjs_1 = require("./runtime-slash.cjs");
 // ─── Implementation ───────────────────────────────────────────────────────────
 /**
  * Write-side capability state mutator.
@@ -184,6 +185,7 @@ function setCapabilityState(cwd, runtimeConfigDir, desired, opts) {
         };
     }
     // ── Step 4: APPLY PASS ────────────────────────────────────────────────────
+    let pendingSurfaceForCommit;
     // ── Surface writes ────────────────────────────────────────────────────────
     if (needsSurface && (idsToDisable.length > 0 || idsToEnable.length > 0)) {
         const existing = readSurface(resolvedConfigDir);
@@ -242,12 +244,18 @@ function setCapabilityState(cwd, runtimeConfigDir, desired, opts) {
             }
         }
         if (surfaceChanged) {
-            writeSurface(resolvedConfigDir, pendingSurface);
+            pendingSurfaceForCommit = pendingSurface;
         }
     }
     // ── Config writes (once, batched) ─────────────────────────────────────────
     if (pendingGateWrites.length > 0) {
         setConfigValues(cwd, pendingGateWrites);
+    }
+    // State-only callers preserve the existing direct-write behavior. A caller
+    // that requests materialization lets applySurface publish the candidate only
+    // after every artifact kind has staged and synchronized successfully.
+    if (pendingSurfaceForCommit && !opts?.materialize) {
+        writeSurface(resolvedConfigDir, pendingSurfaceForCommit);
     }
     // ── Materialize (optional) ────────────────────────────────────────────────
     if (opts?.materialize) {
@@ -255,8 +263,13 @@ function setCapabilityState(cwd, runtimeConfigDir, desired, opts) {
         try {
             // eslint-disable-next-line @typescript-eslint/no-require-imports
             const runtimeArtifactLayout = require('./runtime-artifact-layout.cjs');
+            // #2322: thread the SAME composed registry (loaded above, includeInstalled:true)
+            // into layout resolution so the skills kind's stage() closure can bind a
+            // third-party capability skill to its declaring capId at staging time —
+            // required for BOTH the '*' (full-profile) fill-in and the ownership binding
+            // (see resolveRuntimeArtifactLayout's #2322 doc comment).
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            const layout = runtimeArtifactLayout.resolveRuntimeArtifactLayout(runtime, resolvedConfigDir, scope);
+            const layout = runtimeArtifactLayout.resolveRuntimeArtifactLayout(runtime, resolvedConfigDir, scope, registry);
             const commandsGsdDir = _resolveCommandsGsdDir();
             const manifest = _resolveManifest(commandsGsdDir, resolvedConfigDir);
             // #1575: applySurface now accepts opts.resolveAttribution so surface-path
@@ -265,12 +278,16 @@ function setCapabilityState(cwd, runtimeConfigDir, desired, opts) {
             // access to getCommitAttribution (which lives in bin/install.js). Until that
             // is refactored into a shared module, surface-path agents for descriptor-
             // driven runtimes will lack the Co-Authored-By trailer that install adds.
-            // Parity is proven when resolveAttribution IS provided (see
-            // tests/issue-1575-agent-descriptor-parity.test.cjs).
+            // Parity is proven when resolveAttribution IS provided (see the
+            // folded:issue-1575-agent-descriptor-parity describe block in
+            // tests/golden-parity-single-source.test.cjs).
             // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-            applySurface(resolvedConfigDir, layout, manifest, undefined, registry, opts?.materialize?.resolveAttribution
-                ? { resolveAttribution: opts.materialize.resolveAttribution }
-                : undefined);
+            applySurface(resolvedConfigDir, layout, manifest, undefined, registry, {
+                ...(pendingSurfaceForCommit ? { surfaceState: pendingSurfaceForCommit } : {}),
+                ...(opts.materialize.resolveAttribution
+                    ? { resolveAttribution: opts.materialize.resolveAttribution }
+                    : {}),
+            });
         }
         catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
@@ -289,7 +306,7 @@ function setCapabilityState(cwd, runtimeConfigDir, desired, opts) {
         if (entry.enabled === true) {
             const afterCap = after.capabilities.find((c) => c.id === entry.id);
             if (afterCap && afterCap.enabled !== true) {
-                errors.push(`cannot enable "${entry.id}": not in the active surface/profile (widen the profile or use /gsd:surface enable)`);
+                errors.push(`cannot enable "${entry.id}": not in the active surface/profile (widen the profile or use ${(0, runtime_slash_cjs_1.runtimeCommand)(cwd, 'surface enable')})`);
             }
         }
         // Fix B: desired enabled=false — assert it is actually disabled after write.

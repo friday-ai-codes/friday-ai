@@ -13,6 +13,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const security_cjs_1 = require("./security.cjs");
+const markdown_sectionizer_cjs_1 = require("./markdown-sectionizer.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cliExitModule = require("./cli-exit.cjs");
+const { ExitError, runMain } = cliExitModule;
 const STATUS_REJECT_SET = new Set(['superseded', 'rejected', 'deprecated']);
 const CANONICAL_HEADERS = {
     status: ['status', 'state', 'lifecycle', 'stage'],
@@ -48,6 +52,7 @@ const CANONICAL_HEADERS = {
         'recommendation',
         'strategy',
         'decision outcome',
+        'locked decisions',
     ],
     considered_options: [
         'considered options',
@@ -57,7 +62,6 @@ const CANONICAL_HEADERS = {
         'candidates',
         'approaches considered',
         'variants',
-        'trade-offs',
         'pros and cons of the options',
         'discussion',
     ],
@@ -187,45 +191,100 @@ function normalizeAdrHeader(raw) {
         .toLowerCase()
         .replace(/[\s:._-]+/g, ' ')
         .replace(/[^\w\s]/g, '')
-        .trim();
+        .trim()
+        .replace(/^\d+(?:\s+\d+)*\s+/, '');
 }
-function classifyHeader(normalizedHeader) {
+// Normalized synonym index (audit M7). classifyHeader receives an ALREADY-normalized
+// header (via normalizeAdrHeader), but historically compared it against the RAW synonym
+// strings. Because normalizeAdrHeader collapses [\s:._-]+ to a space and strips [^\w\s],
+// any synonym carrying a hyphen/apostrophe/etc. ('trade-offs', "won't do", 'post-grilling')
+// could never match a normalized header — it was silently dead, and its ADR section went
+// unmapped. Normalizing BOTH sides closes that abstraction asymmetry once, so every synonym
+// (current and future) is reachable regardless of punctuation. Precomputed at module load to
+// avoid re-normalizing the whole table per call; insertion order is preserved so first-match-
+// wins and the exact-then-prefix precedence stay identical to the prior raw-compare loop.
+const _NORMALIZED_SYNONYM_INDEX = (() => {
+    const index = [];
     for (const [canonical, synonyms] of Object.entries(CANONICAL_HEADERS)) {
         for (const synonym of synonyms) {
-            if (normalizedHeader === synonym)
-                return canonical;
-            if (normalizedHeader.startsWith(`${synonym} `))
-                return canonical;
+            index.push([normalizeAdrHeader(synonym), canonical]);
         }
+    }
+    return index;
+})();
+function classifyHeader(normalizedHeader) {
+    for (const [synonym, canonical] of _NORMALIZED_SYNONYM_INDEX) {
+        if (normalizedHeader === synonym)
+            return canonical;
+        if (normalizedHeader.startsWith(`${synonym} `))
+            return canonical;
     }
     return null;
 }
+// A list item starts with a bullet (-, *, +) or an ordered marker (1. or 1)).
+const LIST_MARKER = /^([-*+]|\d+[.)])\s+/;
+/**
+ * Split a section body into one entry per top-level list item (#5227).
+ *
+ * A line that opens a list item starts a new entry with its marker stripped. Any
+ * other non-blank line, and any marker line indented deeper than the first item
+ * (a nested sub-bullet), joins the current entry with a single space, so a
+ * hard-wrapped item stays one entry. Text before the first marker is its own
+ * entry. A block with no list marker at all keeps one entry per line, so a plain
+ * `## Status` body still yields its first line.
+ */
 function splitEntries(blockText) {
-    return (typeof blockText === 'string' ? blockText : '')
+    const lines = (typeof blockText === 'string' ? blockText : '')
         .split(/\r?\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => line.replace(/^[-*+]\s+/, '').trim())
-        .filter(Boolean);
-}
-function parseSections(markdown) {
-    const lines = (typeof markdown === 'string' ? markdown : '').split(/\r?\n/);
-    const sections = [];
-    let current = { heading: null, body: [] };
-    for (const line of lines) {
-        const m = line.match(/^#{1,6}\s+(.*)$/);
-        if (m) {
-            if (current.heading || current.body.length)
-                sections.push(current);
-            current = { heading: m[1].trim(), body: [] };
+        .filter((line) => line.trim() !== '');
+    if (!lines.some((line) => LIST_MARKER.test(line.trim())))
+        return lines.map((line) => line.trim());
+    const entries = [];
+    let topIndent = -1;
+    let open = false;
+    for (const raw of lines) {
+        const text = raw.trim();
+        const indent = raw.length - raw.trimStart().length;
+        const isMarker = LIST_MARKER.test(text);
+        if (isMarker && (topIndent < 0 || indent <= topIndent)) {
+            if (topIndent < 0)
+                topIndent = indent;
+            entries.push(text.replace(LIST_MARKER, '').trim());
+            open = true;
+        }
+        else if (open) {
+            entries[entries.length - 1] = `${entries[entries.length - 1]} ${text}`;
         }
         else {
-            current.body.push(line);
+            entries.push(text);
         }
     }
-    if (current.heading || current.body.length)
-        sections.push(current);
-    return sections;
+    return entries.filter(Boolean);
+}
+/**
+ * Thin adapter: wraps the seam's `collectSections` to produce the same
+ * `{ heading: string | null, body: string[] }` shape the rest of adr-parser
+ * consumes. ADR-1372 T2 migration.
+ */
+function parseSections(markdown) {
+    const content = typeof markdown === 'string' ? markdown : '';
+    // collectSections(content, () => true) collects every heading as a stop
+    // boundary — mirrors the old line-by-line heading walk exactly.
+    const sections = (0, markdown_sectionizer_cjs_1.collectSections)(content, () => true);
+    // Map seam Section → MarkdownSection. The seam's HeadingToken.text is the
+    // heading text after trimming (same as the old m[1].trim() capture).
+    // The body is a trimEnd()-ed joined string; split it back to lines to match
+    // the old string[] shape consumed by parseStatusFromSections / parseAdrMarkdown.
+    //
+    // Note: the old parseSections emitted a leading { heading: null, body: [...] }
+    // entry for preamble text before the first heading.  Both consumers skip it
+    // immediately (parseAdrMarkdown: `if (!heading) continue`; parseStatusFromSections:
+    // `classifyHeader(normalizeAdrHeader(null))` → null ≠ 'status' → continue), so
+    // the preamble entry was dead code and is not reconstructed here.
+    return sections.map((sec) => ({
+        heading: sec.heading.text,
+        body: sec.body === '' ? [] : sec.body.split('\n'),
+    }));
 }
 function parseStatusFromSections(sections) {
     for (const section of sections) {
@@ -377,19 +436,22 @@ function parseCliArgs(argv) {
 }
 function main(argv) {
     const opts = parseCliArgs(argv);
-    const safePath = (0, security_cjs_1.requireSafePath)(opts.input, node_path_1.default.resolve(opts.projectDir), 'ADR input path', { allowAbsolute: true });
+    const safePath = (0, security_cjs_1.requireSafePath)(opts.input, node_path_1.default.resolve(opts.projectDir), 'ADR input path', security_cjs_1.PathAcceptance.AbsoluteInsideRoot);
     const content = node_fs_1.default.readFileSync(safePath, 'utf8');
     const parsed = parseAdrMarkdown(content, { sourcePath: opts.input ?? undefined, format: opts.format });
     process.stdout.write(JSON.stringify(parsed, null, 2));
 }
 if (require.main === module) {
-    try {
-        main(process.argv.slice(2));
-    }
-    catch (error) {
-        process.stderr.write(`Error: ${error.message}\n`);
-        process.exit(1);
-    }
+    runMain(() => {
+        try {
+            main(process.argv.slice(2));
+        }
+        catch (err) {
+            // ExitError with a message so runMain's catch writes it verbatim
+            // (byte-identical to the prior `Error: ${message}\n` process.exit(1)).
+            throw new ExitError(1, `Error: ${err.message}`);
+        }
+    });
 }
 module.exports = {
     CANONICAL_HEADERS,

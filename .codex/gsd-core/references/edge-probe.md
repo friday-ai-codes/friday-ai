@@ -1,7 +1,7 @@
 # Edge-Probe — Spec-Completeness Reference
 
 Shared reference for the spec/requirements phase. Companion to
-`@./.codex/gsd-core/references/domain-probes.md`: `domain-probes` covers the
+`@.codex/gsd-core/references/domain-probes.md`: `domain-probes` covers the
 **technology axis** (auth, search, caching, deployment); this covers the
 **data/behavior-shape axis** (boundaries, adjacency, encoding, ordering…). Walk each
 requirement against the closed taxonomy below, propose a concrete candidate edge for each
@@ -41,11 +41,23 @@ core finding that the spec layer is the measured weak point:
 
 ## Inputs
 
-A list of requirements, each a `{ id, text, shapes? }` record where `text` is a testable
-statement and `shapes` is an optional author-supplied override of the data/behavior shape.
-The five shapes are: `numeric-range`, `collection`, `text`, `stateful`, `io`. When
-`shapes` is absent, a heuristic classifier proposes them from the requirement prose
-(propose-then-confirm) — the author may correct the shape.
+A list of requirements, each a `{ id, text, text_en?, shapes? }` record where `text` is a
+testable statement, `text_en` is an optional English translation of `text`, and `shapes` is an
+optional author-supplied override of the data/behavior shape. The five shapes are:
+`numeric-range`, `collection`, `text`, `stateful`, `io`. When `shapes` is absent, a heuristic
+classifier proposes them from the requirement prose — reading `text_en` in preference to
+`text` when present (`text_en ?? text`) — (propose-then-confirm); the author may correct the
+shape.
+
+**The classifier reads English; `text` does not have to be.** The heuristic cues (`SHAPE_CUES`)
+are English word-boundary patterns, so a requirement whose `text` is not English classifies to
+zero shapes unless `text_en` supplies a faithful English translation. A project running with
+`response_language` set should populate `text_en` for every requirement; `text` keeps its own
+meaning — the requirement's own text, in whatever language the SPEC uses — and is never
+translated or overwritten. `text_en` is engine input, not part of the SPEC. `id` is never
+translated. Prose that matches no cue in either field surfaces as `unclassified` (#1110) — the
+probe contributes nothing for that requirement. Where a requirement carries no cue even in
+English, author `shapes` explicitly rather than leaning on the classifier.
 
 ## Taxonomy (8 categories)
 
@@ -157,11 +169,44 @@ resolutions supplied, every applicable edge is `unresolved`:
 ```json edge-probe:02-merge-intervals/expected-coverage.json
 {
   "items": [
-    { "requirement_id": "R1", "category": "adjacency", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "When two things are exactly equal or just touch, do they merge, collide, or separate?" },
-    { "requirement_id": "R1", "category": "empty", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "What is the result for empty, single-element, or null input?" },
-    { "requirement_id": "R1", "category": "ordering", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "When elements compare equal, is output order specified and stable?" }
+    {
+      "requirement_id": "R1",
+      "category": "adjacency",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "When two things are exactly equal or just touch, do they merge, collide, or separate?"
+    },
+    {
+      "requirement_id": "R1",
+      "category": "empty",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "What is the result for empty, single-element, or null input?"
+    },
+    {
+      "requirement_id": "R1",
+      "category": "ordering",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "When elements compare equal, is output order specified and stable?"
+    }
   ],
-  "coverage": { "applicable": 3, "resolved": 0, "unresolved": 3, "byVerification": { "explicit": 0, "backstop": 0 } }
+  "coverage": {
+    "applicable": 3,
+    "resolved": 0,
+    "unresolved": 3,
+    "unclassified": 0,
+    "byVerification": {
+      "explicit": 0,
+      "backstop": 0
+    }
+  }
 }
 ```
 
@@ -180,10 +225,35 @@ rule, the requirement classifies as `numeric-range`, which raises `boundary` and
 ```json edge-probe:01-round-half-even/expected-coverage.json
 {
   "items": [
-    { "requirement_id": "R1", "category": "boundary", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "What happens exactly at each min/max/threshold — and one step either side?" },
-    { "requirement_id": "R1", "category": "precision", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "Where can precision loss, overflow, or rounding/tie-breaking occur — and what is the exact contract (e.g. half-up vs half-to-even, ceil/floor/truncate)?" }
+    {
+      "requirement_id": "R1",
+      "category": "boundary",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "What happens exactly at each min/max/threshold — and one step either side?"
+    },
+    {
+      "requirement_id": "R1",
+      "category": "precision",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "Where can precision loss, overflow, or rounding/tie-breaking occur — and what is the exact contract (e.g. half-up vs half-to-even, ceil/floor/truncate)?"
+    }
   ],
-  "coverage": { "applicable": 2, "resolved": 0, "unresolved": 2, "byVerification": { "explicit": 0, "backstop": 0 } }
+  "coverage": {
+    "applicable": 2,
+    "resolved": 0,
+    "unresolved": 2,
+    "unclassified": 0,
+    "byVerification": {
+      "explicit": 0,
+      "backstop": 0
+    }
+  }
 }
 ```
 
@@ -199,10 +269,35 @@ the requirement classifies as `text`, which raises `empty` and `encoding`:
 ```json edge-probe:03-truncate-graphemes/expected-coverage.json
 {
   "items": [
-    { "requirement_id": "R1", "category": "empty", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "What is the result for empty, single-element, or null input?" },
-    { "requirement_id": "R1", "category": "encoding", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "Whose definition of length/equality applies — bytes, code points, grapheme clusters, or normalized form?" }
+    {
+      "requirement_id": "R1",
+      "category": "empty",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "What is the result for empty, single-element, or null input?"
+    },
+    {
+      "requirement_id": "R1",
+      "category": "encoding",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "Whose definition of length/equality applies — bytes, code points, grapheme clusters, or normalized form?"
+    }
   ],
-  "coverage": { "applicable": 2, "resolved": 0, "unresolved": 2, "byVerification": { "explicit": 0, "backstop": 0 } }
+  "coverage": {
+    "applicable": 2,
+    "resolved": 0,
+    "unresolved": 2,
+    "unclassified": 0,
+    "byVerification": {
+      "explicit": 0,
+      "backstop": 0
+    }
+  }
 }
 ```
 
@@ -219,10 +314,35 @@ classifies as `numeric-range`, which raises `boundary` and `precision`:
 ```json edge-probe:04-money-rounding/expected-coverage.json
 {
   "items": [
-    { "requirement_id": "R1", "category": "boundary", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "What happens exactly at each min/max/threshold — and one step either side?" },
-    { "requirement_id": "R1", "category": "precision", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "Where can precision loss, overflow, or rounding/tie-breaking occur — and what is the exact contract (e.g. half-up vs half-to-even, ceil/floor/truncate)?" }
+    {
+      "requirement_id": "R1",
+      "category": "boundary",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "What happens exactly at each min/max/threshold — and one step either side?"
+    },
+    {
+      "requirement_id": "R1",
+      "category": "precision",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "Where can precision loss, overflow, or rounding/tie-breaking occur — and what is the exact contract (e.g. half-up vs half-to-even, ceil/floor/truncate)?"
+    }
   ],
-  "coverage": { "applicable": 2, "resolved": 0, "unresolved": 2, "byVerification": { "explicit": 0, "backstop": 0 } }
+  "coverage": {
+    "applicable": 2,
+    "resolved": 0,
+    "unresolved": 2,
+    "unclassified": 0,
+    "byVerification": {
+      "explicit": 0,
+      "backstop": 0
+    }
+  }
 }
 ```
 
@@ -238,11 +358,44 @@ Given a requirement to deduplicate a list of items, the requirement classifies a
 ```json edge-probe:05-list-dedupe/expected-coverage.json
 {
   "items": [
-    { "requirement_id": "R1", "category": "adjacency", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "When two things are exactly equal or just touch, do they merge, collide, or separate?" },
-    { "requirement_id": "R1", "category": "empty", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "What is the result for empty, single-element, or null input?" },
-    { "requirement_id": "R1", "category": "ordering", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "When elements compare equal, is output order specified and stable?" }
+    {
+      "requirement_id": "R1",
+      "category": "adjacency",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "When two things are exactly equal or just touch, do they merge, collide, or separate?"
+    },
+    {
+      "requirement_id": "R1",
+      "category": "empty",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "What is the result for empty, single-element, or null input?"
+    },
+    {
+      "requirement_id": "R1",
+      "category": "ordering",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "When elements compare equal, is output order specified and stable?"
+    }
   ],
-  "coverage": { "applicable": 3, "resolved": 0, "unresolved": 3, "byVerification": { "explicit": 0, "backstop": 0 } }
+  "coverage": {
+    "applicable": 3,
+    "resolved": 0,
+    "unresolved": 3,
+    "unclassified": 0,
+    "byVerification": {
+      "explicit": 0,
+      "backstop": 0
+    }
+  }
 }
 ```
 
@@ -258,11 +411,44 @@ left unresolved:
 ```json edge-probe:06-resolved-mixed/expected-coverage.json
 {
   "items": [
-    { "requirement_id": "R1", "category": "adjacency", "status": "resolved", "verification": "explicit", "resolution": "AC#6: touching intervals merge", "reason": null, "probe": "When two things are exactly equal or just touch, do they merge, collide, or separate?" },
-    { "requirement_id": "R1", "category": "empty", "status": "unresolved", "verification": null, "resolution": null, "reason": null, "probe": "What is the result for empty, single-element, or null input?" },
-    { "requirement_id": "R1", "category": "ordering", "status": "dismissed", "verification": null, "resolution": null, "reason": "output is canonically sorted; no tie possible", "probe": "When elements compare equal, is output order specified and stable?" }
+    {
+      "requirement_id": "R1",
+      "category": "adjacency",
+      "status": "resolved",
+      "verification": "explicit",
+      "resolution": "AC#6: touching intervals merge",
+      "reason": null,
+      "probe": "When two things are exactly equal or just touch, do they merge, collide, or separate?"
+    },
+    {
+      "requirement_id": "R1",
+      "category": "empty",
+      "status": "unresolved",
+      "verification": null,
+      "resolution": null,
+      "reason": null,
+      "probe": "What is the result for empty, single-element, or null input?"
+    },
+    {
+      "requirement_id": "R1",
+      "category": "ordering",
+      "status": "dismissed",
+      "verification": null,
+      "resolution": null,
+      "reason": "output is canonically sorted; no tie possible",
+      "probe": "When elements compare equal, is output order specified and stable?"
+    }
   ],
-  "coverage": { "applicable": 3, "resolved": 2, "unresolved": 1, "byVerification": { "explicit": 1, "backstop": 0 } }
+  "coverage": {
+    "applicable": 3,
+    "resolved": 2,
+    "unresolved": 1,
+    "unclassified": 0,
+    "byVerification": {
+      "explicit": 1,
+      "backstop": 0
+    }
+  }
 }
 ```
 

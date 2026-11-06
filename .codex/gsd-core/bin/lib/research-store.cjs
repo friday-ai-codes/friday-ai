@@ -15,6 +15,10 @@ const node_os_1 = __importDefault(require("node:os"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_crypto_1 = __importDefault(require("node:crypto"));
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
+// ADR-4650 decision 6: lexical family — the key is validated before
+// `fs.mkdirSync` creates the store dir, so the candidate legitimately does
+// not exist yet at check time.
+const security_cjs_1 = require("./security.cjs");
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -94,15 +98,12 @@ function putResearch(cwd, key, payload, { clock = Date, homeDir = node_os_1.defa
     const fetched_at = new Date(clock.now()).toISOString();
     const entry = { content, source, provider, confidence, fetched_at, ttl, kind };
     const dir = resolveStorePath(cwd, source, { homeDir });
-    // Belt-and-suspenders: ensure the resolved file path stays inside the store dir.
-    const resolvedDir = node_path_1.default.resolve(dir);
-    const filePath = node_path_1.default.join(dir, `${key}.json`);
-    const resolvedFile = node_path_1.default.resolve(filePath);
-    if (!resolvedFile.startsWith(resolvedDir + node_path_1.default.sep)) {
+    const containedFile = (0, security_cjs_1.tryWithinRootLexical)(`${key}.json`, dir);
+    if (containedFile === null || containedFile === node_path_1.default.resolve(dir)) {
         throw new Error('invalid research key');
     }
     node_fs_1.default.mkdirSync(dir, { recursive: true });
-    (0, shell_command_projection_cjs_1.platformWriteSync)(filePath, JSON.stringify(entry));
+    (0, shell_command_projection_cjs_1.platformWriteSync)(containedFile, JSON.stringify(entry));
     return entry;
 }
 // ---------------------------------------------------------------------------
@@ -120,16 +121,14 @@ function getResearch(cwd, key, { clock = Date, homeDir = node_os_1.default.homed
         const tierDirs = [userDir, projectDir];
         const candidates = [];
         for (const dir of tierDirs) {
-            const resolvedDir = node_path_1.default.resolve(dir);
-            const filePath = node_path_1.default.join(dir, `${key}.json`);
-            // Belt-and-suspenders: ensure path stays inside tier dir
-            if (!node_path_1.default.resolve(filePath).startsWith(resolvedDir + node_path_1.default.sep))
+            const containedFile = (0, security_cjs_1.tryWithinRootLexical)(`${key}.json`, dir);
+            if (containedFile === null || containedFile === node_path_1.default.resolve(dir))
                 continue;
-            if (!node_fs_1.default.existsSync(filePath))
+            if (!node_fs_1.default.existsSync(containedFile))
                 continue;
             let entry;
             try {
-                entry = JSON.parse(node_fs_1.default.readFileSync(filePath, 'utf8'));
+                entry = JSON.parse(node_fs_1.default.readFileSync(containedFile, 'utf8'));
             }
             catch {
                 // Corrupt file in this tier — skip it

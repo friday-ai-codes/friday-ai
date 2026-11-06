@@ -58,6 +58,10 @@ Model profiles control which Claude model each GSD agent uses. This allows balan
 3. **Profile table** — the per-agent column from the active `model_profile`
 4. **Runtime default** — when nothing else applies
 
+Steps 2–4 select the *tier*; a `model_profile_overrides.<runtime>.<tier>` entry then
+maps that tier to a concrete model (#4192 — honored on the claude runtime as well, so
+pinning composes with tiering instead of replacing it).
+
 ### Why two layers above the profile?
 
 - **Profile** is a global tier strategy (everyone runs balanced).
@@ -96,7 +100,7 @@ The three layers compose: `models` defaults a phase, `model_overrides` carves an
 - **Required when using non-Anthropic providers** (OpenRouter, local models, etc.) — otherwise GSD may call Anthropic models directly, incurring unexpected costs
 - Use when: you want GSD to follow your currently selected runtime model
 
-## Using Non-Claude Runtimes (Codex, OpenCode, Gemini CLI, Kilo)
+## Using Non-Claude Runtimes (Codex, OpenCode, Antigravity CLI, Kilo)
 
 When installed for a non-Claude runtime, the GSD installer sets `resolve_model_ids: "omit"` in `~/.gsd/defaults.json`. This returns an empty model parameter for all agents, so each agent uses the runtime's default model. No manual setup is needed.
 
@@ -215,14 +219,25 @@ is (highest → lowest):
    (see §Dynamic Routing — escalation steps tier up per attempt counter)
 4. If no dynamic_routing match, check models[phase_type] for a phase-type tier
    (see §Per-Phase-Type Model Map for the agent → phase-type mapping)
-5. If no phase-type slot, look up agent in profile table
-6. Pass model parameter to Task call
+5. Check model_profile_overrides.<runtime>.<tier> for a per-tier model override
+   (honored on the claude runtime too — #4192; verbatim unless it maps to the
+   current tier alias)
+6. If no phase-type slot, look up agent in profile table
+7. Pass model parameter to Task call
 ```
 
-The same precedence applies to `reasoning_effort` resolution on runtimes
-that support it (Codex), so `model` and `reasoning_effort` always derive
-from the same tier source — a `models[phase_type]` or
-`dynamic_routing` override flips both.
+`model` and `effort` resolve through different mechanisms at different
+times — they do not share the ladder above. `model` resolves at runtime,
+per spawn, from `.planning/config.json`; a config change takes effect on
+the next spawn. `effort` (claude runtime) has its own cascade
+(`agent_overrides` → `routing_tier_defaults` → `default`; see
+`docs/CONFIGURATION.md` § "Where effort actually reaches") and is baked at
+install time into the `effort:` frontmatter key of
+`.claude/agents/gsd-*.md` — Claude Code's Agent tool has no per-spawn
+effort parameter, so per-agent frontmatter is the only channel. An effort
+config change has no effect until `gsd_run effort sync --apply`
+re-syncs the agent files. Codex agents instead pin
+`model_reasoning_effort` in `~/.codex/agents/*.toml` at install time.
 
 ## Per-Agent Overrides
 
@@ -238,7 +253,9 @@ Override specific agents without changing the entire profile:
 }
 ```
 
-Overrides take precedence over the profile. Valid values: `opus`, `sonnet`, `haiku`, `inherit`, or any fully-qualified model ID (e.g., `"o3"`, `"openai/o3"`, `"google/gemini-2.5-pro"`).
+Overrides take precedence over the profile. Valid values: `opus`, `sonnet`, `haiku`, `fable`, `inherit`, or any fully-qualified model ID (e.g., `"o3"`, `"openai/o3"`, `"google/gemini-2.5-pro"`). `fable` is a Claude Code Agent-tool alias, not a GSD profile tier — it has no column in the profile table above.
+
+On the Claude runtime, fully-qualified Claude model IDs are honored as explicit generation pins (#4192): an ID that names the current tier default (e.g. `"claude-sonnet-5"`) resolves to its tier alias — the same model in the form the Agent tool always accepts — while any other ID (e.g. `"claude-opus-4-7"`) resolves verbatim, with a warn-once stderr note that setups accepting only tier aliases will not honor a full ID. To pin a generation for a whole tier rather than one agent, set `model_profile_overrides.claude.<tier>` (see docs/CONFIGURATION.md — Runtime-Aware Profiles).
 
 ## Switching Profiles
 

@@ -10,7 +10,7 @@ Run a ≤6-question interview, score frameworks, return a ranked recommendation 
 </role>
 
 <required_reading>
-Read `./.cursor/gsd-core/references/ai-frameworks.md` before asking questions. This is your decision matrix.
+Read `.cursor/gsd-core/references/ai-frameworks.md` before asking questions. This is your decision matrix.
 </required_reading>
 
 <project_context>
@@ -133,9 +133,7 @@ FRAMEWORK_RECOMMENDATION:
 Display to user:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- FRAMEWORK RECOMMENDATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### FRAMEWORK RECOMMENDATION
 
 ◆ Primary Pick: {framework}
   {rationale}

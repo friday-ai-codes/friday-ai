@@ -11,7 +11,7 @@
  * {ok,data|kind}; the two never mix (different modules).
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TABLE_SCHEMAS = void 0;
+exports.QUICK_TASKS_SECTION_ABSENT = exports.TABLE_SCHEMAS = void 0;
 exports.matchTableSchema = matchTableSchema;
 exports.splitTableRow = splitTableRow;
 exports.isDelimiterRow = isDelimiterRow;
@@ -23,6 +23,9 @@ exports.findTableBySchema = findTableBySchema;
 exports.findTableWithColumns = findTableWithColumns;
 exports.escapeCell = escapeCell;
 exports.appendQuickTaskRow = appendQuickTaskRow;
+exports.migrateQuickTasksTable = migrateQuickTasksTable;
+exports.resetQuickTaskRows = resetQuickTaskRows;
+exports.updateTraceabilityCell = updateTraceabilityCell;
 const markdown_sectionizer_cjs_1 = require("./markdown-sectionizer.cjs");
 // ─── Schema registry ──────────────────────────────────────────────────────────
 /**
@@ -280,32 +283,54 @@ function unescapeCellText(raw) {
  */
 function updateTableCell(tableText, match, column, newValue) {
     const lines = splitLinesWithOffsets(tableText);
+    // #3255: pick the first VALID table whose columns include `column`. The prior
+    // code bound to the FIRST table of any shape and returned 'unknown column' if
+    // that one lacked the column — so a section holding a summary table above the
+    // target (e.g. ## Traceability: a phase-summary table, then the requirement
+    // rows) never reached the target table. Scan for the first valid table that
+    // carries the column; if none does but a valid table exists, still return
+    // 'unknown column' (single-table behaviour unchanged). Track the first
+    // malformation reason so a lone malformed table keeps its specific error.
     let headerIdx = -1;
+    let columns = [];
+    let firstValidIdx = -1;
+    let firstMalformedReason = null;
+    const recordMalformed = (reason) => {
+        if (firstMalformedReason === null && firstValidIdx === -1)
+            firstMalformedReason = reason;
+    };
     for (let i = 0; i < lines.length; i++) {
         const trimmed = lines[i].line.trim();
-        if (trimmed.startsWith('|') && trimmed.indexOf('|', 1) !== -1) {
+        if (!trimmed.startsWith('|') || trimmed.indexOf('|', 1) === -1)
+            continue;
+        const delimiterLine = lines[i + 1]?.line;
+        if (delimiterLine === undefined || !delimiterLine.trim().startsWith('|')) {
+            recordMalformed('missing delimiter row');
+            continue;
+        }
+        const candidateRanges = splitTableRowRanges(lines[i].line, lines[i].start);
+        const candidateColumns = candidateRanges.map((r) => unescapeCellText(tableText.slice(r.start, r.end)));
+        const delimiterCells = splitTableRow(delimiterLine);
+        if (!isDelimiterRow(delimiterCells)) {
+            recordMalformed('missing delimiter row');
+            continue;
+        }
+        if (delimiterCells.length !== candidateColumns.length) {
+            recordMalformed('delimiter/header column count mismatch');
+            continue;
+        }
+        if (firstValidIdx === -1)
+            firstValidIdx = i;
+        if (candidateColumns.includes(column)) {
             headerIdx = i;
+            columns = candidateColumns;
             break;
         }
     }
     if (headerIdx === -1) {
-        return { ok: false, reason: 'no table found' };
-    }
-    const delimiterLine = lines[headerIdx + 1]?.line;
-    if (delimiterLine === undefined || !delimiterLine.trim().startsWith('|')) {
-        return { ok: false, reason: 'missing delimiter row' };
-    }
-    const headerRanges = splitTableRowRanges(lines[headerIdx].line, lines[headerIdx].start);
-    const columns = headerRanges.map((r) => unescapeCellText(tableText.slice(r.start, r.end)));
-    const delimiterCells = splitTableRow(delimiterLine);
-    if (!isDelimiterRow(delimiterCells)) {
-        return { ok: false, reason: 'missing delimiter row' };
-    }
-    if (delimiterCells.length !== columns.length) {
-        return { ok: false, reason: 'delimiter/header column count mismatch' };
-    }
-    if (!columns.includes(column)) {
-        return { ok: false, reason: `unknown column: ${column}` };
+        if (firstValidIdx !== -1)
+            return { ok: false, reason: `unknown column: ${column}` };
+        return { ok: false, reason: firstMalformedReason ?? 'no table found' };
     }
     const targetColIdx = columns.indexOf(column);
     let selectedRange;
@@ -624,6 +649,65 @@ function escapeCell(value) {
         .trim();
 }
 /**
+ * Shared sentinel `reason` returned by both `appendQuickTaskRow` and
+ * `resetQuickTaskRows` when the "Quick Tasks Completed" heading is absent
+ * from `stateContent` (#2142). The section is created lazily by
+ * `gsd-core/workflows/quick.md` Step 7b and is absent from
+ * `gsd-core/templates/state.md`, so an absent section is the common case,
+ * not an anomaly — callers compare against this constant rather than
+ * matching on the free-form reason string (CONTRIBUTING.md "Prohibited:
+ * Raw Text Matching").
+ */
+exports.QUICK_TASKS_SECTION_ABSENT = 'no Quick Tasks Completed section';
+/**
+ * #3860: heading predicate for STATE.md's Quick Tasks Completed section(s).
+ * The heading is a section LABEL, not data — milestone-scoped files
+ * legitimately carry suffixed headings (`### Quick Tasks Completed (v1.1+)`
+ * beside an archived `(v1.0)`), so the match is prefix-anchored with a word
+ * boundary, never exact: `Quick Tasks Completedness` must NOT match. Hoisted
+ * beside QUICK_TASKS_SECTION_ABSENT so `appendQuickTaskRow` and
+ * `resetQuickTaskRows` cannot drift apart again.
+ */
+const isQuickTasksHeading = (h) => /^quick tasks completed\b/i.test(h.text.trim());
+/**
+ * #3860: among ALL heading-matching sections, pick the first whose body is a
+ * table with a recognized Quick Tasks schema — a legacy/unparseable table
+ * first in document order no longer shadows a usable one further down. When
+ * NO section is usable, return the FIRST match so the caller's downstream
+ * error describes the real problem (unparseable/legacy table) instead of a
+ * false QUICK_TASKS_SECTION_ABSENT.
+ *
+ * Bounding: `collectSections` ends a candidate's body only at the NEXT
+ * matching heading — far too wide for splicing (it would swallow an
+ * intervening `## Deferred Items` table into the Quick Tasks body, and
+ * `appendQuickTaskRow`'s last-table-line scan would then splice the new row
+ * into that WRONG table). Each candidate is therefore re-collected through
+ * `collectSection` with an offset-precise predicate, whose default
+ * level-bounded stop (next heading of the same or higher level) is exactly
+ * the semantics the pre-#3860 single-section lookup had.
+ *
+ * Convention: "first" is document order — the newest-on-top layout the issue
+ * itself demonstrates (`(v1.1+)` above an archived `(v1.0)`). When several
+ * suffixed sections all carry recognized schemas, this layer has no signal
+ * for which milestone is active, so document order is the pinned tie-break.
+ */
+function selectQuickTasksSection(stateContent) {
+    const candidates = (0, markdown_sectionizer_cjs_1.collectSections)(stateContent, isQuickTasksHeading);
+    if (candidates.length === 0)
+        return null;
+    const boundedOf = (cand) => (0, markdown_sectionizer_cjs_1.collectSection)(stateContent, (h) => h.offset === cand.heading.offset);
+    const firstBounded = boundedOf(candidates[0]);
+    for (const cand of candidates) {
+        const bounded = boundedOf(cand);
+        if (!bounded)
+            continue;
+        const parsed = parseMarkdownTable(bounded.body);
+        if (parsed.ok && matchTableSchema(parsed.value.columns)?.id === 'QuickTasks')
+            return bounded;
+    }
+    return firstBounded;
+}
+/**
  * Append one row to STATE.md's "Quick Tasks Completed" table.
  *
  * Pure, schema-driven replacement for fast.md's inline `awk NF-2` column-count
@@ -643,9 +727,9 @@ function escapeCell(value) {
  * rows), preserving any surrounding blank lines/trailing content in the section.
  */
 function appendQuickTaskRow(stateContent, fields) {
-    const section = (0, markdown_sectionizer_cjs_1.collectSection)(stateContent, (h) => /^quick tasks completed$/i.test(h.text.trim()));
+    const section = selectQuickTasksSection(stateContent);
     if (!section) {
-        return { ok: false, reason: 'no Quick Tasks Completed section' };
+        return { ok: false, reason: exports.QUICK_TASKS_SECTION_ABSENT };
     }
     const parsed = parseMarkdownTable(section.body);
     if (!parsed.ok) {
@@ -663,7 +747,7 @@ function appendQuickTaskRow(stateContent, fields) {
     const rowNumber = parsed.value.rows.length + 1;
     const cellFor = (col) => {
         switch (col) {
-            case '#': return escapeCell(String(rowNumber));
+            case '#': return escapeCell(fields.quickId ?? String(rowNumber));
             case 'Description': return escapeCell(fields.description);
             case 'Date': return escapeCell(fields.date);
             case 'Commit': return escapeCell(fields.commit);
@@ -693,6 +777,229 @@ function appendQuickTaskRow(stateContent, fields) {
     const newBody = newLines.join(eol);
     const content = (0, markdown_sectionizer_cjs_1.replaceSection)(stateContent, section, newBody);
     return { ok: true, value: { content, row, variant: match.label } };
+}
+// ─── migrateQuickTasksTable (#3730 option b) ───────────────────────────────
+/**
+ * Column-name → canonical-cell mapping for migrating a legacy Quick Tasks table
+ * (#3730). Name-based, case-insensitive; every column NOT in this map lands in
+ * the Description bucket (joined with ' · ' in original column order, unknown
+ * names kept as `name: value`) so no historical datum is dropped.
+ */
+const QUICK_TASKS_COLUMN_ALIASES = {
+    '#': '#', id: '#',
+    date: 'Date', when: 'Date',
+    commit: 'Commit', sha: 'Commit',
+    status: 'Status',
+    directory: 'Directory', artifacts: 'Directory', path: 'Directory', dir: 'Directory',
+    description: 'Description', task: 'Description', summary: 'Description',
+    slug: 'Description', scope: 'Description', title: 'Description',
+};
+/**
+ * Migrate STATE.md's "Quick Tasks Completed" table onto the canonical
+ * `with-status` schema (#3730, maintainer decision 2026-09-02: option b).
+ *
+ * The pre-registry prose template licensed arbitrary column shapes GSD itself
+ * emitted, and `appendQuickTaskRow` fails loud on every one of them — leaving a
+ * project permanently unappendable. This is the supported repair path: the
+ * `gsd-tools quick-tasks-migrate` subcommand, plus an automatic check on the
+ * first `quick`/`fast` run (the workflow calls this before appending), which is
+ * a silent no-op when the section is absent, the table is already canonical, or
+ * the user never runs quick at all.
+ *
+ * Same section-selection, parse, and fail-loud posture as `appendQuickTaskRow`
+ * (ADR-2143 §7 upheld — append still rejects; this REPAIRS). Returns
+ * `{ok:true, value:{content, migrated:false}}` for the no-op cases so callers
+ * can stay silent, and `{migrated:true, from, rows}` when a rewrite happened so
+ * the CLI can report exactly what moved.
+ */
+function migrateQuickTasksTable(stateContent) {
+    const section = selectQuickTasksSection(stateContent);
+    if (!section) {
+        return { ok: true, value: { content: stateContent, migrated: false } };
+    }
+    const parsed = parseMarkdownTable(section.body);
+    if (!parsed.ok) {
+        return { ok: false, reason: `quick-tasks table: ${parsed.reason}` };
+    }
+    const match = matchTableSchema(parsed.value.columns);
+    if (match && match.id === 'QuickTasks') {
+        return { ok: true, value: { content: stateContent, migrated: false } };
+    }
+    const canonical = exports.TABLE_SCHEMAS.QuickTasks.find((v) => v.label === 'with-status').columns;
+    // Map each legacy column to its canonical target; unmapped names keep their
+    // identity so the Description bucket can render them losslessly.
+    const targets = parsed.value.columns.map((c) => QUICK_TASKS_COLUMN_ALIASES[c.trim().toLowerCase()] ?? null);
+    const rows = parsed.value.rows.map((row, rowIdx) => {
+        const bucket = {
+            '#': '', Description: '', Date: '', Commit: '', Status: '', Directory: '',
+        };
+        const descriptionParts = [];
+        // parseMarkdownTable hands back name-keyed records (rows[i][columnName]).
+        parsed.value.columns.forEach((col, i) => {
+            const raw = (row[col] ?? '').trim();
+            const target = targets[i];
+            if (target === 'Description') {
+                if (raw)
+                    descriptionParts.push(raw);
+            }
+            else if (target) {
+                // Collision-safe (#3730 review): two legacy columns aliasing the same
+                // canonical target must not silently overwrite — the displaced value
+                // joins the Description bucket under its own name, same convention as
+                // an unknown column, so no historical datum is dropped.
+                if (raw && bucket[target]) {
+                    descriptionParts.push(`${col.trim()}: ${raw}`);
+                }
+                else if (raw) {
+                    bucket[target] = raw;
+                }
+            }
+            else if (raw) {
+                descriptionParts.push(`${col.trim()}: ${raw}`);
+            }
+        });
+        bucket['#'] = bucket['#'] || String(rowIdx + 1);
+        bucket.Description = descriptionParts.join(' · ');
+        bucket.Date = bucket.Date || '—';
+        bucket.Commit = bucket.Commit || '—';
+        bucket.Status = bucket.Status || '—';
+        bucket.Directory = bucket.Directory || '—';
+        return `| ${canonical.map((c) => escapeCell(bucket[c])).join(' | ')} |`;
+    });
+    const eol = /\r\n/.test(section.body) ? '\r\n' : '\n';
+    const lines = section.body.split(/\r?\n/);
+    // CONTIGUOUS-run bound (#3730 review), mirroring resetQuickTaskRows: the
+    // section body may carry a SECOND table (a `#### Notes` subsection or a
+    // trailing table after a blank line) that parseMarkdownTable never read —
+    // scanning for the last pipe line anywhere in the body would splice the
+    // rewrite across it and silently destroy it. Only the first CONTIGUOUS run
+    // of pipe lines — the table that was parsed — is replaced.
+    const firstTableLineIdx = lines.findIndex((l) => l.trim().startsWith('|'));
+    let lastTableLineIdx = firstTableLineIdx;
+    while (lastTableLineIdx + 1 < lines.length && lines[lastTableLineIdx + 1].trim().startsWith('|')) {
+        lastTableLineIdx++;
+    }
+    const header = `| ${canonical.join(' | ')} |`;
+    // Widths match workflows/quick.md's canonical template byte-for-byte
+    // (#3730 review): its delimiter is max(3, len+2) per column.
+    const delimiter = `| ${canonical.map((c) => '-'.repeat(Math.max(3, c.length + 2))).join(' | ')} |`;
+    const newBody = [
+        ...lines.slice(0, firstTableLineIdx),
+        header,
+        delimiter,
+        ...rows,
+        ...lines.slice(lastTableLineIdx + 1),
+    ].join(eol);
+    return {
+        ok: true,
+        value: {
+            content: (0, markdown_sectionizer_cjs_1.replaceSection)(stateContent, section, newBody),
+            migrated: true,
+            from: parsed.value.columns,
+            rows: rows.length,
+        },
+    };
+}
+// ─── resetQuickTaskRows (#2142) ────────────────────────────────────────────
+/**
+ * Clear every DATA row from STATE.md's "Quick Tasks Completed" table, leaving
+ * the header + delimiter lines byte-identical, for use at milestone close when
+ * `--archive-quick` has actually moved the underlying `.planning/quick/*`
+ * directories out from under the table (see `src/milestone.cts`'s
+ * `archiveQuickTaskDirectories` / `cmdMilestoneComplete` wiring).
+ *
+ * Mirrors `appendQuickTaskRow`'s exact contract (same `selectQuickTasksSection` ->
+ * `parseMarkdownTable` -> `matchTableSchema` pipeline, same fail-loud posture,
+ * same EOL-detect-before-split handling) rather than inventing a second one:
+ *   - no "Quick Tasks Completed" heading -> `{ok:false, reason:
+ *     QUICK_TASKS_SECTION_ABSENT}` (no-op; a STATE.md without the section has
+ *     nothing to reset — per #2142 design doc §40, behavior table row 5, the
+ *     section is created lazily by quick.md Step 7b and is absent from
+ *     templates/state.md, so absence is the common path, not an anomaly.
+ *     Callers MUST treat this sentinel as silent — never surface it as a
+ *     `preservation_warnings` entry).
+ *   - the section body doesn't parse as a GFM table -> `{ok:false, reason}`.
+ *   - the table's header doesn't match a known `TABLE_SCHEMAS.QuickTasks`
+ *     variant -> `{ok:false, reason}` and — CRITICAL — no modification at
+ *     all. A user-added column means the data can't be safely addressed by
+ *     name, so clearing it would destroy rows under a schema we don't
+ *     understand (Postel's Law: liberal in accepting known shapes,
+ *     conservative about destroying what we don't).
+ */
+function resetQuickTaskRows(stateContent) {
+    if (typeof stateContent !== 'string' || stateContent.trim() === '') {
+        return { ok: false, reason: 'empty or non-string input' };
+    }
+    const section = selectQuickTasksSection(stateContent);
+    if (!section) {
+        return { ok: false, reason: exports.QUICK_TASKS_SECTION_ABSENT };
+    }
+    const parsed = parseMarkdownTable(section.body);
+    if (!parsed.ok) {
+        return { ok: false, reason: `quick-tasks table: ${parsed.reason}` };
+    }
+    const match = matchTableSchema(parsed.value.columns);
+    if (!match || match.id !== 'QuickTasks') {
+        // Refuse the reset — keep every row, caller-owned content is untouched.
+        return {
+            ok: false,
+            reason: `unrecognized Quick Tasks schema (columns: ${parsed.value.columns.join(' | ')})`,
+        };
+    }
+    const cleared = parsed.value.rows.length;
+    // Detect the section's EOL BEFORE splitting on /\r?\n/ (which discards it) —
+    // exactly `appendQuickTaskRow`'s convention — so a CRLF document is not
+    // downgraded to mixed EOL by the rejoin below.
+    const eol = /\r\n/.test(section.body) ? '\r\n' : '\n';
+    const lines = section.body.split(/\r?\n/);
+    let headerIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+        if (lines[i].trim().startsWith('|')) {
+            headerIdx = i;
+            break;
+        }
+    }
+    // headerIdx is always found here — parseMarkdownTable already confirmed a
+    // header + delimiter row exist in this same `section.body`.
+    let lastTableLineIdx = headerIdx + 1; // delimiter row, when there are zero data rows
+    for (let i = headerIdx + 2; i < lines.length; i++) {
+        if (!lines[i].trim().startsWith('|'))
+            break;
+        lastTableLineIdx = i;
+    }
+    // Keep the header + delimiter lines [0 .. headerIdx+1] plus everything
+    // after the contiguous run of `|`-prefixed data rows — dropping only the
+    // data rows themselves. Non-table content before/after the table inside
+    // the section is preserved untouched.
+    const newLines = [
+        ...lines.slice(0, headerIdx + 2),
+        ...lines.slice(lastTableLineIdx + 1),
+    ];
+    const newBody = newLines.join(eol);
+    const content = (0, markdown_sectionizer_cjs_1.replaceSection)(stateContent, section, newBody);
+    return { ok: true, value: { content, cleared, variant: match.label } };
+}
+/**
+ * `updateTableCell` scoped to REQUIREMENTS.md's `## Traceability` (or
+ * `## Traceability Status`) section (#2245 F1, #5762): `updateTableCell` binds
+ * to the first table it finds, and the shipped template puts an `## Out of
+ * Scope` table (`Feature | Reason`, no `Status` column) before Traceability, so
+ * an unscoped call never reaches the real rows. The ONE copy of this slice
+ * (it used to live in both milestone.cts and phase.cts); the heading rule is
+ * the Progress owner's — first level-2 heading outside fenced code, running to
+ * the next level-1/2 heading. No such heading: the whole text, as before.
+ */
+function updateTraceabilityCell(text, match, column, newValue) {
+    const headings = (0, markdown_sectionizer_cjs_1.tokenizeHeadings)(text);
+    const index = headings.findIndex((h) => h.level === 2 && /^Traceability(?:[ \t]+Status)?\b/i.test(h.text));
+    if (index === -1)
+        return updateTableCell(text, match, column, newValue);
+    let result = { ok: false, reason: 'no matching row' };
+    const edited = (0, markdown_sectionizer_cjs_1.editHeadingSlice)(text, (0, markdown_sectionizer_cjs_1.headingSliceRange)(text, headings, index, 2), (scoped) => {
+        result = updateTableCell(scoped, match, column, newValue);
+        return result.ok ? result.value : scoped;
+    });
+    return result.ok ? { ok: true, value: edited } : result;
 }
 // Consumers: require('../gsd-core/bin/lib/markdown-table.cjs')
 // Named CJS exports are the canonical surface (ADR-457 .cts → .cjs build-at-publish).

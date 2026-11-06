@@ -11,8 +11,8 @@ This prevents the two most common AI development failures: choosing the wrong fr
 </purpose>
 
 <required_reading>
-@./.claude/gsd-core/references/ai-frameworks.md
-@./.claude/gsd-core/references/ai-evals.md
+@.claude/gsd-core/references/ai-frameworks.md
+@.claude/gsd-core/references/ai-evals.md
 </required_reading>
 
 <process>
@@ -20,26 +20,33 @@ This prevents the two most common AI development failures: choosing the wrong fr
 ## 1. Initialize
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-./.claude}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-./.claude}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
-INIT=$(gsd_run query init.plan-phase "$PHASE")
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_19b2f28d7e8349c9516adaa880887b5f' || true
+$ARGUMENTS
+GSD_ARGS_END_19b2f28d7e8349c9516adaa880887b5f
+GSD_ARGS=${GSD_ARGS%$'\n'}
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+INIT=$(gsd_run query init.plan-phase ${GSD_WS:+--ws=${GSD_WS##* }} "$PHASE")
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
 
-Parse JSON for: `phase_dir`, `phase_number`, `phase_name`, `phase_slug`, `padded_phase`, `has_context`, `has_research`, `commit_docs`.
+Parse JSON for: `phase_dir`, `phase_number`, `phase_name`, `phase_slug`, `padded_phase`, `has_context`, `has_research`, `commit_docs`, `response_language`.
+
+**If `response_language` is set:** All user-facing output of this workflow — narration between tool calls, status updates, progress notes, findings, questions, prompts, and explanations — MUST be presented in `{response_language}`. Technical terms, code, file paths, and subagent prompts stay in English — only user-facing output is translated.
 
 **File paths:** `state_path`, `roadmap_path`, `requirements_path`, `context_path`.
 
 Resolve agent models:
 ```bash
-SELECTOR_MODEL=$(gsd_run query resolve-model gsd-framework-selector 2>/dev/null | jq -r '.model' 2>/dev/null || true)
-RESEARCHER_MODEL=$(gsd_run query resolve-model gsd-ai-researcher 2>/dev/null | jq -r '.model' 2>/dev/null || true)
-DOMAIN_MODEL=$(gsd_run query resolve-model gsd-domain-researcher 2>/dev/null | jq -r '.model' 2>/dev/null || true)
-PLANNER_MODEL=$(gsd_run query resolve-model gsd-eval-planner 2>/dev/null | jq -r '.model' 2>/dev/null || true)
+SELECTOR_MODEL=$(gsd_run query resolve-model gsd-framework-selector --pick model 2>/dev/null || true)
+RESEARCHER_MODEL=$(gsd_run query resolve-model gsd-ai-researcher --pick model 2>/dev/null || true)
+DOMAIN_MODEL=$(gsd_run query resolve-model gsd-domain-researcher --pick model 2>/dev/null || true)
+PLANNER_MODEL=$(gsd_run query resolve-model gsd-eval-planner --pick model 2>/dev/null || true)
 ```
 
 Check config:
 ```bash
-AI_PHASE_ENABLED=$(gsd_run query config-get workflow.ai_integration_phase 2>/dev/null || echo "true")
+AI_PHASE_ENABLED=$(gsd_run query config-get workflow.ai_integration_phase --raw 2>/dev/null || echo "true")
 ```
 
 **If `AI_PHASE_ENABLED` is `false`:**
@@ -52,7 +59,7 @@ Exit workflow.
 
 ## 2. Parse and Validate Phase
 
-Extract phase number from $ARGUMENTS. If not provided, detect next unplanned phase.
+Extract phase number from $ARGUMENTS. If not provided, this orchestrator (not `gsd-tools.cjs`) detects the next unplanned phase: run `gsd_run query roadmap.analyze` and read its `next_phase` field (the first phase whose `disk_status` is `no_directory`, `empty`, `discussed`, or `researched` — i.e. not yet planned). `query roadmap.get-phase` below hard-requires an explicit `${PHASE}` and does not auto-detect.
 
 ```bash
 PHASE_INFO=$(gsd_run query roadmap.get-phase "${PHASE}")
@@ -76,9 +83,16 @@ Continue (non-blocking).
 AI_SPEC_FILE=$(ls "${PHASE_DIR}"/*-AI-SPEC.md 2>/dev/null | head -1)
 ```
 
+**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `$ARGUMENTS` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `AskUserQuestion` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Antigravity, etc.) where `AskUserQuestion` is not available.
+**If exists:**
 
-**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `$ARGUMENTS` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `AskUserQuestion` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Gemini CLI, etc.) where `AskUserQuestion` is not available.
-**If exists:** Use AskUserQuestion:
+**If `--auto`:** Auto-select "Skip" — keep the existing AI-SPEC untouched and exit. Log:
+`[auto] AI-SPEC exists — reusing as-is.` Skip is the auto choice because it is the only
+non-destructive one: "Update" re-runs framework selection with the existing spec as baseline,
+which can rewrite decisions a person already recorded in it, and nobody is present to notice
+(#4776).
+
+**Otherwise:** Use AskUserQuestion:
 - header: "Existing AI-SPEC"
 - question: "AI-SPEC.md already exists for Phase {N}. What would you like to do?"
 - options:
@@ -94,26 +108,24 @@ If "Update": continue to step 5.
 
 Display:
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AI DESIGN CONTRACT — PHASE {N}: {name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► AI DESIGN CONTRACT — PHASE {N}: {name}
 
 ◆ Step 1/4 — Framework Selection...
 ```
 
 Spawn `gsd-framework-selector` with:
 ```markdown
-Read ./.claude/agents/gsd-framework-selector.md for instructions.
+Read .claude/agents/gsd-framework-selector.md for instructions.
 
 <objective>
 Select the right AI framework for Phase {phase_number}: {phase_name}
 Goal: {phase_goal}
 </objective>
 
-<files_to_read>
+<required_reading>
 {context_path if exists}
 {requirements_path if exists}
-</files_to_read>
+</required_reading>
 
 <phase_context>
 Phase: {phase_number} — {phase_name}
@@ -129,7 +141,7 @@ Parse selector output for: `primary_framework`, `system_type`, `model_provider`,
 
 Copy template:
 ```bash
-cp "./.claude/gsd-core/templates/AI-SPEC.md" "${PHASE_DIR}/${PADDED_PHASE}-AI-SPEC.md"
+cp ".claude/gsd-core/templates/AI-SPEC.md" "${PHASE_DIR}/${PADDED_PHASE}-AI-SPEC.md"
 ```
 
 Fill in header fields:
@@ -149,7 +161,7 @@ Display:
 
 Spawn `gsd-ai-researcher` with:
 ```markdown
-Read ./.claude/agents/gsd-ai-researcher.md for instructions.
+Read .claude/agents/gsd-ai-researcher.md for instructions.
 
 **Tool discipline (mandatory):**
 Use the Edit tool exclusively when modifying AI-SPEC.md — NEVER use Write on this file.
@@ -159,10 +171,10 @@ Before editing, verify the section you are about to write is still a template pl
 <objective>
 </objective>
 
-<files_to_read>
+<required_reading>
 {ai_spec_path}
 {context_path if exists}
-</files_to_read>
+</required_reading>
 
 <input>
 framework: {primary_framework}
@@ -184,7 +196,7 @@ Display:
 
 Spawn `gsd-domain-researcher` with:
 ```markdown
-Read ./.claude/agents/gsd-domain-researcher.md for instructions.
+Read .claude/agents/gsd-domain-researcher.md for instructions.
 
 **Tool discipline (mandatory):**
 Use the Edit tool exclusively when modifying AI-SPEC.md — NEVER use Write on this file.
@@ -194,11 +206,11 @@ Before editing, verify the section you are about to write is still a template pl
 <objective>
 </objective>
 
-<files_to_read>
+<required_reading>
 {ai_spec_path}
 {context_path if exists}
 {requirements_path if exists}
-</files_to_read>
+</required_reading>
 
 <input>
 system_type: {system_type}
@@ -217,7 +229,7 @@ Display:
 
 Spawn `gsd-eval-planner` with:
 ```markdown
-Read ./.claude/agents/gsd-eval-planner.md for instructions.
+Read .claude/agents/gsd-eval-planner.md for instructions.
 
 <objective>
 Design evaluation strategy for Phase {phase_number}: {phase_name}
@@ -225,11 +237,11 @@ Write Sections 5, 6, and 7 of AI-SPEC.md
 AI-SPEC.md now contains domain context (Section 1b) — use it as your rubric starting point.
 </objective>
 
-<files_to_read>
+<required_reading>
 {ai_spec_path}
 {context_path if exists}
 {requirements_path if exists}
-</files_to_read>
+</required_reading>
 
 <input>
 system_type: {system_type}
@@ -256,18 +268,14 @@ Read the completed AI-SPEC.md. Check that:
 
 ## 11. Commit
 
-**If `commit_docs` is true:**
 ```bash
-git add "${AI_SPEC_FILE}"
-git commit -m "docs({phase_slug}): generate AI-SPEC.md — {primary_framework} + domain context + eval strategy"
+gsd_run query commit "docs({phase_slug}): generate AI-SPEC.md — {primary_framework} + domain context + eval strategy" --files "${AI_SPEC_FILE}"
 ```
 
 ## 12. Display Completion
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AI-SPEC COMPLETE — PHASE {N}: {name}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► AI-SPEC COMPLETE — PHASE {N}: {name}
 
 ◆ Framework: {primary_framework}
 ◆ System Type: {system_type}

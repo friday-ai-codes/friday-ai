@@ -1,38 +1,32 @@
-shellEmulator: true
-
-trustPolicy: no-downgrade
 packages:
   - web
-overrides:
-  chokidar: ^5.0.0
-  # 与 @types/node ^24 要求的 ~7.18.0 对齐，避免类型重复
-  undici-types: 7.18.2
 
 catalogs:
   default:
-    '@antfu/eslint-config': ^9.0.0
-    '@babel/parser': ^7.29.7
-    '@codemirror/autocomplete': ^6.20.3
+    '@antfu/eslint-config': ^9.5.1
+    '@babel/parser': ^7.29.13
+    '@codemirror/autocomplete': ^6.20.4
     '@codemirror/lang-json': ^6.0.2
-    '@codemirror/lang-markdown': ^6.5.0
+    '@codemirror/lang-markdown': ^6.5.2
     '@codemirror/lint': ^6.9.7
-    '@codemirror/search': ^6.7.0
-    '@codemirror/state': ^6.6.0
+    '@codemirror/search': ^6.7.2
+    '@codemirror/state': ^6.7.6
     '@codemirror/theme-one-dark': ^6.1.3
-    '@codemirror/view': ^6.43.1
+    '@codemirror/view': ^6.43.15
     '@floating-ui/dom': 1.7.6
     '@floating-ui/vue': ^1.1.11
     '@iconify-json/heroicons': ^1.2.3
-    '@iconify-json/lucide': ^1.2.111
+    '@iconify-json/lucide': ^1.2.151
     '@iconify-json/mdi': ^1.2.3
-    '@iconify/json': ^2.2.485
+    '@iconify/json': ^2.2.553
     '@iconify/tailwind4': ^1.2.3
     '@internationalized/date': 3.10.1
-    '@playwright/test': ^1.60.0
-    '@shikijs/markdown-it': ^4.2.0
+    '@playwright/test': ^1.65.0
+    # 4.5+ uses markdown-it 15. The application still types and renders with 14.
+    '@shikijs/markdown-it': 4.4.0
     '@sigma/edge-curve': ^3.1.0
     '@tailwindcss/typography': ^0.5.20
-    '@tailwindcss/vite': ^4.3.0
+    '@tailwindcss/vite': ^4.3.4
     '@tanstack/vue-query': 5.101.0
     '@tanstack/vue-table': ^8.21.3
     '@tiptap/core': 3.26.0
@@ -42,7 +36,7 @@ catalogs:
     '@tiptap/extension-code-block': 3.26.0
     '@tiptap/extension-code-block-lowlight': 3.26.0
     '@tiptap/extension-document': 3.26.0
-    '@tiptap/extension-gapcursor': ^3.26.0
+    '@tiptap/extension-gapcursor': 3.26.0
     '@tiptap/extension-heading': 3.26.0
     '@tiptap/extension-history': 3.26.0
     '@tiptap/extension-italic': 3.26.0
@@ -61,19 +55,19 @@ catalogs:
     '@tiptap/suggestion': 3.26.0
     '@tiptap/vue-3': 3.26.0
     '@types/dagre': ^0.7.54
-    '@types/markdown-it': ^14.1.2
-    '@types/node': ^24.13.2
+    '@types/markdown-it': ^14.2.0
+    '@types/node': ^24.19.2
     '@vee-validate/zod': ^4.15.1
-    '@vitejs/plugin-vue': ^6.0.7
-    '@vitest/coverage-v8': 4.1.8
+    '@vitejs/plugin-vue': ^6.0.10
+    '@vitest/coverage-v8': 4.1.12
     '@vue-flow/background': 1.3.2
     '@vue-flow/controls': ^1.1.3
     '@vue-flow/core': 1.48.2
     '@vue-flow/minimap': ^1.5.4
     '@vue-flow/node-toolbar': ^1.1.1
-    '@vue/test-utils': ^2.4.11
+    '@vue/test-utils': ^2.5.1
     '@vue/tsconfig': ^0.9.1
-    '@vueuse/core': ^14.3.0
+    '@vueuse/core': ^14.4.0
     '@vueuse/head': ^2.0.0
     class-variance-authority: ^0.7.1
     clsx: ^2.1.1
@@ -81,44 +75,52 @@ catalogs:
     dagre: ^0.8.5
     diff: ^9.0.0
     echarts: ^6.1.0
-    eslint: ^10.4.1
+    eslint: ^10.14.0
     eslint-plugin-format: ^2.0.1
-    fuse.js: ^7.4.2
+    fuse.js: ^7.5.0
     graphology: ^0.26.0
     graphology-layout-forceatlas2: ^0.10.1
     graphology-layout-noverlap: ^0.4.2
     graphology-types: ^0.24.8
-    gsap: ^3.15.0
-    happy-dom: ^20.10.2
+    gsap: ^3.15.1
+    happy-dom: ^20.14.6
     lottie-web: ^5.13.0
     lowlight: 3.3.0
     lucide-vue-next: ^0.562.0
-    markdown-it: ^14.2.0
-    nanoid: ^5.1.11
+    markdown-it: ^14.3.3
+    nanoid: ^5.1.16
     pinia: ^3.0.4
-    reka-ui: ^2.9.10
-    shiki: ^4.2.0
+    reka-ui: ^2.11.0
+    shiki: 4.4.0
     sigma: ^3.0.3
-    tailwind-merge: ^3.6.0
-    tailwindcss: ^4.3.0
-    tsx: ^4.22.4
+    tailwind-merge: ^3.7.0
+    tailwindcss: ^4.3.4
+    tsx: ^4.23.15
     tw-animate-css: ^1.4.0
     typescript: ~6.0.3
-    unplugin-auto-import: ^21.0.0
+    unplugin-auto-import: ^21.1.0
     unplugin-vue-components: ^32.1.0
     unplugin-vue-i18n: ^1.0.11
     vee-validate: ^4.15.1
-    vite: ^8.0.16
+    vite: ^8.3.6
     vite-plugin-vue-layouts-next: ^2.1.0
-    vitest: ^4.1.8
+    vitest: ^4.1.12
     # 3.5.36/3.5.37 缺少 provenance 凭据，被 trustPolicy 拦截；3.5.35 是最后一个带凭据的版本
     vue: 3.5.35
     vue-codemirror: ^6.1.1
-    vue-echarts: ^8.0.1
-    vue-final-modal: ^4.5.5
-    vue-i18n: ^11.4.5
-    vue-macros: ^3.1.2
-    vue-router: ^5.1.0
+    vue-echarts: ^8.3.2
+    vue-final-modal: ^4.5.6
+    vue-i18n: ^11.4.18
+    vue-macros: ^3.1.4
+    vue-router: ^5.4.0
     vue-sonner: ^2.0.9
-    vue-tsc: ^3.3.4
-    zod: ^4.4.3
+    # Keep compatible with the template ref transforms used by Vue Macros.
+    vue-tsc: 3.3.4
+    zod: ^4.6.7
+overrides:
+  chokidar: ^5.0.0
+  # 与 @types/node ^24 要求的 ~7.18.0 对齐，避免类型重复
+  undici-types: 7.18.2
+shellEmulator: true
+
+trustPolicy: no-downgrade

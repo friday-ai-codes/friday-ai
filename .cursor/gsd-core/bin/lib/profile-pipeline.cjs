@@ -20,8 +20,11 @@ const node_path_1 = __importDefault(require("node:path"));
 const node_os_1 = __importDefault(require("node:os"));
 const node_readline_1 = __importDefault(require("node:readline"));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const core = require("./core.cjs");
-const { output, error, reapStaleTempFiles } = core;
+const ioModule = require("./io.cjs");
+const { output, error, reapStaleTempFiles, ensureGsdTempDir, GSD_TEMP_DIR } = ioModule;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cliExitModule = require("./cli-exit.cjs");
+const { ExitError } = cliExitModule;
 // ─── Session I/O Helpers ──────────────────────────────────────────────────────
 function getSessionsDir(overridePath) {
     const dir = overridePath || node_path_1.default.join(node_os_1.default.homedir(), '.claude', 'projects');
@@ -250,7 +253,7 @@ function cmdScanSessions(overridePath, options, raw) {
             }
         }
         process.stdout.write(`\nTotal: ${projects.length} projects\n`);
-        process.exit(0);
+        throw new ExitError(0);
     }
 }
 async function cmdExtractMessages(projectArg, options, raw, overridePath) {
@@ -334,7 +337,8 @@ async function cmdExtractMessages(projectArg, options, raw, overridePath) {
         sessions = sessions.slice(0, options.limit);
     }
     reapStaleTempFiles('gsd-pipeline-', { dirsOnly: true });
-    const tmpDir = node_fs_1.default.mkdtempSync(node_path_1.default.join(node_os_1.default.tmpdir(), 'gsd-pipeline-'));
+    ensureGsdTempDir();
+    const tmpDir = node_fs_1.default.mkdtempSync(node_path_1.default.join(GSD_TEMP_DIR, 'gsd-pipeline-'));
     const outputPath = node_path_1.default.join(tmpDir, 'extracted-messages.jsonl');
     let sessionsProcessed = 0;
     let sessionsSkipped = 0;
@@ -375,11 +379,11 @@ async function cmdExtractMessages(projectArg, options, raw, overridePath) {
     };
     if (sessionsSkipped > 0 && sessionsProcessed > 0) {
         process.stdout.write(JSON.stringify(result, null, 2));
-        process.exit(2);
+        throw new ExitError(2);
     }
     else if (sessionsProcessed === 0 && sessionsSkipped > 0) {
         process.stdout.write(JSON.stringify(result, null, 2));
-        process.exit(1);
+        throw new ExitError(1);
     }
     else {
         output(result, raw, undefined);
@@ -494,7 +498,8 @@ async function cmdProfileSample(overridePath, options, raw) {
         }
     }
     reapStaleTempFiles('gsd-profile-', { dirsOnly: true });
-    const tmpDir = node_fs_1.default.mkdtempSync(node_path_1.default.join(node_os_1.default.tmpdir(), 'gsd-profile-'));
+    ensureGsdTempDir();
+    const tmpDir = node_fs_1.default.mkdtempSync(node_path_1.default.join(GSD_TEMP_DIR, 'gsd-profile-'));
     const outputPath = node_path_1.default.join(tmpDir, 'profile-sample.jsonl');
     for (const msg of allMessages) {
         node_fs_1.default.appendFileSync(outputPath, JSON.stringify(msg) + '\n');

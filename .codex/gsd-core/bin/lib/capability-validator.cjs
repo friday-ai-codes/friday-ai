@@ -173,7 +173,10 @@ function validateConfigSliceEntry(capId, key, slice) {
 // ─── Per-capability validation ────────────────────────────────────────────────
 
 const KEBAB_RE = /^[a-z][a-z0-9-]*$/;
-const VALID_ROLES = new Set(['feature', 'runtime']);
+// ADR-2782 D3: a third role for reviewer lanes that are NOT install targets
+// (gemini, coderabbit, ollama, lm_studio, llama_cpp). A `role: "reviewer"`
+// capability carries a reviewer body, no runtime body, and no install surface.
+const VALID_ROLES = new Set(['feature', 'runtime', 'reviewer']);
 const VALID_TIERS = new Set(['core', 'standard', 'full']);
 const VALID_ON_ERROR = new Set(['skip', 'halt']);
 const RUNTIME_COMPAT_WILDCARD = '*';
@@ -207,10 +210,35 @@ const SHA512_INTEGRITY_RE = /^sha512-[A-Za-z0-9+/]{86}==$/;
 // hard validation error — fail closed so the capability install/load is rejected loudly.
 const SAFE_HOOK_SCRIPT_RE = /^[A-Za-z0-9._/-]+$/;
 
+// #3631 (defense-in-depth, mirrors capability-lifecycle.cts — KEEP BOTH IN SYNC): a declared script
+// path must not point into the space bundleContentHash (capability-consent.cts) excludes from the
+// consent-binding digest. A file whose basename ends `.pyc`/`.pyo` can contain perfectly valid
+// JavaScript and would be executed by `node` regardless of extension, and a `__pycache__`/
+// `.pytest_cache` segment marks a directory whose digest marker is suppressed — so a MANIFEST-DECLARED
+// executable surface must never be able to reach either, or the exclusion becomes reachable from a
+// path an attacker fully controls at declare-time rather than only via post-consent tamper.
+// Regex asymmetry is DELIBERATE, KEEP BOTH RULES IN SYNC WITH capability-lifecycle.cts (byte-identical
+// text, verified by the isSafeHookScriptPath parity test in tests/capability-registry.test.cjs):
+//   (i)   PYCACHE_SUFFIX_RE is case-INSENSITIVE (`/i`) on purpose — a validator should be STRICTER than
+//         the digest it defends, so it rejects `x.PYC` too even though bundleContentHash's own suffix
+//         match (hasPycacheFileSuffix, capability-consent.cts) is byte-exact and would still hash it.
+//   (ii)  The __pycache__/.pytest_cache SEGMENT match is case-SENSITIVE to match the digest's own
+//         byte-exact, case-sensitive directory-basename comparison (CPython always writes a lowercase
+//         `__pycache__`) — a validator segment match looser than the digest here would reject paths the
+//         digest would still hash, which is over-strict in the wrong direction for a defense-in-depth
+//         check layered on top of an already-correct digest.
+//   (iii) The `[/\\]` backslash alternations in both regexes are defensive/UNREACHABLE in practice:
+//         SAFE_HOOK_SCRIPT_RE (above) already rejects any backslash character outright, so a script
+//         string containing `\` never reaches either PYCACHE_*_RE check.
+const PYCACHE_SEGMENT_RE = /(?:^|[/\\])(__pycache__|\.pytest_cache)(?:[/\\]|$)/;
+const PYCACHE_SUFFIX_RE = /\.(pyc|pyo)$/i;
+
 /**
  * #1460 (R): true when a relative hook-script path is shell-safe (see SAFE_HOOK_SCRIPT_RE).
  * Rejects absolute paths, `..` segments, a leading `-` on any path segment, and any char
- * outside the allowlist (whitespace / shell metacharacters / control / NUL).
+ * outside the allowlist (whitespace / shell metacharacters / control / NUL). #3631: also rejects a
+ * path with a `__pycache__`/`.pytest_cache` segment or a `.pyc`/`.pyo` basename suffix (defense in
+ * depth — keeps a declared executable surface out of the digest-excluded space).
  */
 function isSafeHookScriptPath(script) {
   if (typeof script !== 'string' || script.length === 0) return false;
@@ -222,6 +250,8 @@ function isSafeHookScriptPath(script) {
   for (const seg of segments) {
     if (seg.startsWith('-')) return false;
   }
+  if (PYCACHE_SEGMENT_RE.test(script)) return false;
+  if (PYCACHE_SUFFIX_RE.test(path.basename(script))) return false;
   return true;
 }
 
@@ -321,7 +351,7 @@ function validateCapability(cap, folderId) {
   }
 
   if (!VALID_ROLES.has(cap.role)) {
-    errors.push('role must be one of: feature, runtime (got: ' + cap.role + ')');
+    errors.push('role must be one of: ' + [...VALID_ROLES].join(', ') + ' (got: ' + cap.role + ')');
   }
 
   if (typeof cap.title !== 'string' || cap.title.length === 0) {
@@ -354,8 +384,38 @@ function validateCapability(cap, folderId) {
 
   if (cap.role === 'feature') {
     errors.push(...validateFeatureBody(cap));
+    // ADR-2782 D1 admits the reviewer body on `runtime` and `reviewer` ONLY. A
+    // feature capability owns loop artefacts, not an external review CLI. This is
+    // an ERROR rather than an ignored field because declaring a body is an
+    // ASSERTION of lane-ness (D4's Postel boundary), and a manifest built for a
+    // GSD that admits it declares `engines.gsd` and is gated before reaching here.
+    if (cap.reviewer !== undefined) {
+      errors.push('role:feature capability must not have a "reviewer" body (admissible on role runtime or reviewer only)');
+    }
   } else if (cap.role === 'runtime') {
     errors.push(...validateRuntimeBody(cap));
+    // A host that is ALSO a reviewer keeps exactly one manifest (ADR-2782 D1).
+    errors.push(...validateReviewerBody(cap));
+    // ADR-3646: a runtime capability installs a host CLI, it does not resolve
+    // task content — taskContentResolver is feature-only.
+    if (cap.taskContentResolver !== undefined) {
+      errors.push('role:runtime capability must not have a "taskContentResolver" body (feature-only field)');
+    }
+  } else if (cap.role === 'reviewer') {
+    // ADR-2782 D3 — a lane that is not an install target. No runtime body, no
+    // install surface, no runtimeCompat (it surfaces through no host runtime).
+    if (cap.reviewer === undefined) {
+      errors.push('role:reviewer capability must have a "reviewer" body — the role asserts a lane');
+    }
+    if (cap.runtime !== undefined) {
+      errors.push('role:reviewer capability must not have a "runtime" body (it is not an install target)');
+    }
+    for (const field of FEATURE_FIELDS_FORBIDDEN_ON_REVIEWER) {
+      if (cap[field] !== undefined) {
+        errors.push('role:reviewer capability must not have "' + field + '" (feature-only field)');
+      }
+    }
+    errors.push(...validateReviewerBody(cap));
   }
 
   return errors;
@@ -663,6 +723,118 @@ function validateFeatureBody(cap) {
     }
   }
 
+  // ADR-3646: optional per-task external-tracker content-resolution seam.
+  errors.push(...validateTaskContentResolver(cap));
+
+  return errors;
+}
+
+/**
+ * ADR-3646 — validate an OPTIONAL `taskContentResolver` body on a `role:
+ * "feature"` capability. Absence is never an error (most manifests won't
+ * have one); presence is strictly validated.
+ *
+ * Wrapped in try/catch to degrade any unexpected throw (a hostile Proxy, a
+ * throwing getter, etc.) to a single validation error rather than crashing
+ * every consumer of loadRegistry, per the #1461 OVL-1 discipline that
+ * `validateReviewerBody` follows.
+ *
+ * @param {object} cap  The parsed capability manifest.
+ * @returns {string[]}  Array of error strings; empty = valid or absent.
+ */
+function validateTaskContentResolver(cap) {
+  try {
+    return validateTaskContentResolverFields(cap);
+  } catch (err) {
+    return ['capability taskContentResolver body could not be validated: ' + safeErrorMessage(err)];
+  }
+}
+
+/**
+ * Upper bound for `taskContentResolver.invoke.timeoutMs`, specific to this
+ * field only. `isPositiveIntegerMs()` has no ceiling and stays that way — it
+ * is shared with the reviewer lane's `timeoutFloorMs` and probe `timeoutMs`,
+ * which may legitimately need a longer or unbounded value. Without a ceiling
+ * here, a manifest could declare `Number.MAX_SAFE_INTEGER` and let
+ * `resolve-content` hang near-indefinitely on a stuck/malicious resolver,
+ * defeating the feature's "bounded subprocess" design intent.
+ */
+const TASK_CONTENT_RESOLVER_TIMEOUT_CEILING_MS = 120000;
+
+function validateTaskContentResolverFields(cap) {
+  const errors = [];
+  if (typeof cap !== 'object' || cap === null || Array.isArray(cap)) return errors;
+
+  const tcr = cap.taskContentResolver;
+  if (tcr === undefined) return errors; // optional — never an error to omit
+
+  const ctx = 'capability "' + (typeof cap.id === 'string' ? cap.id : '(unknown)') + '"';
+
+  if (typeof tcr !== 'object' || tcr === null || Array.isArray(tcr)) {
+    const got = tcr === null ? 'null' : Array.isArray(tcr) ? 'array' : typeof tcr;
+    errors.push(
+      ctx + ' taskContentResolver must be an object (got: ' + got + '). ' +
+      'Omit the key entirely to declare no resolver — an explicit null is not an omission.',
+    );
+    return errors; // cannot validate fields of a non-object
+  }
+
+  // ── trackerPrefix — same grammar as a capability id ─────────────────────
+  if (typeof tcr.trackerPrefix !== 'string' || tcr.trackerPrefix.length === 0 || !KEBAB_RE.test(tcr.trackerPrefix)) {
+    errors.push(
+      ctx + ' taskContentResolver.trackerPrefix must be a non-empty kebab-case string matching ' +
+      String(KEBAB_RE) + ' (got: ' + describeValue(tcr.trackerPrefix) + ')',
+    );
+  }
+
+  // ── invoke ────────────────────────────────────────────────────────────
+  const inv = tcr.invoke;
+  if (typeof inv !== 'object' || inv === null || Array.isArray(inv)) {
+    const got = inv === null ? 'null' : Array.isArray(inv) ? 'array' : typeof inv;
+    errors.push(ctx + ' taskContentResolver.invoke must be an object (got: ' + got + ')');
+    return errors; // cannot validate sub-fields of a non-object
+  }
+
+  if (typeof inv.binary !== 'string' || inv.binary.length === 0) {
+    errors.push(ctx + ' taskContentResolver.invoke.binary must be a non-empty string');
+  }
+
+  if (!Array.isArray(inv.args)) {
+    errors.push(ctx + ' taskContentResolver.invoke.args must be an array of strings');
+  } else {
+    let hasPlaceholder = false;
+    for (const a of inv.args) {
+      if (typeof a !== 'string') {
+        errors.push(ctx + ' taskContentResolver.invoke.args entries must be strings (got: ' + describeValue(a) + ')');
+      } else if (a === '{{id}}') {
+        hasPlaceholder = true;
+      }
+    }
+    if (!hasPlaceholder) {
+      errors.push(
+        ctx + ' taskContentResolver.invoke.args must contain a "{{id}}" placeholder — ' +
+        'without it the resolved tracker id could never reach the resolver subprocess',
+      );
+    }
+  }
+
+  if (!isPositiveIntegerMs(inv.timeoutMs)) {
+    errors.push(
+      ctx + ' taskContentResolver.invoke.timeoutMs must be a positive integer of milliseconds — ' +
+      'an unbounded resolver call could hang task execution indefinitely ' +
+      '(got: ' + describeValue(inv.timeoutMs) + ')',
+    );
+  } else if (inv.timeoutMs > TASK_CONTENT_RESOLVER_TIMEOUT_CEILING_MS) {
+    // Ceiling specific to this field — `isPositiveIntegerMs()` itself stays
+    // unbounded because it is shared with the reviewer lane's
+    // `timeoutFloorMs`/probe `timeoutMs`, which have no such ceiling.
+    errors.push(
+      ctx + ' taskContentResolver.invoke.timeoutMs must not exceed ' +
+      TASK_CONTENT_RESOLVER_TIMEOUT_CEILING_MS + 'ms — an unbounded-in-practice value defeats the ' +
+      '"bounded subprocess" design intent (got: ' + inv.timeoutMs + ')',
+    );
+  }
+
   return errors;
 }
 
@@ -679,11 +851,12 @@ const VALID_CONVERTER_NAMES = new Set([
   'convertClaudeCommandToCodebuddySkill',
   'convertClaudeCommandToCodexSkill',
   'convertClaudeCommandToCopilotSkill',
-  'convertClaudeCommandToCursorCommand',
   'convertClaudeCommandToCursorSkill',
   'convertClaudeCommandToKiloSkill',
   'convertClaudeCommandToKimiSkill',
+  'convertClaudeCommandToKimiCodeSkill',
   'convertClaudeCommandToOpencodeSkill',
+  'convertClaudeCommandToPiSkill',
   'convertClaudeCommandToTraeSkill',
   'convertClaudeCommandToWindsurfSkill',
   'convertClaudeCommandToWindsurfWorkflow',
@@ -699,6 +872,18 @@ const VALID_CONVERTER_NAMES = new Set([
   'convertClaudeAgentToCodexAgent',
   // ADR-1239 / #2092 Phase B Upgrade 1 — native .qwen/agents/*.md subagent projection.
   'convertClaudeAgentToQwenAgent',
+  // #3384 — ZCode agents are Claude-shaped but its dispatcher treats mcp__* tools
+  // grants as required MCP servers; this converter strips them at install time.
+  'convertClaudeAgentToZcodeAgent',
+  // #2875 Part 2 (the agents-bypass closure) — data-driven Hermes branding
+  // converter (reads hostBehaviors.brandingRewrites rather than a hardcode),
+  // and the kilo/opencode agent converters (shared with those runtimes'
+  // commands-kind entries, options-bag signature `(content, {isAgent, modelOverride})`).
+  'convertClaudeAgentToHermesAgent',
+  // #5569 (ADR-5559 §3) — the role file Pi's gsd_dispatch loads.
+  'convertClaudeAgentToPiAgent',
+  'convertClaudeToKiloFrontmatter',
+  'convertClaudeToOpencodeFrontmatter',
 ]);
 
 // C3: Validate role:runtime body
@@ -717,6 +902,23 @@ const VALID_EXTENSION_EVENTS = new Set(['opencode', 'pi', 'hermes', 'kilo', 'non
 const VALID_SANDBOX_TIERS = new Set(['none', 'codex-agent-sandbox']);
 const VALID_ARTIFACT_KIND_NAMES = new Set(['commands', 'agents', 'skills', 'kimi-agents']);
 const VALID_ARTIFACT_NESTINGS = new Set(['flat', 'nested']);
+// #2871 Phase 2 — only `commands` and `skills` are trigger-bearing (a `/gsd-<name>`
+// the USER types). `agents` and `kimi-agents` are a separate dispatch interface
+// point (subagent invocation via `subagent_type`/named dispatch), never a trigger —
+// see 40-design.md's "agents are not trigger-bearing" correction. A narrower set
+// than VALID_ARTIFACT_KIND_NAMES on purpose: an artifact KIND can be agents; a
+// trigger-precedence MEMBER never can.
+const VALID_TRIGGER_PRECEDENCE_KINDS = new Set(['commands', 'skills']);
+// The default runtime.triggerPrecedence (highest priority first) applied when a
+// descriptor omits the axis (see validateRuntimeBody's required-with-default
+// handling below). Not invented: `['skills', 'commands']` is the ordering every
+// in-tree runtime that emits both kinds (from the same trigger stems) wants —
+// claude's local/global collision and the same-scope collision (codebuddy, kilo,
+// opencode, zcode) all resolve to skills winning. claude's shipped descriptor
+// declares this SAME value explicitly, and
+// tests/runtime-artifact-layout-trigger-surface.test.cjs asserts the two agree
+// (a parity assertion — two surfaces reading one rule must not silently drift).
+const DEFAULT_TRIGGER_PRECEDENCE = Object.freeze(['skills', 'commands']);
 const FEATURE_FIELDS_FORBIDDEN_ON_RUNTIME = ['skills', 'agents', 'steps', 'contributions', 'gates', 'hooks', 'activationKey'];
 // 'none' added #2103 — Marketplace/VSIX-distributed hosts (e.g. VS Code) that
 // are never CLI-installed (no allRuntimes membership, no install flag).
@@ -735,7 +937,133 @@ const VALID_HOOK_BUSES        = new Set(['host', 'engine', 'none']);
 const VALID_STATE_IO          = new Set(['filesystem', 'sandboxed-storage', 'session-log-append']);
 const VALID_TRANSPORTS        = new Set(['mcp', 'native-extension']);
 const VALID_HOST_RUNTIMES     = new Set(['node', 'bun', 'sandboxed-web', 'python', 'go', 'rust', 'electron', 'other']);
-const VALID_SUBAGENT_TOOLKITS = new Set(['full', 'read-only']);
+const VALID_SUBAGENT_TOOLKITS = new Set(['full', 'read-only', 'built-in-only']);
+// ADR-1239 amendment (#2481): how reasoning effort reaches the host.
+const VALID_EFFORT_SURFACES   = new Set(['argv', 'none']);
+// ADR-1239 Codex-binding amendment (#2584): how a host isolates concurrent
+// same-wave executors — a dispatch sub-field, not a top-level axis.
+const VALID_DISPATCH_ISOLATION = new Set(['harness-worktree', 'orchestrator-worktree', 'none']);
+
+// ─── Reviewer lane body (ADR-2782 D1/D2/D3/D7/D8) ────────────────────────────
+//
+// A reviewer lane is one external CLI or model endpoint that /gsd:review hands a
+// plan to. The body is admissible on `role: "runtime"` (a host that is ALSO a
+// reviewer) and on `role: "reviewer"` (a lane that is not an install target).
+//
+// The vocabulary below tracks src/review-lane-descriptor.cts (Phase 1, #2794)
+// field-for-field INCLUDING nesting, so no translation layer exists between the
+// core descriptor and the manifest. Four members were added by Phase 1's ADR
+// amendment, each forced by a lane that ships today: `promptChannel: 'none'`
+// (CodeRabbit is fed no prompt), `outputChannel: 'file-arg'` + `outputArg`
+// (Codex writes via -o and discards stdout, #1698), and `flags[]` (Antigravity
+// answers to both --antigravity and --agy).
+//
+// EVERY error message below enumerates its valid members. That is deliberate:
+// the prose reference lands in Phase 6 (#2800), so until then the validator's
+// own errors ARE the documentation — the same gap that left `hostBehaviors`
+// discoverable only by grepping a source line is not repeated here.
+
+// A slug is NOT a capability id. Ids are kebab (KEBAB_RE, which rejects "_");
+// slugs carry the shipped roster's snake forms (`lm_studio`, `llama_cpp`) and
+// name the config keys (`review.lm_studio_host`) that ADR-2782 D9 leaves
+// unchanged. Reusing KEBAB_RE here would reject two shipped lanes.
+//
+// ⚠ DEFECT.GENERATIVE-FIX — this grammar is DUPLICATED, by necessity, from
+// `LANE_SLUG_RE` in src/review-lane-descriptor.cts (Phase 1, #2794). It cannot be
+// imported: that module compiles to gsd-core/bin/lib/review-lane-descriptor.cjs,
+// which is gitignored build output, and THIS file is a committed plain .cjs that
+// must load on a fresh worktree before `npm run build:lib` has ever run (see the
+// header). Two surfaces sharing one parser therefore require a parity assertion
+// that fails when they diverge — `laneSlugGrammarMatchesPhase1Descriptor` in
+// tests/reviewer-manifest-body.test.cjs.
+//
+// A LEADING DIGIT IS PERMITTED. Phase 1 allows it and a manifest validator that
+// did not would reject a slug the core descriptor accepts — a model-named lane
+// such as `4o-mini` — which is exactly the translation layer ADR-2782 exists to
+// delete. Keep the two grammars byte-identical.
+const LANE_SLUG_RE = /^[a-z0-9][a-z0-9_-]*$/;
+// Flags are kebab even when the slug is snake: `lm_studio` → `--lm-studio`.
+// Phase 1 declares flags but does not constrain their grammar, so this is the
+// first and only definition — no parity partner to track.
+const LANE_FLAG_RE = /^--[a-z0-9][a-z0-9-]*$/;
+
+const VALID_LANE_TRANSPORTS   = new Set(['spawn', 'openai-http']);
+const VALID_LANE_PROBE_KINDS  = new Set(['command-exists', 'command-capability', 'http-reachable']);
+const VALID_PROMPT_CHANNELS   = new Set(['stdin', 'argv', 'argv-file-ref', 'none']);
+const VALID_OUTPUT_CHANNELS   = new Set(['stdout', 'file-arg']);
+const VALID_LANE_EFFORT_CHANNELS = new Set(['none', 'argv', 'env']);
+const VALID_MODEL_DISCOVERY   = new Set(['none', 'first-from-models-endpoint']);
+const VALID_EMPTY_OUTPUT      = new Set(['stub-with-stderr', 'handler-owned']);
+const VALID_EVIDENCE_CLASSES  = new Set(['source-grounded', 'diff-only']);
+
+// ADR-2782 D6 — a CLOSED enum of FIRST-PARTY module names, never a path and
+// never third-party code. `null` is the default and covers 7 of the 11 shipped
+// lanes; it is checked separately because a Set cannot hold the "declared
+// absent" case distinctly from an unknown string.
+//
+// ADMISSION RULE for a new member — this enum is the pressure valve that keeps
+// the descriptor from becoming an ad-hoc interpreter, and it only works while
+// membership stays scarce. A new member requires EITHER >=2 lanes that share the
+// behaviour, OR a documented upstream defect that data provably cannot express.
+// Today: `openai-compatible` serves 3 lanes (healthy); `antigravity` serves 1,
+// justified solely by a documented upstream stdout bug. An enum that grows one
+// member per lane has stopped being a vocabulary and become a dispatch table for
+// bespoke code — at which point the descriptor is a plugin system wearing a
+// manifest, and that is a decision for an ADR, not for a downstream phase.
+// `opencode` admitted by Phase 5b (#2799) under the SECOND arm of the rule above:
+// it serves 1 lane, justified by a documented upstream defect data cannot express.
+// OpenCode's default `build` agent is an agentic coder, not a prompt→completion
+// API; on a large review prompt it can end its turn with ZERO output tokens, and
+// `--format default` then drops the assistant text entirely, silently losing the
+// reviewer (#1936). The review must therefore be RECONSTRUCTED from the assistant
+// `text` parts of a `--format json` stream — a parse, not a copy. Expressing that
+// as data would need an `outputChannel: 'json-parts'` plus a selector expression,
+// i.e. exactly the ad-hoc interpreter the admission rule exists to prevent.
+const VALID_LANE_HANDLERS     = new Set(['antigravity', 'openai-compatible', 'opencode']);
+
+// D2 — `transport` selects the invoke sub-shape. A manifest carrying fields from
+// BOTH sub-shapes, or from NEITHER, has undefined meaning and fails validation.
+// The discriminator is explicit rather than inferred from field presence, which
+// is precisely the ambiguity these two sets exist to detect.
+// `env` added by #2483. It belongs in THIS set and not merely in validateSpawnInvoke: an environment
+// pair has no meaning for a transport that issues an HTTP POST, so a manifest declaring it alongside
+// `openai-http` fields is the undefined-meaning case the comment above describes. Registering it here
+// is what makes that case reportable — the openai-http arm rejects exactly the members of this list,
+// so a field absent from it is silently accepted on the wrong transport. Note `effortChannel` is
+// deliberately in NEITHER set: D2 defines it for both transports, so it is shared, not spawn-only.
+const SPAWN_ONLY_INVOKE_FIELDS = ['binary', 'args', 'promptChannel', 'outputChannel', 'outputArg', 'modelArg', 'env'];
+// Environment names refused outright on a reviewer lane (#2483): each one turns a declared pair into
+// arbitrary code execution in the spawned child. DEFENCE IN DEPTH, NOT THE BOUNDARY — say so plainly,
+// because a future reader who mistakes this for the control will under-invest in the one that is.
+// The boundary is install-time consent: `capability-trust` discloses every declared env pair, shows
+// its value, and binds it to the consent signature, so an unlisted name is still SEEN before it runs.
+//
+// Deliberately incomplete, and it cannot be otherwise: the spawned binary is arbitrary third-party
+// code, so the exhaustive set is every interpreter's injection variables. What this list buys is that
+// the highest-confidence, lowest-legitimacy routes cannot be taken quietly. `PATH` is included — it is
+// the most complete primitive of the set (repoint it at a directory holding a fake binary) and no
+// shipped reviewer manifest declares it; a lane that needs a specific executable declares an absolute
+// `invoke.binary` rather than reshaping the child's `PATH`.
+//
+// Matched CASE-INSENSITIVELY (members stored uppercase) — Windows environment lookup is
+// case-insensitive, so an exact-case set is bypassed by declaring `Path` or `node_options`.
+const DENIED_LANE_ENV_KEYS = new Set([
+  'PATH', 'NODE_OPTIONS', 'NODE_REPL_EXTERNAL_MODULE', 'NODE_PATH',
+  'LD_PRELOAD', 'LD_AUDIT', 'LD_LIBRARY_PATH',
+  'DYLD_INSERT_LIBRARIES', 'DYLD_LIBRARY_PATH',
+  'PYTHONSTARTUP', 'PYTHONPATH', 'BASH_ENV', 'ENV',
+  'PERL5OPT', 'RUBYOPT', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS', 'CLASSPATH',
+  'GIT_SSH_COMMAND', 'GIT_EXTERNAL_DIFF',
+]);
+// `defaultHost` / `fallbackModel` added by Phase 5b (#2799). Phase 4 federated every
+// `review.*_host` key with a default of `""`, so the REAL fallback destination and model
+// (`http://localhost:11434` / `llama3` and friends) existed only inside the bash leg. Once the
+// lane is invoked from data, an unset host with no declared default would POST to a garbage URL.
+const HTTP_ONLY_INVOKE_FIELDS  = ['hostConfigKey', 'defaultHost', 'path', 'modelDiscovery', 'fallbackModel'];
+
+// Feature-only fields are as forbidden on a lane-only capability as on a runtime
+// one; a `role: "reviewer"` capability owns no artefacts and wires no loop point.
+const FEATURE_FIELDS_FORBIDDEN_ON_REVIEWER = ['skills', 'agents', 'steps', 'contributions', 'gates', 'hooks', 'activationKey', 'taskContentResolver'];
 
 // GATE A: installSurface → allowed hooksSurface values (DEFECT.GENERATIVE-FIX: parity invariant)
 // Derived from the actual pairings in the 16 real runtime descriptors.
@@ -911,6 +1239,20 @@ function validateArtifactKindEntry(capId, entry, prefix) {
     }
   }
 
+  // excludeSuffixes — optional; filename suffixes the agents staging skips (#5569: Pi omits .compact.md)
+  if (entry.excludeSuffixes !== undefined) {
+    if (!Array.isArray(entry.excludeSuffixes)) {
+      errors.push(ctx + '.excludeSuffixes must be an array of non-empty strings if present');
+    } else {
+      for (let i = 0; i < entry.excludeSuffixes.length; i++) {
+        const s = entry.excludeSuffixes[i];
+        if (typeof s !== 'string' || s.length === 0 || s.includes('/') || s.includes('\\')) {
+          errors.push(ctx + '.excludeSuffixes[' + i + '] must be a non-empty string without path separators');
+        }
+      }
+    }
+  }
+
   // converter — required; must be a string or null (closed ConverterName enum — now enforced in phase 5e)
   if (!Object.prototype.hasOwnProperty.call(entry, 'converter')) {
     errors.push(ctx + '.converter is required (must be a string or null)');
@@ -949,7 +1291,18 @@ function validateArtifactLayout(capId, layout) {
       errors.push(ctx + '.' + scope + ' must be an array');
     } else {
       for (let i = 0; i < arr.length; i++) {
-        errors.push(...validateArtifactKindEntry(capId, arr[i], 'artifactLayout.' + scope + '[' + i + ']'));
+        const entry = arr[i];
+        errors.push(...validateArtifactKindEntry(capId, entry, 'artifactLayout.' + scope + '[' + i + ']'));
+        if (
+          scope === 'local' &&
+          typeof entry === 'object' && entry !== null && !Array.isArray(entry) &&
+          Object.prototype.hasOwnProperty.call(entry, 'home')
+        ) {
+          errors.push(
+            ctx + '.local[' + i + '].home is not allowed; ' +
+            'local artifact layout entries must remain project-scoped',
+          );
+        }
       }
     }
   }
@@ -1204,6 +1557,24 @@ function validateRuntimeBody(cap) {
       );
     }
 
+    // effortSurface (axis) — ADR-1239 amendment (#2481).
+    // OPTIONAL, unlike the Phase-A axes. It was added after descriptors already
+    // existed, so requiring it would invalidate every descriptor written before it —
+    // including third-party ones, breaking the "purely additive" property ADR-1239
+    // promises for external descriptors. An omitted axis is legitimate: negotiation
+    // degrades it to the safe floor ('none') and warns, exactly as for any
+    // undeclared axis. Only a PRESENT value is checked against the vocabulary.
+    if (hi.effortSurface === undefined) {
+      // absent — nothing to validate; negotiateHostCapabilities fails it closed.
+    } else if (hi.effortSurface === '__proto__' || hi.effortSurface === 'constructor' || hi.effortSurface === 'prototype') {
+      errors.push('runtime.hostIntegration.effortSurface "' + hi.effortSurface + '" is a reserved name');
+    } else if (hi.effortSurface !== 'undocumented' && !VALID_EFFORT_SURFACES.has(hi.effortSurface)) {
+      errors.push(
+        'runtime.hostIntegration.effortSurface must be one of: ' + [...VALID_EFFORT_SURFACES].join(', ') +
+        ' (or "undocumented") (got: ' + JSON.stringify(hi.effortSurface) + ')',
+      );
+    }
+
     // dispatch — required object
     if (typeof hi.dispatch !== 'object' || hi.dispatch === null || Array.isArray(hi.dispatch)) {
       errors.push('runtime.hostIntegration.dispatch must be an object');
@@ -1270,7 +1641,133 @@ function validateRuntimeBody(cap) {
           'runtime.hostIntegration.dispatch.backgroundDispatch must be a boolean or "undocumented" (got: ' + JSON.stringify(d.backgroundDispatch) + ')',
         );
       }
+
+      // isolation — ADR-1239 Codex-binding amendment (#2584).
+      // OPTIONAL, like effortSurface: added after descriptors already existed,
+      // so requiring it would invalidate every descriptor authored before it —
+      // including third-party ones, breaking the "purely additive" property
+      // ADR-1239 promises for external descriptors. An omitted isolation is
+      // legitimate: negotiation degrades it to 'none' (the safe floor) and
+      // warns, exactly as for any other undeclared dispatch sub-field. Only a
+      // PRESENT value is checked against the closed vocabulary.
+      if (d.isolation === undefined) {
+        // absent — nothing to validate; negotiateHostCapabilities fails it closed.
+      } else if (d.isolation === '__proto__' || d.isolation === 'constructor' || d.isolation === 'prototype') {
+        errors.push('runtime.hostIntegration.dispatch.isolation "' + d.isolation + '" is a reserved name');
+      } else if (d.isolation !== 'undocumented' && !VALID_DISPATCH_ISOLATION.has(d.isolation)) {
+        errors.push(
+          'runtime.hostIntegration.dispatch.isolation must be one of: ' + [...VALID_DISPATCH_ISOLATION].join(', ') +
+          ' (or "undocumented") (got: ' + JSON.stringify(d.isolation) + ')',
+        );
+      }
+
+      // maxConcurrency — ADR-1239 Phase 1 (#3673). A numeric dispatch
+      // sub-field (not a closed-vocabulary enum member — same numeric
+      // dispatch sub-field treatment as maxDepth above; unlike maxDepth,
+      // 0 and negative values are invalid — 1 is the fail-closed floor, not
+      // a legitimate "no concurrency" declaration).
+      // OPTIONAL, like isolation: added after existing descriptors, so an
+      // omitted maxConcurrency is legitimate — negotiateHostCapabilities
+      // degrades it to 1 (the safe floor) and warns, exactly as for any
+      // other undeclared dispatch sub-field. Only a PRESENT value is
+      // checked against the positive-safe-integer contract.
+      if (d.maxConcurrency === undefined) {
+        // absent — nothing to validate; negotiateHostCapabilities fails it closed.
+      } else if (
+        d.maxConcurrency !== 'undocumented' &&
+        (!Number.isSafeInteger(d.maxConcurrency) || d.maxConcurrency < 1)
+      ) {
+        errors.push(
+          'runtime.hostIntegration.dispatch.maxConcurrency must be a positive safe integer or "undocumented" ' +
+          '(got: ' + JSON.stringify(d.maxConcurrency) + ')',
+        );
+      }
     }
+  }
+
+  // orchestratorExec — ADR-1239 Codex-binding amendment (#2584), Phase 2.
+  // OPTIONAL top-level field (sibling of hostBehaviors), like hookEvents:
+  // only hosts whose hostIntegration.dispatch.isolation is
+  // 'orchestrator-worktree' need it, so it is not required on every runtime
+  // descriptor. When present it must be a well-formed exec descriptor for
+  // src/host-integration.cts's resolveOrchestratorExec.
+  if (r.orchestratorExec !== undefined) {
+    if (typeof r.orchestratorExec !== 'object' || r.orchestratorExec === null || Array.isArray(r.orchestratorExec)) {
+      errors.push(
+        'runtime.orchestratorExec must be an object (got: ' +
+        (r.orchestratorExec === null ? 'null' : (Array.isArray(r.orchestratorExec) ? 'array' : typeof r.orchestratorExec)) + ')',
+      );
+    } else {
+      const oe = r.orchestratorExec;
+
+      // S2b: reserved-OWN-KEY guard (CodeQL barrier — inline literal comparisons)
+      if (Object.prototype.hasOwnProperty.call(oe, '__proto__')) {
+        errors.push('runtime.orchestratorExec must not contain reserved key "__proto__"');
+      }
+      if (Object.prototype.hasOwnProperty.call(oe, 'constructor')) {
+        errors.push('runtime.orchestratorExec must not contain reserved key "constructor"');
+      }
+      if (Object.prototype.hasOwnProperty.call(oe, 'prototype')) {
+        errors.push('runtime.orchestratorExec must not contain reserved key "prototype"');
+      }
+
+      // command — required non-empty string; reserved-name guard (CodeQL barrier)
+      if (oe.command === '__proto__' || oe.command === 'constructor' || oe.command === 'prototype') {
+        errors.push('runtime.orchestratorExec.command "' + oe.command + '" is a reserved name');
+      } else if (typeof oe.command !== 'string' || oe.command.length === 0) {
+        errors.push(
+          'runtime.orchestratorExec.command must be a non-empty string (got: ' + JSON.stringify(oe.command) + ')',
+        );
+      }
+
+      // args — optional array of strings
+      if (oe.args !== undefined) {
+        if (!Array.isArray(oe.args) || !oe.args.every((a) => typeof a === 'string')) {
+          errors.push(
+            'runtime.orchestratorExec.args must be an array of strings (got: ' + JSON.stringify(oe.args) + ')',
+          );
+        }
+      }
+
+      // cwdFlag — optional; string or null
+      if (oe.cwdFlag !== undefined && oe.cwdFlag !== null && typeof oe.cwdFlag !== 'string') {
+        errors.push(
+          'runtime.orchestratorExec.cwdFlag must be a string or null (got: ' + JSON.stringify(oe.cwdFlag) + ')',
+        );
+      }
+
+      // promptFlag — optional; string or null (#2627, Phase 3). `null`/absent
+      // means the host takes the executor prompt positionally (codex, opencode);
+      // a string names the flag that carries it (kimi/kimi-code: --prompt).
+      if (oe.promptFlag !== undefined && oe.promptFlag !== null && typeof oe.promptFlag !== 'string') {
+        errors.push(
+          'runtime.orchestratorExec.promptFlag must be a string or null (got: ' + JSON.stringify(oe.promptFlag) + ')',
+        );
+      }
+
+      // modelFlag — optional; string or null (#3714). `null`/absent means the
+      // host offers no per-invocation model override on this exec path; a
+      // string names the flag that pins the executor's model (codex: --model).
+      // Deliberately asymmetric: only codex declares this today.
+      if (oe.modelFlag !== undefined && oe.modelFlag !== null && typeof oe.modelFlag !== 'string') {
+        errors.push(
+          'runtime.orchestratorExec.modelFlag must be a string or null (got: ' + JSON.stringify(oe.modelFlag) + ')',
+        );
+      }
+    }
+  }
+
+  // harnessIsolationFlag — ADR-1239 Codex-binding amendment (#2584), Phase 3
+  // (#2627). OPTIONAL top-level field: the counterpart of orchestratorExec for
+  // `dispatch.isolation: 'harness-worktree'` hosts, naming the host's OWN
+  // isolation flag that GSD passes on dispatch (claude: isolation="worktree";
+  // cursor: --worktree). Descriptor data so the scheduler passes a declared
+  // token instead of branching on a runtime id (ADR-1239: "the per-host
+  // dispatch invocation ... is descriptor data, not a scheduler branch").
+  if (r.harnessIsolationFlag !== undefined && (typeof r.harnessIsolationFlag !== 'string' || r.harnessIsolationFlag.length === 0)) {
+    errors.push(
+      'runtime.harnessIsolationFlag must be a non-empty string (got: ' + JSON.stringify(r.harnessIsolationFlag) + ')',
+    );
   }
 
   // GATE A: installSurface ↔ hooksSurface consistency (DEFECT.GENERATIVE-FIX)
@@ -1307,6 +1804,1007 @@ function validateRuntimeBody(cap) {
         ') but runtime.hookEvents is "' + r.hookEvents + '" — must be "claude"',
       );
     }
+  }
+
+  // triggerPrecedence — #2871 Phase 2 amendment to ADR-1016's runtime body.
+  // REQUIRED-WITH-DEFAULT: no other axis in this validator uses this shape —
+  // every axis above either hard-requires the field (throws when absent) or
+  // treats absence as fully unconstrained (effortSurface/isolation: "nothing to
+  // validate" when undefined). This axis does neither: an ABSENT value is
+  // substituted with DEFAULT_TRIGGER_PRECEDENCE and then validated exactly as
+  // if it HAD been supplied, so a third-party capability.json authored before
+  // this phase keeps validating (ADR-894 additive-only / Hyrum's Law, ADR-1244)
+  // while a PRESENT-but-malformed value still fails loudly instead of silently
+  // passing through unchecked.
+  const triggerPrecedenceValue = Object.prototype.hasOwnProperty.call(r, 'triggerPrecedence')
+    ? r.triggerPrecedence
+    : DEFAULT_TRIGGER_PRECEDENCE;
+  if (!Array.isArray(triggerPrecedenceValue)) {
+    errors.push(
+      'runtime.triggerPrecedence must be an array of trigger-bearing kind names (' +
+      [...VALID_TRIGGER_PRECEDENCE_KINDS].join(', ') + ') (got: ' + JSON.stringify(triggerPrecedenceValue) + ')',
+    );
+  } else if (triggerPrecedenceValue.length === 0) {
+    errors.push('runtime.triggerPrecedence must not be empty');
+  } else {
+    const seenKinds = new Set();
+    for (let i = 0; i < triggerPrecedenceValue.length; i++) {
+      const k = triggerPrecedenceValue[i];
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') {
+        errors.push('runtime.triggerPrecedence[' + i + '] "' + k + '" is a reserved name');
+      } else if (typeof k !== 'string' || !VALID_TRIGGER_PRECEDENCE_KINDS.has(k)) {
+        errors.push(
+          'runtime.triggerPrecedence[' + i + '] must be one of: ' + [...VALID_TRIGGER_PRECEDENCE_KINDS].join(', ') +
+          ' (got: ' + JSON.stringify(k) + ')',
+        );
+      } else if (seenKinds.has(k)) {
+        errors.push('runtime.triggerPrecedence contains a duplicate kind: ' + JSON.stringify(k));
+      } else {
+        seenKinds.add(k);
+      }
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * ADR-2782 D2/D7 — every declared reviewer field is a known key. Anything else
+ * inside the body is IGNORED WITH A WARNING (D4.3), never a validation error:
+ * a capability authored for a newer GSD must degrade to discovered-but-inactive
+ * rather than failing the build of a repo that merely reads it.
+ */
+const KNOWN_REVIEWER_FIELDS = new Set([
+  'slug', 'flags', 'transport', 'probe', 'invoke', 'timeoutFloorMs', 'emptyOutput',
+  'reviewsSection', 'evidenceClass', 'requiresBinaries', 'promptBudgetKey',
+  // `modelConfigKey` added by Phase 5b (#2799). The model key was IMPLICIT
+  // (`review.models.<slug>`) until a shipped lane broke the convention: antigravity's
+  // slug is `antigravity` but its key is `review.models.agy`, so resolving by slug
+  // missed a configured model and silently disabled the pinned-model escape hatch
+  // #2073 added. A convention one shipped lane already violates is not a contract.
+  'modelConfigKey',
+  // `timeoutConfigKey` added by #3274, same optional/backward-compatible shape as
+  // `modelConfigKey` above: a manifest authored before this field existed must keep validating.
+  'timeoutConfigKey',
+  // `effortConfigKey` / `defaultEffort` added by #4255, same optional/backward-compatible shape
+  // as the two above. Lane effort used to be resolved by querying the `gsd-plan-checker` AGENT
+  // through a hardcoded id, so every prompt-fed lane ran at that verifier's frontmatter effort;
+  // it is a property of the review, so the lane declares it. A manifest authored before these
+  // fields existed must keep validating — absent is read as "this lane declares no review
+  // effort", which emits no effort argument at all.
+  'effortConfigKey',
+  'defaultEffort',
+  // `contextWindowTokens` / `contextWindowConfigKey` added by #4559, same optional/backward-compatible
+  // shape as `promptBudgetKey`: a manifest authored before they existed keeps validating, and an
+  // absent or non-positive window resolves to "no derived prompt cap" at the invocation boundary.
+  'contextWindowTokens',
+  'contextWindowConfigKey',
+  'handler',
+]);
+
+/**
+ * The effort levels a lane may declare as its review default (#4255, #3533 vocabulary).
+ *
+ * `inherit` is deliberately NOT a member. It is a legitimate CONFIGURED value — it selects "emit
+ * no argument, the CLI's own configuration decides" — but as a DECLARED default it would be a
+ * second spelling of `null` and split one behaviour across two shapes.
+ */
+const REVIEWER_EFFORT_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+
+/**
+ * The closed `runtime.hostBehaviors` vocabulary (ADR-1016, closed via #2801).
+ *
+ * ADR-1016's core principle is that every per-runtime difference is a value over
+ * a closed primitive vocabulary, and that a host needing a new shape gets a
+ * reviewed first-party primitive rather than "an open escape hatch in the
+ * descriptor" (§Alternatives #2 rejects exactly that). `hostBehaviors` was the
+ * one hole left in that closure: 59 keys across 18 manifests, 39 of them set by
+ * a single capability, validated by nothing. It was described in the reference
+ * docs as a deliberate open seam sanctioned by ADR-1016 — ADR-1016 does not
+ * mention `hostBehaviors` at all, and its stated principle is the opposite.
+ *
+ * Adding a key here is deliberate and reviewed. That friction IS the decision
+ * (ADR-1016 §Consequences: "the closed vocabulary must grow (reviewed) when a
+ * genuinely new host shape appears — intentional friction, the trust boundary").
+ *
+ * WARNING, never error. Two reasons:
+ *   1. It matches the ADR-2782 D4.3 treatment of an unknown `reviewer` field, so
+ *      a manifest built against a newer GSD degrades visibly instead of failing
+ *      the build of a repo that merely reads it.
+ *   2. An error would hard-break an out-of-tree descriptor carrying a bespoke
+ *      key, with no deprecation window — the exact mistake #2801's own alias
+ *      removal spent a full release avoiding. Escalating to an error is a later
+ *      step and needs its own window.
+ *
+ * Kept in sorted order, and `tests/reviewer-manifest-body.test.cjs` asserts this
+ * set equals the keys the shipped manifests actually declare, so the list cannot
+ * silently rot away from reality (DEFECT.GENERATIVE-FIX).
+ */
+const KNOWN_HOST_BEHAVIORS = new Set([
+  // #2586: declares runtime-level feature axes GSD does not/cannot support on
+  // omitting the key on every other runtime carries no inverted meaning.
+  // this host (e.g. Codex's `["context-warnings","phase-lifecycle-display"]`)
+  // — present-and-populated / absent-is-unsupported-empty convention, so
+  'agentFileExtension',
+  'agentFrontmatterExtensions',
+  'agentManifestStyle',
+  'agentTomlFiles',
+  'attributionConfigResolver',
+  'attributionSource',
+  'authorsCanonicalWorkflow',
+  'bakedAgentFileExtensions',
+  'bakesStaticAgentModel',
+  'bareStemSkillsCleanup',
+  'brandingRewrites',
+  'categoryContainerCleanup',
+  'cleanupSkillSidecars',
+  'clineRulesSurface',
+  'combinedFamilyInstall',
+  'commandBodyConverter',
+  'contentRewriteProfile',
+  'defaultHomeIncludeRoot',
+  'doneBannerStyle',
+  'flatCommandDir',
+  'frontmatterDialect',
+  'globalDirResolver',
+  'hookPathStyle',
+  'hooksJsonSurface',
+  'hyphenNameAgentBody',
+  'installsCommandBodiesForWorkflowDelegation',
+  'legacyCommandsGsdCleanup',
+  'legacyCommandsGsdInstallMigration',
+  'legacyCommandsGsdUninstall',
+  'legacyDevinSkillsCleanup',
+  'legacyFlatSkillsCleanup',
+  'localCommandsViaRules',
+  'localInstallDeferred',
+  'localInstallStyle',
+  'localTargetIsProjectRoot',
+  'managedHookEvents',
+  'mcpCompanion',
+  'namedSubagentsSupported',
+  'nativeCliPlugin',
+  'nativeModelAliases',
+  'nativePlugin',
+  'noPathRewrite',
+  'omitBashRunnerOnWindows',
+  'opencodePathPrefix',
+  'ownsClaudePaths',
+  'permissionsSchema',
+  'pluginOnlyInstall',
+  'projectInstructionFile',
+  'reapplyCommand',
+  'reclaimsKimiLegacyHooksRoot',
+  'reportCommandsDir',
+  'reportSkillsCount',
+  'requiresSubagentPair',
+  'restoreAtRefTildeInAgents',
+  'restoreAtRefTildeInSpecTree',
+  'retargetsGsdCoreProsePath',
+  'retiredArtifacts',
+  'rewriteClaudeAtIncludes',
+  'settingsFileByScope',
+  'sharedHooksDirName',
+  'skillFrontmatterVersion',
+  'skillPriorityFrontmatter',
+  'skillsGlobalOnboarding',
+  'skillsManifestPrefix',
+  'skipCompactAgents',
+  'skipHomePrefixSubstitution',
+  'skipRuntimeDefaultsStamp',
+  'skipSettingsUi',
+  'skipSharedHooksInstall',
+  'skipUpdateBannerCommand',
+  'soloStageMetadata',
+  'sourceMarkerFile',
+  'specRootSkillPass',
+  'tomlConfigInstall',
+  'trackCategoryDescription',
+  'unsupportedFeatures',
+  'verificationStyle',
+  'writeCategoryDescription',
+]);
+
+/**
+ * Frozen reason codes for the non-fatal reviewer diagnostics (ADR-2782 D4.3).
+ *
+ * The IR behind `collectReviewerWarnings`' rendered strings. Tests assert on
+ * these codes; the rendered `message` is operator console output and tests must
+ * not depend on it (CONTRIBUTING.md, "Prohibited: Raw Text Matching on Test
+ * Outputs"), which is the same split `bin/verify-reapply-patches.cjs` uses.
+ *
+ * Adding a code is THREE coordinated changes: this enum, the emitting site in
+ * `collectReviewerWarningRecordFields`, and the test that locks
+ * `Object.keys(REVIEWER_WARNING).sort()`. That coupling is the point — it stops
+ * the code surface drifting from the test surface.
+ */
+const REVIEWER_WARNING = Object.freeze({
+  /** A key inside a `reviewer` body that this GSD version does not know. */
+  UNKNOWN_REVIEWER_FIELD: 'unknown_reviewer_field',
+  /** A `runtime.hostBehaviors` key that was removed from the vocabulary. */
+  REMOVED_HOST_BEHAVIOR: 'removed_host_behavior',
+  /** A `runtime.hostBehaviors` key outside the closed vocabulary. */
+  UNKNOWN_HOST_BEHAVIOR: 'unknown_host_behavior',
+});
+
+/** Dotted path of the field removed by ADR-2782 D9 / #2801. */
+const REMOVED_REVIEWER_CLI_FIELD = 'runtime.hostBehaviors.reviewerCli';
+
+const KNOWN_PROBE_FIELDS = new Set(['kind', 'binary', 'needle', 'timeoutMs', 'hostConfigKey', 'path']);
+
+/** A bounded probe timeout must be a finite, positive INTEGER of milliseconds. */
+function isPositiveIntegerMs(v) {
+  return typeof v === 'number' && Number.isInteger(v) && v > 0;
+}
+
+/**
+ * Render any value for an error message WITHOUT ever throwing.
+ *
+ * `JSON.stringify` throws on a BigInt and on a circular structure, and a value
+ * carrying a throwing `toJSON` propagates that throw. Interpolating a rejected
+ * value into its own rejection message must never itself become the failure —
+ * these validators are contracted to RETURN errors, and #1461 OVL-1 records a
+ * validator that threw and would have crashed every consumer of loadRegistry.
+ *
+ * @param {*} v
+ * @returns {string}
+ */
+function describeValue(v) {
+  if (typeof v === 'bigint') return String(v) + 'n';
+  if (typeof v === 'symbol') return String(v);
+  if (typeof v === 'function') return '[function]';
+  try {
+    const json = JSON.stringify(v);
+    // stringify returns undefined for undefined and for non-serializable roots.
+    return json === undefined ? String(v) : json;
+  } catch {
+    // Circular structure, a nested BigInt, or a throwing toJSON.
+    try {
+      return Object.prototype.toString.call(v);
+    } catch {
+      return '[unserializable]';
+    }
+  }
+}
+
+/**
+ * Ceiling on how many undeclared-key diagnostics one capability may produce.
+ *
+ * The loops below iterate MANIFEST-SUPPLIED keys, and an installed third-party
+ * manifest is bounded only by MANIFEST_MAX_BYTES (8MB). Unbounded, one manifest
+ * of 800k keys yields 800k records and ~139MB of message text, retained for the
+ * registry's lifetime in OverlayMeta.diagnostics. Ten is enough to act on; the
+ * rest are summarized. Mirrors the existing truncation idiom in
+ * `capability-loader.cts` (`crossErrs.slice(0, 3)`).
+ */
+const MAX_REPORTED_UNKNOWN_KEYS = 10;
+
+/** Ceiling on how much of one manifest-supplied key name a diagnostic repeats. */
+const MAX_REPORTED_KEY_CHARS = 80;
+
+/**
+ * Render a manifest-supplied KEY for a diagnostic: control-safe and bounded.
+ *
+ * Key names carry no grammar anywhere — unlike `cap.id`, which `validateCapability`
+ * gates on KEBAB_RE before these diagnostics run — so a key is fully
+ * attacker-controlled text heading for stderr and OverlayMeta.warnings. C0/C1
+ * controls (ESC, CR, LF) become U+FFFD so a key cannot emit terminal escapes or
+ * forge a log line, and the result is clipped so one key cannot carry megabytes
+ * into a retained diagnostic.
+ *
+ * @param {*} key
+ * @returns {string}
+ */
+function describeKey(key) {
+  const raw = typeof key === 'string' ? key : String(key);
+  // eslint-disable-next-line no-control-regex
+  const safe = raw.replace(/[\x00-\x1f\x7f-\x9f]/g, '�');
+  return safe.length > MAX_REPORTED_KEY_CHARS ? safe.slice(0, MAX_REPORTED_KEY_CHARS) + '…' : safe;
+}
+
+/** Extract a message from an unknown thrown value without throwing again. */
+function safeErrorMessage(err) {
+  try {
+    if (err instanceof Error && typeof err.message === 'string') return err.message;
+    return describeValue(err);
+  } catch {
+    return '[unprintable error]';
+  }
+}
+
+/** House CodeQL barrier — inline literal guard at every key-derived read/write site. */
+function isReservedName(v) {
+  return v === '__proto__' || v === 'constructor' || v === 'prototype';
+}
+
+/**
+ * One closed-enum membership check, with the members always enumerated in the
+ * error.
+ *
+ * The enumeration is the point, not the deduplication. The prose reference for
+ * the reviewer body lands in Phase 6 (#2800), so until then these errors are the
+ * only documentation of the vocabulary — exactly the gap that left
+ * `hostBehaviors` discoverable solely by grepping a source line. Routing every
+ * enum through one helper makes "the error names the valid members" structural
+ * rather than a convention repeated at nine call sites, where it would drift.
+ *
+ * No reserved-name pre-check: a `VALID_*` set never contains `__proto__`,
+ * `constructor` or `prototype`, so membership alone already rejects them, and
+ * "must be one of: …" tells an author more than "is a reserved name". The
+ * literal guards stay where they do real work — the key-derived write sites.
+ *
+ * @param {string} ctx       Error-message prefix.
+ * @param {string} label     Dotted field path, e.g. "reviewer.transport".
+ * @param {*}      value     The declared value.
+ * @param {Set}    validSet  The closed vocabulary.
+ * @returns {string[]}
+ */
+function validateEnumField(ctx, label, value, validSet) {
+  if (validSet.has(value)) return [];
+  return [
+    ctx + ' ' + label + ' must be one of: ' + [...validSet].join(', ') +
+    ' (got: ' + describeValue(value) + ')',
+  ];
+}
+
+/**
+ * Collect NON-FATAL reviewer diagnostics for a capability manifest as TYPED
+ * RECORDS (ADR-2782 D4.3, plus the D9 `hostBehaviors.reviewerCli` removal
+ * notice, #2801).
+ *
+ * This is the IR. `collectReviewerWarnings` below renders it to strings for the
+ * two production consumers; tests assert on these records instead of matching
+ * the rendered prose (CONTRIBUTING.md, "Prohibited: Raw Text Matching on Test
+ * Outputs").
+ *
+ * Record shape — `code` and `capId` are always present; the rest is per-code:
+ *   { code: REVIEWER_WARNING.UNKNOWN_REVIEWER_FIELD,
+ *     capId, field: 'reviewer.<key>', knownFields: string[], message }
+ *   { code: REVIEWER_WARNING.REMOVED_HOST_BEHAVIOR,
+ *     capId, field: 'runtime.hostBehaviors.reviewerCli',
+ *     replacement: 'reviewer', docs: '<how-to path>', message }
+ *
+ * TOTAL: returns an array for ANY input and never throws. It runs on
+ * loadRegistry's ACCEPT path, so a diagnostic that throws would cost the user a
+ * lane that is otherwise perfectly valid (#1461 OVL-1).
+ *
+ * @param {object} cap  A capability manifest.
+ * @returns {Array<object>}  Warning records; empty when there is nothing to say.
+ */
+function collectReviewerWarningRecords(cap) {
+  try {
+    return collectReviewerWarningRecordFields(cap);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Render the IR for operator console output.
+ *
+ * Kept separate from validateReviewerBody so validateCapability's contract
+ * (`=> string[]` of ERRORS) is unchanged for its two existing callers. The
+ * build-time generator writes these to stderr; the overlay loader surfaces them
+ * through OverlayMeta.warnings. A warning written only to a build log nobody
+ * reads is not a warning (ADR-2782 D4, "Where warnings surface").
+ *
+ * The `string[]` shape is load-bearing for both consumers and does not change.
+ *
+ * @param {object} cap  A capability manifest.
+ * @returns {string[]}  Warning strings; empty when there is nothing to say.
+ */
+function collectReviewerWarnings(cap) {
+  return collectReviewerWarningRecords(cap).map((record) => record.message);
+}
+
+function collectReviewerWarningRecordFields(cap) {
+  const records = [];
+  if (typeof cap !== 'object' || cap === null || Array.isArray(cap)) return records;
+
+  const capId = typeof cap.id === 'string' ? cap.id : '(unknown)';
+
+  // ADR-2782 D9 / #2801 — the REMOVED `runtime.hostBehaviors.reviewerCli` alias.
+  //
+  // Emitted BEFORE the `reviewer`-body early-return below, deliberately. The
+  // manifest this notice exists for is the ALIAS-ONLY one, which by definition
+  // carries no body; after that guard the check would fire only for
+  // capabilities that already declare a lane — exactly the set that does not
+  // need telling.
+  //
+  // Presence-based, not `=== true`: the key is unknown at ANY value now, which
+  // is the same rule the unknown-`reviewer.*`-field loop below applies. Own-key
+  // read, so a polluted prototype cannot manufacture this warning on every
+  // otherwise-innocent manifest. This is ONE keyed removal notice, not general
+  // `hostBehaviors` validation — the closed vocabulary below handles that (#2801).
+  const runtimeBody = cap.runtime;
+  if (typeof runtimeBody === 'object' && runtimeBody !== null && !Array.isArray(runtimeBody)) {
+    const hostBehaviors = runtimeBody.hostBehaviors;
+    if (
+      typeof hostBehaviors === 'object'
+      && hostBehaviors !== null
+      && !Array.isArray(hostBehaviors)
+      && Object.prototype.hasOwnProperty.call(hostBehaviors, 'reviewerCli')
+    ) {
+      records.push({
+        code: REVIEWER_WARNING.REMOVED_HOST_BEHAVIOR,
+        capId,
+        field: REMOVED_REVIEWER_CLI_FIELD,
+        replacement: 'reviewer',
+        docs: 'docs/how-to/ship-a-reviewer-lane.md',
+        message:
+          '⚠ capability "' + capId + '" ' + REMOVED_REVIEWER_CLI_FIELD + ' was removed (ADR-2782 D9) ' +
+          '— ignored, and it contributes no reviewer lane. Declare a `reviewer` body instead; see ' +
+          'docs/how-to/ship-a-reviewer-lane.md',
+      });
+    }
+
+    // #2801 — the closed `hostBehaviors` vocabulary (ADR-1016). `reviewerCli` is
+    // excluded here: it already drew its own removal notice above, and a second,
+    // generic "unknown key" record for the same key would be noise, not signal.
+    if (typeof hostBehaviors === 'object' && hostBehaviors !== null && !Array.isArray(hostBehaviors)) {
+      let reported = 0;
+      let omitted = 0;
+      for (const key of Object.keys(hostBehaviors)) {
+        if (isReservedName(key) || key === 'reviewerCli' || KNOWN_HOST_BEHAVIORS.has(key)) continue;
+        if (reported >= MAX_REPORTED_UNKNOWN_KEYS) {
+          omitted += 1;
+          continue;
+        }
+        reported += 1;
+        const safeKey = describeKey(key);
+        records.push({
+          code: REVIEWER_WARNING.UNKNOWN_HOST_BEHAVIOR,
+          capId,
+          field: 'runtime.hostBehaviors.' + safeKey,
+          message:
+            '⚠ capability "' + capId + '" runtime.hostBehaviors.' + safeKey + ' is not a known host behavior ' +
+            'in this GSD version — ignored. Adding one is a reviewed first-party change (ADR-1016).',
+        });
+      }
+      if (omitted > 0) {
+        records.push({
+          code: REVIEWER_WARNING.UNKNOWN_HOST_BEHAVIOR,
+          capId,
+          field: 'runtime.hostBehaviors',
+          truncated: true,
+          omittedCount: omitted,
+          message:
+            '⚠ capability "' + capId + '" declares ' + omitted + ' further unknown runtime.hostBehaviors ' +
+            'key(s), not listed. A manifest this far outside the vocabulary is likely built for a ' +
+            'different GSD version.',
+        });
+      }
+    }
+  }
+
+  const r = cap.reviewer;
+  if (typeof r !== 'object' || r === null || Array.isArray(r)) return records;
+
+  // Same ceiling and the same key sanitization as the hostBehaviors sweep above.
+  // This loop predates #2801 and carried both defects; fixing only the new copy
+  // would leave the identical defect one screen away from its own fix.
+  let reportedFields = 0;
+  let omittedFields = 0;
+  for (const key of Object.keys(r)) {
+    if (isReservedName(key) || KNOWN_REVIEWER_FIELDS.has(key)) continue;
+    if (reportedFields >= MAX_REPORTED_UNKNOWN_KEYS) {
+      omittedFields += 1;
+      continue;
+    }
+    reportedFields += 1;
+    const safeKey = describeKey(key);
+    records.push({
+      code: REVIEWER_WARNING.UNKNOWN_REVIEWER_FIELD,
+      capId,
+      field: 'reviewer.' + safeKey,
+      knownFields: [...KNOWN_REVIEWER_FIELDS],
+      message:
+        '⚠ capability "' + capId + '" reviewer.' + safeKey + ' is not a known reviewer field ' +
+        'in this GSD version — ignored. Known fields: ' + [...KNOWN_REVIEWER_FIELDS].join(', '),
+    });
+  }
+  if (omittedFields > 0) {
+    records.push({
+      code: REVIEWER_WARNING.UNKNOWN_REVIEWER_FIELD,
+      capId,
+      field: 'reviewer',
+      knownFields: [...KNOWN_REVIEWER_FIELDS],
+      truncated: true,
+      omittedCount: omittedFields,
+      message:
+        '⚠ capability "' + capId + '" declares ' + omittedFields + ' further unknown reviewer field(s), ' +
+        'not listed.',
+    });
+  }
+  return records;
+}
+
+/**
+ * Validate a `reviewer` lane body (ADR-2782 D1/D2/D3/D6/D7).
+ *
+ * TOTAL: returns an array of error strings for ANY input and never throws. The
+ * overlay loader contracts every validator to RETURN errors — #1461 OVL-1
+ * records a validator that THREW and would have crashed every consumer of
+ * loadRegistry. That contract is load-bearing, not stylistic.
+ *
+ * ABSENT-SAFE (D4.1): a capability with no `reviewer` key is simply not a lane.
+ * That is NEVER an error — 39 of 39 shipped capabilities are in this state, and
+ * a validator that errors here breaks the entire registry. `undefined` is the
+ * ONLY permissive case: `null`, `{}`, `[]`, `false` and `0` are all assertions
+ * of a body, and a malformed assertion is an error (Postel's Law with a
+ * boundary — liberal in what a manifest may OMIT, strict in what it ASSERTS).
+ *
+ * Totality is enforced STRUCTURALLY by the wrapper below, not by auditing every
+ * field read. Serialization is made safe via describeValue(), but that alone is
+ * not enough: a value carrying a throwing getter, or a Proxy with a throwing
+ * `get`/`ownKeys` trap, throws on the READ itself, before any message is built.
+ * A caller cannot be asked to re-derive today's reachability analysis — the
+ * contract says "any input", so the guarantee is absolute rather than argued.
+ *
+ * @param {object} cap  The parsed capability manifest.
+ * @returns {string[]}  Array of error strings; empty = valid.
+ */
+function validateReviewerBody(cap) {
+  try {
+    return validateReviewerBodyFields(cap);
+  } catch (err) {
+    // A malformed body must degrade to a validation ERROR, never to a crash of
+    // every consumer of loadRegistry (#1461 OVL-1).
+    return ['capability reviewer body could not be validated: ' + safeErrorMessage(err)];
+  }
+}
+
+function validateReviewerBodyFields(cap) {
+  const errors = [];
+  if (typeof cap !== 'object' || cap === null || Array.isArray(cap)) return errors;
+
+  const r = cap.reviewer;
+  if (r === undefined) return errors; // D4.1 — not a lane. Never an error.
+
+  const ctx = 'capability "' + (typeof cap.id === 'string' ? cap.id : '(unknown)') + '"';
+
+  if (typeof r !== 'object' || r === null || Array.isArray(r)) {
+    const got = r === null ? 'null' : Array.isArray(r) ? 'array' : typeof r;
+    errors.push(
+      ctx + ' reviewer must be an object (got: ' + got + '). ' +
+      'Omit the key entirely to declare no lane — an explicit null is not an omission.',
+    );
+    return errors; // cannot validate fields of a non-object
+  }
+
+  // ── slug ───────────────────────────────────────────────────────────────────
+  // NOT a capability id: ids are kebab, slugs carry the roster's snake forms.
+  if (typeof r.slug !== 'string' || r.slug.length === 0) {
+    errors.push(ctx + ' reviewer.slug must be a non-empty string');
+  } else if (isReservedName(r.slug)) {
+    errors.push(ctx + ' reviewer.slug "' + r.slug + '" is a reserved name');
+  } else if (!LANE_SLUG_RE.test(r.slug)) {
+    errors.push(
+      ctx + ' reviewer.slug "' + r.slug + '" must match ' + String(LANE_SLUG_RE) +
+      ' (lower-case; "_" and "-" permitted — a slug is not a capability id and not a flag)',
+    );
+  }
+
+  // ── flags ──────────────────────────────────────────────────────────────────
+  if (!Array.isArray(r.flags)) {
+    errors.push(ctx + ' reviewer.flags must be an array of CLI flags');
+  } else if (r.flags.length === 0) {
+    errors.push(
+      ctx + ' reviewer.flags must declare at least one flag — a lane nobody can name ' +
+      'cannot be explicitly selected, so ADR-2782 D4\'s explicit-selection rule is unreachable for it',
+    );
+  } else {
+    const seen = new Set();
+    for (const flag of r.flags) {
+      if (typeof flag !== 'string' || !LANE_FLAG_RE.test(flag)) {
+        errors.push(
+          ctx + ' reviewer.flags entry ' + describeValue(flag) +
+          ' must match ' + String(LANE_FLAG_RE) + ' (e.g. "--lm-studio")',
+        );
+        continue;
+      }
+      if (seen.has(flag)) {
+        errors.push(ctx + ' reviewer.flags lists "' + flag + '" more than once');
+      }
+      seen.add(flag);
+    }
+  }
+
+  // ── transport (D2) — explicit discriminator, never inferred ────────────────
+  errors.push(...validateEnumField(ctx, 'reviewer.transport', r.transport, VALID_LANE_TRANSPORTS));
+
+  errors.push(...validateLaneProbe(ctx, r.probe));
+  errors.push(...validateLaneInvoke(ctx, r.transport, r.invoke));
+
+  // ── lane scalars ───────────────────────────────────────────────────────────
+  if (!isPositiveIntegerMs(r.timeoutFloorMs)) {
+    errors.push(
+      ctx + ' reviewer.timeoutFloorMs must be a positive integer of milliseconds ' +
+      '(got: ' + describeValue(r.timeoutFloorMs) + ')',
+    );
+  }
+
+  errors.push(...validateEnumField(ctx, 'reviewer.emptyOutput', r.emptyOutput, VALID_EMPTY_OUTPUT));
+
+  if (typeof r.reviewsSection !== 'string' || r.reviewsSection.length === 0) {
+    errors.push(ctx + ' reviewer.reviewsSection must be a non-empty string');
+  }
+
+  errors.push(...validateEnumField(ctx, 'reviewer.evidenceClass', r.evidenceClass, VALID_EVIDENCE_CLASSES));
+
+  if (!Array.isArray(r.requiresBinaries)) {
+    errors.push(
+      ctx + ' reviewer.requiresBinaries must be an array (use [] when the lane needs no ' +
+      'external tool on PATH). Note the name: the envelope\'s "requires" is capability ids',
+    );
+  } else {
+    for (const bin of r.requiresBinaries) {
+      if (typeof bin !== 'string' || bin.length === 0) {
+        errors.push(ctx + ' reviewer.requiresBinaries entry ' + describeValue(bin) + ' must be a non-empty string');
+      }
+    }
+  }
+
+  // OPTIONAL, and that is required by D4 rather than a convenience: `modelConfigKey` did not exist
+  // before Phase 5b, so demanding it would fail validation on every reviewer manifest authored
+  // against an earlier GSD — exactly the forward/backward-compatibility break D4 rule 2 forbids.
+  // Absent is read as `null` (this lane accepts no model override). `null` is explicit; an empty
+  // string is neither, and is rejected.
+  if (r.modelConfigKey !== undefined && r.modelConfigKey !== null &&
+      (typeof r.modelConfigKey !== 'string' || r.modelConfigKey.length === 0)) {
+    errors.push(
+      ctx + ' reviewer.modelConfigKey must be a dotted config key or null ' +
+      '(got: ' + describeValue(r.modelConfigKey) + ')',
+    );
+  }
+
+  // OPTIONAL, mirroring modelConfigKey's D4 forward/backward-compat treatment (#3274): a manifest
+  // authored before this field existed must keep validating. Absent/null means "no override for
+  // this lane, use timeoutFloorMs". An empty string is neither absent nor a key, and is rejected.
+  if (r.timeoutConfigKey !== undefined && r.timeoutConfigKey !== null &&
+      (typeof r.timeoutConfigKey !== 'string' || r.timeoutConfigKey.length === 0)) {
+    errors.push(
+      ctx + ' reviewer.timeoutConfigKey must be a dotted config key or null ' +
+      '(got: ' + describeValue(r.timeoutConfigKey) + ')',
+    );
+  }
+
+  // OPTIONAL, mirroring the two keys above (#4255). Absent/null means "this lane declares no
+  // review effort", which is the shape that emits no effort argument at all — the correct state
+  // for the nine lanes with no effort channel to feed. An empty string is neither.
+  if (r.effortConfigKey !== undefined && r.effortConfigKey !== null &&
+      (typeof r.effortConfigKey !== 'string' || r.effortConfigKey.length === 0)) {
+    errors.push(
+      ctx + ' reviewer.effortConfigKey must be a dotted config key or null ' +
+      '(got: ' + describeValue(r.effortConfigKey) + ')',
+    );
+  }
+
+  // A declared default must be a level the effort axis knows, or the lane would render an
+  // argument the reviewer CLI rejects and kill itself on every run. Closed vocabulary, checked
+  // here rather than at resolution time so a malformed manifest fails at the trust boundary.
+  if (r.defaultEffort !== undefined && r.defaultEffort !== null
+      && !(typeof r.defaultEffort === 'string' && REVIEWER_EFFORT_LEVELS.has(r.defaultEffort))) {
+    errors.push(
+      ctx + ' reviewer.defaultEffort must be one of ' +
+      Array.from(REVIEWER_EFFORT_LEVELS).join('/') + ' or null ' +
+      '(got: ' + describeValue(r.defaultEffort) + ')',
+    );
+  }
+
+  // A default with nothing to configure it through is a value the operator cannot change — the
+  // shape #4255 exists to end. Declared together or not at all.
+  if ((r.defaultEffort !== undefined && r.defaultEffort !== null)
+      && (r.effortConfigKey === undefined || r.effortConfigKey === null)) {
+    errors.push(
+      ctx + ' reviewer.defaultEffort is declared without an effortConfigKey, so the level ' +
+      'could never be overridden',
+    );
+  }
+
+  // `null` is the declared "no per-lane budget"; an empty string is not.
+  if (r.promptBudgetKey !== null && (typeof r.promptBudgetKey !== 'string' || r.promptBudgetKey.length === 0)) {
+    errors.push(
+      ctx + ' reviewer.promptBudgetKey must be a dotted config key or null ' +
+      '(got: ' + describeValue(r.promptBudgetKey) + ')',
+    );
+  }
+
+  // #4559: optional. Absent or null is "no declared window"; a present key must be a dotted
+  // config key string. The window's VALUE is narrowed (never rejected) by `resolveLaneCap`.
+  if (r.contextWindowConfigKey !== undefined && r.contextWindowConfigKey !== null
+      && (typeof r.contextWindowConfigKey !== 'string' || r.contextWindowConfigKey.length === 0)) {
+    errors.push(
+      ctx + ' reviewer.contextWindowConfigKey must be a dotted config key or null ' +
+      '(got: ' + describeValue(r.contextWindowConfigKey) + ')',
+    );
+  }
+
+  // ── handler (D6) — closed first-party enum; null is the default ────────────
+  if (r.handler !== null && !VALID_LANE_HANDLERS.has(r.handler)) {
+    errors.push(
+      ctx + ' reviewer.handler must be null or one of: ' + [...VALID_LANE_HANDLERS].join(', ') +
+      ' (got: ' + describeValue(r.handler) + '). Handlers are first-party module NAMES, ' +
+      'never paths and never third-party code — a lane needing a shape the vocabulary lacks ' +
+      'files an issue naming the missing primitive (ADR-2782 D6)',
+    );
+  }
+
+  return errors;
+}
+
+/**
+ * ADR-2782 D7 — probe.kind is a closed enum WIDER than existence, and every
+ * probe that starts a process or a connection MUST be bounded.
+ *
+ * `command-exists` alone is structurally insufficient: `kimi` is claimed by both
+ * Kimi Code CLI and the legacy Python kimi-cli (a separate first-party runtime
+ * capability in this repo), so an existence-only probe registers the wrong tool.
+ * The unbounded form of that probe was a live instance of this repo's named
+ * Unbounded Subprocesses defect — it ran on EVERY /gsd:review invocation
+ * regardless of which flags were passed, so a binary waiting on a first-run auth
+ * prompt hung every future review, including reviews that never asked for it.
+ *
+ * @param {string} ctx    Error-message prefix.
+ * @param {*}      probe  The probe value.
+ * @returns {string[]}
+ */
+function validateLaneProbe(ctx, probe) {
+  const errors = [];
+
+  if (typeof probe !== 'object' || probe === null || Array.isArray(probe)) {
+    errors.push(ctx + ' reviewer.probe must be an object with a "kind" from: ' + [...VALID_LANE_PROBE_KINDS].join(', '));
+    return errors;
+  }
+
+  const kindErrors = validateEnumField(ctx, 'reviewer.probe.kind', probe.kind, VALID_LANE_PROBE_KINDS);
+  if (kindErrors.length > 0) {
+    errors.push(...kindErrors);
+    return errors; // sub-shape is meaningless without a known kind
+  }
+
+  for (const key of Object.keys(probe)) {
+    if (!isReservedName(key) && !KNOWN_PROBE_FIELDS.has(key)) {
+      errors.push(ctx + ' reviewer.probe.' + key + ' is not a known probe field');
+    }
+  }
+
+  const needsBound = probe.kind === 'command-capability' || probe.kind === 'http-reachable';
+
+  if (probe.kind === 'command-exists' || probe.kind === 'command-capability') {
+    if (typeof probe.binary !== 'string' || probe.binary.length === 0) {
+      errors.push(ctx + ' reviewer.probe.binary must be a non-empty string for kind "' + probe.kind + '"');
+    }
+  } else if (probe.binary !== undefined) {
+    errors.push(ctx + ' reviewer.probe.binary is not permitted for kind "' + probe.kind + '"');
+  }
+
+  if (probe.kind === 'command-capability') {
+    if (typeof probe.needle !== 'string' || probe.needle.length === 0) {
+      errors.push(ctx + ' reviewer.probe.needle must be a non-empty string for kind "command-capability"');
+    }
+  } else if (probe.needle !== undefined) {
+    errors.push(ctx + ' reviewer.probe.needle is not permitted for kind "' + probe.kind + '"');
+  }
+
+  if (probe.kind === 'http-reachable') {
+    if (typeof probe.hostConfigKey !== 'string' || probe.hostConfigKey.length === 0) {
+      errors.push(ctx + ' reviewer.probe.hostConfigKey must be a non-empty string for kind "http-reachable"');
+    }
+    if (typeof probe.path !== 'string' || probe.path.length === 0) {
+      errors.push(ctx + ' reviewer.probe.path must be a non-empty string for kind "http-reachable"');
+    }
+  } else {
+    if (probe.hostConfigKey !== undefined) {
+      errors.push(ctx + ' reviewer.probe.hostConfigKey is not permitted for kind "' + probe.kind + '"');
+    }
+    if (probe.path !== undefined) {
+      errors.push(ctx + ' reviewer.probe.path is not permitted for kind "' + probe.kind + '"');
+    }
+  }
+
+  if (needsBound) {
+    if (!isPositiveIntegerMs(probe.timeoutMs)) {
+      errors.push(
+        ctx + ' reviewer.probe.timeoutMs must be a positive integer of milliseconds for kind "' +
+        probe.kind + '" — an unbounded probe hangs every /gsd-review invocation ' +
+        '(got: ' + describeValue(probe.timeoutMs) + ')',
+      );
+    }
+  } else if (probe.timeoutMs !== undefined) {
+    errors.push(
+      ctx + ' reviewer.probe.timeoutMs is not permitted for kind "command-exists" — ' +
+      'no process is started, so there is nothing to bound',
+    );
+  }
+
+  return errors;
+}
+
+/**
+ * ADR-2782 D2 — the invoke sub-shape is selected by `transport`. A manifest
+ * declaring fields from BOTH sub-shapes, or from NEITHER, fails validation:
+ * inference from field presence leaves those two cases carrying undefined
+ * meaning, which is exactly what a closed vocabulary exists to prevent.
+ *
+ * @param {string} ctx        Error-message prefix.
+ * @param {*}      transport  The (already enum-checked) transport value.
+ * @param {*}      invoke     The invoke value.
+ * @returns {string[]}
+ */
+function validateLaneInvoke(ctx, transport, invoke) {
+  const errors = [];
+
+  if (typeof invoke !== 'object' || invoke === null || Array.isArray(invoke)) {
+    errors.push(ctx + ' reviewer.invoke must be an object');
+    return errors;
+  }
+
+  const hasSpawnField = SPAWN_ONLY_INVOKE_FIELDS.some((f) => invoke[f] !== undefined);
+  const hasHttpField = HTTP_ONLY_INVOKE_FIELDS.some((f) => invoke[f] !== undefined);
+
+  if (hasSpawnField && hasHttpField) {
+    errors.push(
+      ctx + ' reviewer.invoke mixes spawn-only fields (' + SPAWN_ONLY_INVOKE_FIELDS.join(', ') +
+      ') with openai-http-only fields (' + HTTP_ONLY_INVOKE_FIELDS.join(', ') +
+      ') — a lane is one transport or the other',
+    );
+  }
+
+  if (transport === 'spawn') {
+    for (const f of HTTP_ONLY_INVOKE_FIELDS) {
+      if (invoke[f] !== undefined) {
+        errors.push(ctx + ' reviewer.invoke.' + f + ' is not permitted for transport "spawn"');
+      }
+    }
+    errors.push(...validateSpawnInvoke(ctx, invoke));
+  } else if (transport === 'openai-http') {
+    for (const f of SPAWN_ONLY_INVOKE_FIELDS) {
+      if (invoke[f] !== undefined) {
+        errors.push(ctx + ' reviewer.invoke.' + f + ' is not permitted for transport "openai-http"');
+      }
+    }
+    errors.push(...validateHttpInvoke(ctx, invoke));
+  }
+  // transport already reported as invalid upstream — do not double-report here.
+
+  return errors;
+}
+
+function validateSpawnInvoke(ctx, invoke) {
+  const errors = [];
+
+  if (typeof invoke.binary !== 'string' || invoke.binary.length === 0) {
+    errors.push(ctx + ' reviewer.invoke.binary must be a non-empty string for transport "spawn"');
+  }
+
+  if (!Array.isArray(invoke.args)) {
+    errors.push(ctx + ' reviewer.invoke.args must be an array (use [] when the lane takes no arguments)');
+  } else {
+    for (const a of invoke.args) {
+      if (typeof a !== 'string') {
+        errors.push(ctx + ' reviewer.invoke.args entry ' + describeValue(a) + ' must be a string');
+      }
+    }
+  }
+
+  errors.push(...validateEnumField(ctx, 'reviewer.invoke.promptChannel', invoke.promptChannel, VALID_PROMPT_CHANNELS));
+
+  const outputChannelErrors = validateEnumField(ctx, 'reviewer.invoke.outputChannel', invoke.outputChannel, VALID_OUTPUT_CHANNELS);
+  if (outputChannelErrors.length > 0) {
+    errors.push(...outputChannelErrors);
+  } else if (invoke.outputChannel === 'file-arg') {
+    // Knowing the review lands in a file is useless without the argument naming it.
+    if (typeof invoke.outputArg !== 'string' || invoke.outputArg.length === 0) {
+      errors.push(
+        ctx + ' reviewer.invoke.outputArg is required (non-empty string) when outputChannel is "file-arg"',
+      );
+    }
+  } else if (invoke.outputArg !== undefined) {
+    // Forbidden rather than ignored: a manifest carrying an outputArg it does not
+    // use is data a later reader may honour.
+    errors.push(
+      ctx + ' reviewer.invoke.outputArg is only permitted when outputChannel is "file-arg" ' +
+      '(got outputChannel: ' + describeValue(invoke.outputChannel) + ')',
+    );
+  }
+
+  // `null` declares "this lane accepts no model override". An empty string does not.
+  if (invoke.modelArg !== null && (typeof invoke.modelArg !== 'string' || invoke.modelArg.length === 0)) {
+    errors.push(
+      ctx + ' reviewer.invoke.modelArg must be a non-empty string or null ' +
+      '(got: ' + describeValue(invoke.modelArg) + ')',
+    );
+  }
+
+  errors.push(...validateEnumField(ctx, 'reviewer.invoke.effortChannel', invoke.effortChannel, VALID_LANE_EFFORT_CHANNELS));
+
+  // `env` — per-invocation environment pairs (#2483). OPTIONAL, unlike every field above: only a lane
+  // that needs to shape its child's environment declares it, and absent is the common case. Validated
+  // when present, because `resolveLanePlan` DROPS a non-string value rather than coercing it — so an
+  // unvalidated manifest declares a pair that silently never reaches the spawn, which is the failure
+  // mode a shipped env-guard can least afford. Keys are held to the portable POSIX
+  // environment-name grammar, which is a POLICY — not a claim about what an environment can physically
+  // hold. Measured: of the names refused below only NUL is actually rejected by `spawnSync`; `=`, a
+  // leading digit, a dash and a space are all carried through to the child (an `A=B` key arrives as
+  // the raw entry `A=B=value`, and reads back via `process.env['A=B']`). They are refused because a
+  // name outside the grammar is not portably addressable by the program meant to read it.
+  if (invoke.env !== undefined) {
+    if (typeof invoke.env !== 'object' || invoke.env === null || Array.isArray(invoke.env)) {
+      errors.push(
+        ctx + ' reviewer.invoke.env must be an object of environment name/value pairs ' +
+        '(got: ' + describeValue(invoke.env) + ')',
+      );
+    } else {
+      for (const key of Object.keys(invoke.env)) {
+        // `__proto__` passes the grammar below and IS a real own key once a manifest is JSON-parsed,
+        // but assigning it onto a plain accumulator goes through the inherited `__proto__` SETTER
+        // instead of creating an own property. For the string values this field permits the setter is
+        // a no-op — the prototype is not even changed — so the pair would validate and then simply
+        // vanish before the spawn: the declared-but-never-delivered failure this block exists to catch.
+        // Refused by name, because the grammar cannot see it.
+        //
+        // Only `__proto__` needs this. Sibling reserved-name guards in this file reject
+        // `constructor`/`prototype` alongside it, but those guard bracket LOOKUPS that resolve
+        // prototype members; here the read is `Object.keys` + an own-value read, and `constructor`
+        // assigns as an ordinary own key. Refusing it too would reject a name the spawn could carry.
+        // CASE-INSENSITIVE, and that is not pedantry: Windows environment lookups are
+        // case-insensitive, so `Path` / `node_options` reach the child as `PATH` / `NODE_OPTIONS`
+        // and an exact-case set is bypassed by changing one letter. The grammar above already
+        // constrains keys to ASCII, so a plain uppercase fold is sufficient here.
+        if (DENIED_LANE_ENV_KEYS.has(key.toUpperCase())) {
+          errors.push(
+            ctx + ' reviewer.invoke.env key "' + key + '" is not permitted ' +
+            '(it makes the spawned reviewer run code of the manifest\'s choosing; ' +
+            'declare an absolute `invoke.binary` instead of reshaping the child\'s environment)',
+          );
+        } else if (key === '__proto__') {
+          errors.push(
+            ctx + ' reviewer.invoke.env key "__proto__" is not permitted ' +
+            '(it is silently dropped when the spawn plan is assembled, so it would never reach the child)',
+          );
+        } else if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+          errors.push(
+            ctx + ' reviewer.invoke.env key ' + describeValue(key) +
+            ' is not a valid environment variable name',
+          );
+        }
+        if (typeof invoke.env[key] !== 'string') {
+          errors.push(
+            ctx + ' reviewer.invoke.env.' + key + ' must be a string ' +
+            '(got: ' + describeValue(invoke.env[key]) + ')',
+          );
+        }
+      }
+    }
+  }
+
+  return errors;
+}
+
+function validateHttpInvoke(ctx, invoke) {
+  const errors = [];
+
+  if (typeof invoke.hostConfigKey !== 'string' || invoke.hostConfigKey.length === 0) {
+    errors.push(
+      ctx + ' reviewer.invoke.hostConfigKey must be a non-empty dotted config key ' +
+      'for transport "openai-http" (it names the config key holding the base URL)',
+    );
+  }
+
+  if (typeof invoke.path !== 'string' || invoke.path.length === 0) {
+    errors.push(ctx + ' reviewer.invoke.path must be a non-empty string for transport "openai-http" (e.g. "/v1/chat/completions")');
+  }
+
+  errors.push(...validateEnumField(ctx, 'reviewer.invoke.modelDiscovery', invoke.modelDiscovery, VALID_MODEL_DISCOVERY));
+
+  // D2 fixes effortChannel to 'none' for this transport — an HTTP lane has no
+  // argv to carry an effort flag and no env of its own.
+  if (invoke.effortChannel !== 'none') {
+    errors.push(
+      ctx + ' reviewer.invoke.effortChannel must be "none" for transport "openai-http" ' +
+      '(got: ' + describeValue(invoke.effortChannel) + ')',
+    );
   }
 
   return errors;
@@ -1353,7 +2851,7 @@ function materializeHookFragments(cap, capDir) {
 
       const abs = path.resolve(capDir, fragment.path);
       const capRoot = path.resolve(capDir);
-      if (abs !== capRoot && !abs.startsWith(capRoot + path.sep)) {
+      if (abs !== capRoot && !abs.startsWith(capRoot + path.sep)) { // allow-handrolled-containment: committed pre-build .cjs; compiled security.cjs is untracked build output
         errors.push(
           cap.id + '/' + groupName + '[' + i + '].fragment.path escapes capability directory: ' +
           fragment.path,
@@ -1501,6 +2999,18 @@ function validateStep(step, prefix, declaredSkills, declaredAgents) {
     errors.push(prefix + '.when must be a string if present');
   }
 
+  if (step.pointFrom !== undefined && typeof step.pointFrom !== 'string') {
+    errors.push(prefix + '.pointFrom must be a string if present');
+  }
+
+  // #4209 DISP-02: strict optional boolean opt-in trait. Absent or false is
+  // inert; only a literal `true` reaches the projected active hook. Reject
+  // every other type (including truthy non-boolean values) so a typo can
+  // never silently opt a step into reviewer-lane dispatch.
+  if (step.supportsReviewerLanes !== undefined && typeof step.supportsReviewerLanes !== 'boolean') {
+    errors.push(prefix + '.supportsReviewerLanes must be a boolean if present');
+  }
+
   if (step.fragment !== undefined) {
     errors.push(...validateFragment(step.fragment, prefix + '.fragment'));
   }
@@ -1635,6 +3145,31 @@ function validateAgainstContract(cap, capId) {
       ) {
         errors.push(
           prefix + ' step.when "' + step.when + '" is not defined in capability config keys',
+        );
+      }
+    }
+  }
+
+  // pointFrom (#3661): selects which of possibly several same-capability steps is
+  // active for its own `point`, based on an enum config key. Require it references
+  // an enum key in cap.config whose values include THIS step's own point — otherwise
+  // the step could never activate (a silently-dead step).
+  for (const step of cap.steps) {
+    if (step.pointFrom !== undefined) {
+      if (typeof step.pointFrom !== 'string') continue; // already reported above
+      const slice = typeof cap.config === 'object' && cap.config !== null ? cap.config[step.pointFrom] : undefined;
+      if (!slice || typeof slice !== 'object') {
+        errors.push(
+          prefix + ' step.pointFrom "' + step.pointFrom + '" is not defined in capability config keys',
+        );
+      } else if (slice.type !== 'enum') {
+        errors.push(
+          prefix + ' step.pointFrom "' + step.pointFrom + '" must reference an enum config key (got type: ' + slice.type + ')',
+        );
+      } else if (!Array.isArray(slice.values) || !slice.values.includes(step.point)) {
+        errors.push(
+          prefix + ' step.pointFrom "' + step.pointFrom + '" enum values do not include this step\'s own point "' +
+          step.point + '" — the step could never activate',
         );
       }
     }
@@ -1830,7 +3365,7 @@ const TIER_RANK = { core: 0, standard: 1, full: 2 };
  * @param {Set<string>}         centralKeys  Set of keys in the central config-schema
  * @returns {string[]}          Array of error strings; empty = all pass.
  */
-function validateCrossCapability(capMap, centralKeys) {
+function validateCrossCapability(capMap, centralKeys, centralPatterns = []) {
   const errors = [];
 
   // Ownership: one owner per skill stem + agent name
@@ -1873,10 +3408,19 @@ function validateCrossCapability(capMap, centralKeys) {
     }
   }
 
-  // Config key ownership: exclusive AND absent from central schema
+  // Config key ownership: exclusive AND absent from central schema.
+  //
+  // ADR-2782 D1/D9: the role filter was `role !== 'feature'`, which silently
+  // exempted every non-feature capability from ownership AND from the
+  // central-schema collision check — the reason reviewer config keys were
+  // stranded centrally. Ownership is a property of DECLARING a config slice, not
+  // of being a feature, so the filter is now purely on the slice's presence.
+  // Verified inert at introduction: no shipped capability declares `config` on a
+  // non-feature role, so this widening changes no existing key — it stops a
+  // latent silent drop and unblocks Phase 4 (#2797).
   const configKeyOwner = new Map(); // key → capId
   for (const [capId, cap] of capMap) {
-    if (cap.role !== 'feature' || typeof cap.config !== 'object' || cap.config === null) continue;
+    if (typeof cap.config !== 'object' || cap.config === null) continue;
     for (const key of Object.keys(cap.config)) {
       if (configKeyOwner.has(key)) {
         errors.push(
@@ -1892,8 +3436,116 @@ function validateCrossCapability(capMap, centralKeys) {
           'remove from central config-schema before adding to the capability',
         );
       }
+      // #2797: exact-key membership is not the whole central schema. A key may
+      // also be claimed by a central DYNAMIC PATTERN, and until now that
+      // collision was invisible here — `centralKeys` is built from
+      // `manifest.validKeys` alone.
+      //
+      // Why that mattered enough to fix rather than note: `isCentralConfigKey`
+      // DOES consult the patterns, and `mergeFederatedConfig` skips every key
+      // for which it returns true. So a federated slice overlapping a central
+      // pattern is INERT — it carries no traffic — while the build stays green.
+      // Two of the four key families Phase 4 migrates (`review.models.<slug>`
+      // and `review.max_prompt_tokens_per_reviewer.<slug>`) were pattern-backed,
+      // so the invariant was blind to exactly the migration it exists to police.
+      const collidingPattern = centralPatterns.find((p) => p.test(key));
+      if (collidingPattern) {
+        errors.push(
+          'config key "' + key + '" is declared in capability "' + capId +
+          '" AND is matched by central config-schema pattern /' + collidingPattern.source +
+          '/ — the federated slice would be inert (mergeFederatedConfig skips central keys): ' +
+          'remove the pattern from the central config-schema in the SAME commit',
+        );
+      }
     }
   }
+
+  // ── Reviewer lane uniqueness (ADR-2782 D8) ─────────────────────────────────
+  //
+  // slug, every flag, and reviewsSection are each unique across the MERGED
+  // first-party ∪ overlay set. reviewsSection uniqueness is not cosmetic: two
+  // lanes sharing a heading silently merge their output in REVIEWS.md, producing
+  // a review that appears to have consensus it does not have.
+  //
+  // This runs in validateCrossCapability rather than in the generator because
+  // BOTH callers reach it: the build-time generator over first-party, and
+  // capability-loader's loadRegistry over `acceptedMap` (first-party ∪ accepted
+  // overlays) per candidate. First-party is already in the map when an overlay
+  // candidate is added, so the OVERLAY is the collider that gets dropped —
+  // which is exactly D8's "first-party wins", with no provenance check here.
+  //
+  // Reviewer INSTANCES (review.reviewer_instances.<name>, ADR-1517) resolve
+  // THROUGH a lane and are not lanes; they never enter these sets.
+  const laneSlugClaims = new Map();     // slug           → capId[]
+  const laneFlagClaims = new Map();     // flag           → capId[]
+  const laneSectionClaims = new Map();  // reviewsSection → capId[]
+  // ADR-3646: task-content resolver tracker-prefix uniqueness across the
+  // MERGED first-party ∪ overlay set, mirroring the reviewer-lane collision
+  // pattern above — two resolvers claiming the same prefix would make
+  // `execute:task` dispatch ambiguous (which capability's resolver runs?).
+  const trackerPrefixClaims = new Map(); // trackerPrefix  → capId[]
+
+  // Claims are ACCUMULATED and reported after the sweep, never reported on the
+  // second claimant. Reporting pairwise-on-collision looks equivalent and is not:
+  // with three lanes on one key it names whichever pair happened to arrive first,
+  // so the message text depends on Map insertion order — which is readdir order
+  // at build time and candidate order at load time. A cross-platform CI lane
+  // would then disagree with a local run about the text of the same failure.
+  // Accumulating makes the output a pure function of the input set for ANY N.
+  const claim = (claims, key, capId) => {
+    if (typeof key !== 'string' || key.length === 0) return;
+    if (isReservedName(key)) return;
+    let claimants = claims.get(key);
+    if (claimants === undefined) {
+      claimants = [];
+      claims.set(key, claimants);
+    }
+    if (!claimants.includes(capId)) claimants.push(capId);
+  };
+
+  for (const [capId, cap] of capMap) {
+    // ADR-3646: a MALFORMED taskContentResolver body was already reported by
+    // validateCapability — do not double-report; only claim well-shaped
+    // bodies. Independent of the reviewer-lane checks below, so it runs even
+    // for capabilities that carry no `reviewer` body at all.
+    const tcr = cap.taskContentResolver;
+    if (typeof tcr === 'object' && tcr !== null && !Array.isArray(tcr)) {
+      claim(trackerPrefixClaims, tcr.trackerPrefix, capId);
+    }
+
+    const r = cap.reviewer;
+    // A capability with no lane contributes to no uniqueness set. A MALFORMED
+    // body was already reported by validateCapability — do not double-report.
+    if (typeof r !== 'object' || r === null || Array.isArray(r)) continue;
+    claim(laneSlugClaims, r.slug, capId);
+    claim(laneSectionClaims, r.reviewsSection, capId);
+    if (Array.isArray(r.flags)) {
+      // Flattened across arrays: Antigravity answers to --antigravity AND --agy,
+      // so uniqueness is per-flag, not per-lane.
+      for (const flag of r.flags) claim(laneFlagClaims, flag, capId);
+    }
+  }
+
+  // One error per colliding key naming EVERY claimant, ids sorted; the whole
+  // block is sorted before it is appended, so both the messages and their order
+  // are independent of how the capabilities were enumerated.
+  const laneCollisions = [];
+  for (const [claims, label] of [
+    [laneSlugClaims, 'slug'],
+    [laneFlagClaims, 'flag'],
+    [laneSectionClaims, 'reviewsSection'],
+    [trackerPrefixClaims, 'taskContentResolver.trackerPrefix'],
+  ]) {
+    for (const [key, claimants] of claims) {
+      if (claimants.length < 2) continue;
+      laneCollisions.push(
+        'reviewer ' + label + ' "' + key + '" is declared by ' +
+        [...claimants].sort().map((i) => '"' + i + '"').join(' and '),
+      );
+    }
+  }
+  laneCollisions.sort();
+  errors.push(...laneCollisions);
 
   // requires: all ids exist
   for (const [capId, cap] of capMap) {
@@ -2104,25 +3756,55 @@ function topoSortContributions(entries) {
 // ─── Gen-time wired guard ─────────────────────────────────────────────────────
 
 /**
+ * Hook group (capability.json array name) → hook kind (dispatch discriminator).
+ * Single source of truth for both validateHooksWired and the scanner-parity
+ * test in tests/capability-registry.test.cjs (#3606).
+ */
+const HOOK_GROUP_KINDS = Object.freeze({
+  steps: 'step',
+  contributions: 'contribution',
+  gates: 'gate',
+});
+
+/**
  * Validate that every hook point declared by a capability has a corresponding
- * `loop render-hooks <point>` call site in one of the host-loop workflow files.
+ * `loop render-hooks <point>` call site in one of the host-loop workflow files,
+ * AND — #3606 — that the call site's dispatch text covers the hook's KIND.
+ *
+ * A call site proves hooks are rendered, not dispatched: a consumer that
+ * iterates only `kind == "gate"` (or narrows `kind == "step"` to one
+ * `ref.skill`) silently drops every other registered kind — a capability can
+ * be wired, enabled, resolved active, and never run. See
+ * gsd-core/references/loop-hook-dispatch.md ("A point whose workflow
+ * hand-rolls one kind does not implement this contract").
  *
  * Only valid loop points (in VALID_LOOP_POINTS) are checked here. Invalid points
  * are already caught by validateStep/validateContribution/validateGate — do not
  * double-report.
  *
+ * KNOWN LIMITATION (#3606): coverage is the UNION across all call sites for a
+ * point in HOST_LOOP_FILES. Quick's plan:pre planner contribution seam has an
+ * additional generator-owned per-file check. Other consumers outside that
+ * universe (autonomous.md, code-review*.md, audit-milestone.md,
+ * secure-phase.md, validate-phase.md) are not per-file checked — a narrowed
+ * consumer there passes as long as one host file covers the point. More
+ * per-file coverage maps are the tightening path.
+ *
  * @param {object}   cap       Validated capability object.
- * @param {Set<string>} wiredSet  Set of points that have call sites in host workflows.
- * @returns {string[]}          Array of error strings; empty means all points are wired.
+ * @param {Map<string, Set<string>>} wiredKinds  Per point, the hook kinds the
+ *   host workflows' call-site dispatch text covers (getWiredKinds). A point
+ *   absent from the map is unwired.
+ * @returns {string[]}          Array of error strings; empty means all points
+ *   are wired and every registered kind is covered.
  */
-function validateHooksWired(cap, wiredSet) {
+function validateHooksWired(cap, wiredKinds) {
   const errors = [];
   const capId = cap.id || '(unknown)';
 
-  function checkPoint(point, groupName, idx) {
+  function checkPoint(point, groupName, kind, idx) {
     // Only flag valid points that are unwired — invalid points are schema-validator's job.
     if (!VALID_LOOP_POINTS.has(point)) return;
-    if (!wiredSet.has(point)) {
+    if (!wiredKinds.has(point)) {
       errors.push(
         'capability "' + capId + '" ' + groupName + '[' + idx + '].point "' + point +
         '" is declared but not wired in any host-loop workflow ' +
@@ -2130,20 +3812,34 @@ function validateHooksWired(cap, wiredSet) {
         'Wire the call site in the host workflow ' +
         '(see scripts/gen-loop-host-contract.cjs STEP_WORKFLOWS) or remove the hook.',
       );
+      return;
+    }
+    const covered = wiredKinds.get(point);
+    if (covered.size === 0) {
+      errors.push(
+        'capability "' + capId + '" ' + groupName + '[' + idx + '].point "' + point +
+        '" has `loop render-hooks ' + point + '` call site(s), but their dispatch text covers NO ' +
+        'hook kind — every consumer is narrowed to specific hooks. Dispatch every registered kind ' +
+        'per gsd-core/references/loop-hook-dispatch.md.',
+      );
+      return;
+    }
+    if (!covered.has(kind)) {
+      errors.push(
+        'capability "' + capId + '" ' + groupName + '[' + idx + '].point "' + point +
+        '" registers a ' + kind + ' hook, but the host call site\'s dispatch text never ' +
+        'covers `kind == "' + kind + '"` (it covers: ' + [...covered].sort().join(', ') + '). ' +
+        'A hand-rolled single-kind consumer silently never dispatches the other kinds — ' +
+        'dispatch every registered kind per gsd-core/references/loop-hook-dispatch.md.',
+      );
     }
   }
 
-  for (let i = 0; i < (cap.steps || []).length; i++) {
-    const hook = cap.steps[i];
-    if (hook.point !== undefined) checkPoint(hook.point, 'steps', i);
-  }
-  for (let i = 0; i < (cap.contributions || []).length; i++) {
-    const hook = cap.contributions[i];
-    if (hook.point !== undefined) checkPoint(hook.point, 'contributions', i);
-  }
-  for (let i = 0; i < (cap.gates || []).length; i++) {
-    const hook = cap.gates[i];
-    if (hook.point !== undefined) checkPoint(hook.point, 'gates', i);
+  for (const [group, kind] of Object.entries(HOOK_GROUP_KINDS)) {
+    for (let i = 0; i < (cap[group] || []).length; i++) {
+      const hook = cap[group][i];
+      if (hook.point !== undefined) checkPoint(hook.point, group, kind, i);
+    }
   }
 
   return errors;
@@ -2288,7 +3984,31 @@ module.exports = {
   VALID_SANDBOX_TIERS,
   VALID_ARTIFACT_KIND_NAMES,
   VALID_ARTIFACT_NESTINGS,
+  VALID_TRIGGER_PRECEDENCE_KINDS,
+  DEFAULT_TRIGGER_PRECEDENCE,
   FEATURE_FIELDS_FORBIDDEN_ON_RUNTIME,
+  // ADR-2782 D1/D2/D3/D6/D7/D8 — reviewer lane body
+  FEATURE_FIELDS_FORBIDDEN_ON_REVIEWER,
+  LANE_SLUG_RE,
+  LANE_FLAG_RE,
+  VALID_LANE_TRANSPORTS,
+  VALID_LANE_PROBE_KINDS,
+  VALID_PROMPT_CHANNELS,
+  VALID_OUTPUT_CHANNELS,
+  VALID_LANE_EFFORT_CHANNELS,
+  VALID_MODEL_DISCOVERY,
+  VALID_EMPTY_OUTPUT,
+  VALID_EVIDENCE_CLASSES,
+  VALID_LANE_HANDLERS,
+  KNOWN_REVIEWER_FIELDS,
+  KNOWN_HOST_BEHAVIORS,
+  MAX_REPORTED_UNKNOWN_KEYS,
+  MAX_REPORTED_KEY_CHARS,
+  validateReviewerBody,
+  collectReviewerWarnings,
+  collectReviewerWarningRecords,
+  REVIEWER_WARNING,
+  REMOVED_REVIEWER_CLI_FIELD,
   VALID_INSTALL_SURFACES,
   VALID_PERMISSION_WRITERS,
   VALID_EXTENDED_HOOK_EVENTS,
@@ -2300,6 +4020,7 @@ module.exports = {
   VALID_TRANSPORTS,
   VALID_HOST_RUNTIMES,
   VALID_SUBAGENT_TOOLKITS,
+  VALID_DISPATCH_ISOLATION,
   _HOST_INTEGRATION_VOCAB: {
     embeddingMode:   [...VALID_EMBEDDING_MODES],
     commandSurface:  [...VALID_COMMAND_SURFACES],
@@ -2309,6 +4030,8 @@ module.exports = {
     transport:       [...VALID_TRANSPORTS],
     runtime:         [...VALID_HOST_RUNTIMES],
     subagentToolkit: [...VALID_SUBAGENT_TOOLKITS],
+    effortSurface:   [...VALID_EFFORT_SURFACES],
+    isolation:       [...VALID_DISPATCH_ISOLATION],
   },
   INSTALL_SURFACE_TO_ALLOWED_HOOKS_SURFACES,
   GEMINI_AGENT_EVENTS,
@@ -2322,6 +4045,7 @@ module.exports = {
   validateCommandEntry,
   validateRuntimeCompat,
   validateFeatureBody,
+  validateTaskContentResolver,
   validateConfigHome,
   validateArtifactKindEntry,
   validateArtifactLayout,
@@ -2340,6 +4064,7 @@ module.exports = {
   topoSortSteps,
   topoSortContributions,
   validateHooksWired,
+  HOOK_GROUP_KINDS,
   validateConfigSliceEntry,
   classifyCrossErrors,
   runConfigFormatParityGate,

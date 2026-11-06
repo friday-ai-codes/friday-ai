@@ -1,3 +1,5 @@
+@.claude/gsd-core/references/response-language-directive.md
+
 # Reapply Local Patches Workflow
 
 Invoked by `/gsd-update --reapply` (`commands/gsd/update.md`).
@@ -7,6 +9,21 @@ After a GSD update wipes and reinstalls files, this workflow merges user's previ
 **Critical invariant:** Every file in `gsd-local-patches/` was backed up because the installer's hash comparison detected it was modified. The workflow must NEVER conclude "no custom content" for any backed-up file — that is a logical contradiction. When in doubt, classify as CONFLICT requiring user review, not SKIP.
 
 <process>
+
+## Step 0: Parse interactive mode (#4435)
+
+Read the arguments passed after `--reapply`:
+
+- no `--interactive` → `INTERACTIVE_MODE=off` (the default; Step 4 runs exactly as before)
+- bare `--interactive` or `--interactive=exceptions` → `INTERACTIVE_MODE=exceptions`
+- `--interactive=all` → `INTERACTIVE_MODE=all`
+- any other `--interactive=<value>` → STOP with: `unknown --interactive value '<value>' (expected exceptions or all)`. Do not reapply anything.
+
+When the mode is not `off`, tell the user once, before the first prompt: on the first interactive run
+for this install, `--interactive=all` is recommended, because the recommendations have not yet been
+checked against this install's customizations.
+
+**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in the arguments OR `workflow.text_mode` is `true`. When TEXT_MODE is active, replace every `AskUserQuestion` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes where `AskUserQuestion` is not available.
 
 ## Step 1: Detect backed-up patches
 
@@ -57,8 +74,8 @@ elif [ -z "$PATCHES_DIR" ] && [ -n "$XDG_CONFIG_HOME" ]; then
   fi
 fi
 
-if [ -z "$PATCHES_DIR" ] && [ -n "$GEMINI_CONFIG_DIR" ]; then
-  candidate="$(expand_home "$GEMINI_CONFIG_DIR")/gsd-local-patches"
+if [ -z "$PATCHES_DIR" ] && [ -n "$ANTIGRAVITY_CONFIG_DIR" ]; then
+  candidate="$(expand_home "$ANTIGRAVITY_CONFIG_DIR")/gsd-local-patches"
   if [ -d "$candidate" ]; then
     PATCHES_DIR="$candidate"
   fi
@@ -86,17 +103,23 @@ if [ -z "$PATCHES_DIR" ]; then
     PATCHES_DIR="$HOME/.config/opencode/gsd-local-patches"
   elif [ -d "$HOME/.opencode/gsd-local-patches" ]; then
     PATCHES_DIR="$HOME/.opencode/gsd-local-patches"
+  elif [ -d "$HOME/.gemini/antigravity/gsd-local-patches" ]; then
+    PATCHES_DIR="$HOME/.gemini/antigravity/gsd-local-patches"
+  # Legacy: a pre-#1928 Gemini CLI install put patches at ~/.gemini/gsd-local-patches.
+  # That runtime is retired, but a stranded patches dir is still the user's work — probed
+  # AFTER Antigravity so a live install always wins. This is a directory probe, not a
+  # runtime home: nothing here assigns the retired runtime id.
   elif [ -d "$HOME/.gemini/gsd-local-patches" ]; then
     PATCHES_DIR="$HOME/.gemini/gsd-local-patches"
   elif [ -d "$HOME/.codex/gsd-local-patches" ]; then
     PATCHES_DIR="$HOME/.codex/gsd-local-patches"
   else
-    PATCHES_DIR="./.claude/gsd-local-patches"
+    PATCHES_DIR=".claude/gsd-local-patches"
   fi
 fi
 # Local install fallback — check all runtime directories
 if [ ! -d "$PATCHES_DIR" ]; then
-  for dir in .config/kilo .kilo .config/opencode .opencode .gemini .codex .claude; do
+  for dir in .config/kilo .kilo .config/opencode .opencode .agents .codex .claude; do
     if [ -d "./$dir/gsd-local-patches" ]; then
       PATCHES_DIR="./$dir/gsd-local-patches"
       break
@@ -167,7 +190,7 @@ Check if a `gsd-pristine/` directory exists alongside `gsd-local-patches/`:
 ```bash
 PRISTINE_DIR="$CONFIG_DIR/gsd-pristine"
 ```
-If it exists, the installer saved pristine copies at install time. Use these as the baseline.
+If it exists, the installer saved pristine copies at install time. Use these as the baseline. Both the deterministic verifier and the installer's preserve-check resolve each file's snapshot at its canonical path first and, when that misses, by the SHA-256 recorded in `pristine_hashes` — so a snapshot stored at a legacy path (for example, without the `gsd-core/` prefix an earlier release dropped) is still found and, on the next update, relocated to its canonical path (#4145). When no snapshot resolves under `gsd-pristine/`, the deterministic verifier additionally falls back to Option A's git-history walk itself (read-only, same recorded-hash match), which is what keeps Step 5a coverage non-zero on multi-version updates where the hash-validated regeneration had nothing it could promote (#4135).
 
 ### Option C: No baseline available (two-way fallback)
 If neither git history nor pristine snapshots are available, fall back to two-way comparison — but with **strengthened heuristics** (see Step 3).
@@ -190,6 +213,127 @@ If neither git history nor pristine snapshots are available, fall back to two-wa
 
 ## Step 4: Merge each file
 
+### Step 4 pre-flight: classify superseded customizations (#4136)
+
+Before merging anything, run the deterministic classifier. It computes, per backed-up file,
+whether the user's added lines (diff of the backup against the hash-validated pristine
+baseline) are ALREADY present verbatim in the newly installed version — i.e. upstream
+adopted the customization. That is the only ground on which the `Incorporated` status
+below is valid. Never conclude `Incorporated` from a signature line, a heading, or general
+resemblance: the classifier excludes structural/trivial lines and requires every
+significant user-added line to be present, because a false `Incorporated` silently retires
+a live customization.
+
+```bash
+PRISTINE_DIR="${CONFIG_DIR}/gsd-pristine"
+
+# Build args as a bash array so paths with spaces survive expansion intact.
+CLASSIFY_ARGS=(
+  --patches-dir "$PATCHES_DIR"
+  --config-dir  "$CONFIG_DIR"
+)
+if [ -d "$PRISTINE_DIR" ]; then
+  CLASSIFY_ARGS+=(--pristine-dir "$PRISTINE_DIR")
+fi
+CLASSIFY_ARGS+=(--classify --json)
+
+# Informational: exits 0. The binding gate is Step 5a's post-merge verification run.
+CLASSIFY_OUTPUT="$(node "${GSD_HOME}/gsd-core/bin/verify-reapply-patches.cjs" "${CLASSIFY_ARGS[@]}")"
+INCORPORATED_FILES="$(echo "$CLASSIFY_OUTPUT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));(d.incorporated_files||[]).forEach(f=>process.stdout.write(f+'\n'))")"
+```
+
+**For every file in `INCORPORATED_FILES`:**
+
+- **Do NOT merge it. Do NOT re-apply its diff.** Leave the newly installed file exactly as
+  shipped — the user's customization is already in it. Re-grafting the diff onto a version
+  that already contains it duplicates the content (both copies run; a stale graft can
+  contradict a richer native upstream step that replaced it).
+- Report the per-file status `Incorporated` — "Already in upstream v{version}" — in the
+  Step 3 summary and the Step 7 report.
+- No Hunk Verification Table rows are required for these files (nothing was merged); the
+  classifier's structured output is the evidence. If EVERY backed-up file is Incorporated,
+  still emit the table with a header row and a single note line naming the incorporated
+  files, so the Step 5b absent-table halt is not tripped. Step 5a passes these files
+  without special-casing — every user-added line is present in the untouched install.
+- This is what ends the re-graft cycle: because the installed file stays identical to what
+  the release ships, the next update's hash comparison no longer flags it as modified, and
+  the file drops out of `gsd-local-patches/` on the next cycle.
+
+Files NOT in `INCORPORATED_FILES` — reported `needs_merge` (with the lines still missing
+from the new version) or `unknown` (no confirmable pristine baseline) — take the normal
+merge paths below, unchanged. If the classifier cannot run at all (e.g. `GSD_HOME`
+unset), fall back to merging every file as before; never report `Incorporated` without the
+classifier's structured confirmation.
+
+### Step 4 interactive review (#4435) — only when `INTERACTIVE_MODE` is not `off`
+
+Verbatim matching cannot see an edit that upstream adopted in different words, an edit whose
+surrounding stock text upstream rewrote, or an edit whose anchor lines upstream deleted. Interactive
+mode shows each user edit (hunk) and lets the USER decide. Present and gate: the tool recommends,
+the user decides, and nothing is retired without the user's answer.
+
+```bash
+DECISIONS_FILE="$(mktemp "${TMPDIR:-/tmp}/gsd-reapply-decisions.XXXXXX")"
+HUNKS_ARGS=(
+  --patches-dir "$PATCHES_DIR"
+  --config-dir  "$CONFIG_DIR"
+)
+if [ -d "$PRISTINE_DIR" ]; then
+  HUNKS_ARGS+=(--pristine-dir "$PRISTINE_DIR")
+fi
+HUNKS_ARGS+=(--hunks --json)
+
+# Informational: exits 0. Each hunk carries hunk_hash, kind, stock_lines, user_lines,
+# recommendation (keep | retire | review), reasons, and exception (true/false).
+HUNKS_OUTPUT="$(node "${GSD_HOME}/gsd-core/bin/verify-reapply-patches.cjs" "${HUNKS_ARGS[@]}")"
+```
+
+The decisions file lives in a temp directory, never inside `gsd-local-patches/`, because the
+Step 5a gate treats every file in that directory as a backed-up patch.
+
+For each file in `HUNKS_OUTPUT.files`, for each hunk:
+
+- `INTERACTIVE_MODE=all`: present EVERY hunk.
+- `INTERACTIVE_MODE=exceptions`: present only hunks with `exception: true`. Every other hunk is kept
+  without asking. Print one summary line for each:
+  `kept without review: {file} hunk {hunk_id}: "{first user line, truncated to 60 chars}"`.
+
+Presenting a hunk means asking the user one question (`AskUserQuestion`, or under TEXT_MODE a
+plain-text numbered list the user answers by number) that shows:
+
+- **Stock text:** `stock_lines` (or "(none — your lines were inserted)" when empty)
+- **Your text:** `user_lines` (or "(none — you deleted the stock text)" when empty)
+- **Recommendation:** `recommendation`, with `reasons` explained in plain words:
+  `already_upstream` (the shipped file already has it), `partially_upstream` (only some of it is
+  there), `region_changed_upstream` (upstream also changed this spot, for example by rewording it),
+  `anchor_orphaned` (the lines it sat between are gone), `baseline_unconfirmed` (no verified
+  pre-update copy, so read the whole file), `diff_too_large` (the file changed too much to split it
+  into separate edits)
+- Options: **Keep** (graft it), **Retire** (drop it; keep upstream's text), **Rewrite** (the user
+  supplies replacement text, which is applied instead)
+
+Write a decision entry only from the user's answer to that hunk's question. Never write `retire` or
+`rewrite` for a hunk the user was not asked about, and never pick an answer on the user's behalf,
+even when the recommendation is `retire`. A hunk kept without review in `exceptions` mode is
+recorded as `keep`. Record each answer in `DECISIONS_FILE` as JSON:
+
+```json
+{ "decisions": [ { "file": "<file>", "hunk_hash": "<hunk_hash>", "disposition": "keep|retire|rewrite" } ] }
+```
+
+A `rewrite` entry must also carry `"replacement_lines": [...]` — exactly the lines the user supplied.
+The Step 5a gate then requires those lines to be present in the merged file, so a rewrite is verified
+like any kept edit. `keep` and `retire` entries never carry `replacement_lines`.
+
+Shell variables do not survive between separate command invocations. Write `INTERACTIVE_MODE` and the
+`DECISIONS_FILE` path down when you set them, and set both again in the same command that runs the
+Step 5a verifier.
+
+Then merge each file with the paths below, applying only `keep` hunks and the user's replacement
+text for `rewrite` hunks. A file whose hunks were all retired is left exactly as installed and
+reported `Incorporated` ("Retired by user decision"). A file with some hunks retired is reported
+`Merged` with "{N} hunk(s) retired by user decision".
+
 For each file in `backup-meta.json`:
 
 1. **Read the backed-up version** (user's modified copy from `gsd-local-patches/`)
@@ -207,6 +351,9 @@ Compare the three versions to isolate changes:
 - Sections changed only by upstream → accept upstream version
 - Sections changed by both → flag as CONFLICT, show both, ask user
 - Sections unchanged by either → use new version (identical to all three)
+- User-added content already present verbatim in the new version → already incorporated
+  upstream — do NOT re-apply it (the file-level outcome is `Incorporated` when ALL
+  user-added content is thus present, as determined by the Step 4 pre-flight classifier)
 
 ### Two-way merge (fallback when no baseline)
 
@@ -217,7 +364,7 @@ When no pristine baseline is available, use these **strengthened heuristics**:
 For each file:
 a. Read both versions completely
 b. Identify ALL differences, then classify each as:
-   - **Mechanical drift** — path substitutions (e.g. `/Users/xxx/.claude/` → `./.claude/`), variable additions (`${GSD_WS}`, `${AGENT_SKILLS_*}`), error handling additions (`|| true`)
+   - **Mechanical drift** — path substitutions (e.g. `/Users/xxx/.claude/` → `.claude/`), variable additions (`${GSD_WS}`, `${AGENT_SKILLS_*}`), error handling additions (`|| true`)
    - **User customization** — added steps/sections, removed sections, reordered content, changed behavior, added frontmatter fields, modified instructions
 
 c. **If ANY differences remain after filtering out mechanical drift → those are user customizations. Merge them.**
@@ -263,7 +410,7 @@ After writing each merged file, verify that user modifications survived the merg
 6. **Report status per file:**
    - `Merged` — user modifications applied cleanly (show summary of what was preserved)
    - `Conflict` — user reviewed and chose resolution
-   - `Incorporated` — user's modification was already adopted upstream (only valid when pristine baseline confirms this)
+   - `Incorporated` — user's modification was already adopted upstream (only valid when pristine baseline confirms this — determined exclusively by the Step 4 pre-flight classifier's `incorporated_files`, never by inspection)
 
 **Never report `Skipped — no custom content`.** If a file is in the backup, it has custom content.
 
@@ -289,6 +436,11 @@ VERIFY_ARGS=(
 if [ -d "$PRISTINE_DIR" ]; then
   VERIFY_ARGS+=(--pristine-dir "$PRISTINE_DIR")
 fi
+# #4435: hunks the user retired or rewrote are excused only through the recorded,
+# hash-bound decisions. A decision whose hunk no longer matches exits 2 (stale).
+if [ "$INTERACTIVE_MODE" != "off" ] && [ -s "$DECISIONS_FILE" ]; then
+  VERIFY_ARGS+=(--decisions "$DECISIONS_FILE")
+fi
 VERIFY_ARGS+=(--json)
 
 # Capture stdout (the structured JSON report) separately from stderr so that
@@ -305,8 +457,26 @@ VERIFY_STATUS=$?
 DRIFTED_COUNT="$(echo "$VERIFY_OUTPUT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(d.drifted||0))")"
 DRIFTED_FILES="$(echo "$VERIFY_OUTPUT"  | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));(d.drifted_files||[]).forEach(f=>process.stdout.write(f+'\n'))")"
 NO_BASELINE_COUNT="$(echo "$VERIFY_OUTPUT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(d.no_baseline||0))")"
-NO_BASELINE_FILES="$(echo "$VERIFY_OUTPUT"  | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));(d.no_baseline_files||[]).forEach(f=>process.stdout.write(f+'\n'))")"
+NO_BASELINE_FILES="$(echo "$VERIFY_OUTPUT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));(d.no_baseline_files||[]).forEach(f=>process.stdout.write(f+'\n'))")"
+BASELINE_COVERED="$(echo "$VERIFY_OUTPUT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(d.baseline_covered||0))")"
+CHECKED_COUNT="$(echo "$VERIFY_OUTPUT" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));process.stdout.write(String(d.checked||0))")"
 ```
+
+**Baseline coverage headline (#4135)** — BEFORE any pass/fail statement, print the coverage
+N-of-M line. A run where 12 of 13 files were not diff-verified must never present the same way
+as a fully-verified one:
+
+```text
+Baseline coverage: {BASELINE_COVERED} of {CHECKED_COUNT} file(s) verified against a pristine
+baseline ({CHECKED_COUNT - BASELINE_COVERED} unverified)
+```
+
+The verifier also reports this on every run (JSON field `baseline_covered`; the human summary
+leads with the same line). Operators who want the gate itself to fail on low coverage (cautious
+environments) pass the opt-in strict flag when invoking the verifier:
+`--min-baseline-coverage <fraction between 0 and 1>` — below the threshold the verifier exits
+with code 3 (a real content failure still exits 1 and outranks it). Without the flag the
+default advisory posture is unchanged.
 
 **If `NO_BASELINE_COUNT` is greater than 0**, emit an advisory warning (non-blocking — the gate still exits 0 for these files). Do NOT halt:
 
@@ -375,6 +545,18 @@ Then re-run /gsd-update --reapply to re-verify.
 
 Do not proceed to cleanup until the verifier exits 0.
 
+**If `VERIFY_STATUS` is 2 and stderr names a `stale decision`** (#4435), a recorded answer no longer
+matches its hunk because the backup or baseline changed after the user saw it. STOP, discard
+`DECISIONS_FILE`, and re-run `/gsd-update --reapply --interactive` so the user decides on the current
+text. Never edit the decisions file to make it match.
+
+When decisions were passed, the JSON report carries `decisions.retired` — every hunk excused by a
+user `retire` or `rewrite` decision. Before Step 6, show the user this list (file, hunk id,
+disposition) and ask them to confirm that each one is a decision they made. The gate can prove that a
+decision matches the exact text that was shown, but not who made it, so the user's confirmation of
+this list is the final check. If the user disowns any entry, restore that hunk from the backup and
+re-run Step 5a without it. List each confirmed entry in the Step 7 report.
+
 **Only when `VERIFY_STATUS` is 0** (or when all files had zero significant user-added lines, which the verifier reports as `Failures: 0`) may execution continue to gate 5b.
 
 ### 5b: Hunk Verification Table review (advisory gate, #1999)
@@ -412,6 +594,8 @@ Do not proceed to cleanup until both gates (5a and 5b) pass.
 
 ## Step 6: Cleanup option
 
+If `DECISIONS_FILE` was created (#4435), delete it now: `rm -f "$DECISIONS_FILE"`.
+
 Ask user:
 - "Keep patch backups for reference?" → preserve `gsd-local-patches/`
 - "Clean up patch backups?" → remove `gsd-local-patches/` directory
@@ -437,7 +621,9 @@ Ask user:
 - [ ] No file classified as "no custom content" or "SKIP" — every backed-up file is definitionally modified
 - [ ] Three-way merge used when pristine baseline available (git history or gsd-pristine/)
 - [ ] User modifications identified and merged into new version
+- [ ] Superseded customizations classified `Incorporated` by the deterministic pre-flight classifier (pristine-confirmed) and not re-grafted
 - [ ] Conflicts surfaced to user with both versions shown
+- [ ] With `--interactive`, every presented hunk was decided by the user (never by the agent), retired/rewritten hunks were passed to the Step 5a gate through the hash-bound decisions file, and each retirement is listed in the report
 - [ ] Status reported for each file with summary of what was preserved
 - [ ] Post-merge verification checks each file for dropped hunks and warns if content appears missing
 </success_criteria>

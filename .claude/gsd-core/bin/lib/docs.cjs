@@ -30,6 +30,7 @@ const { pathExistsInternal, toPosixPath } = coreUtils;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const agentInstallCheck = require("./agent-install-check.cjs");
 const { checkAgentsInstalled } = agentInstallCheck;
+const runtime_slash_cjs_1 = require("./runtime-slash.cjs");
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 // ─── Constants ────────────────────────────────────────────────────────────────
 const GSD_MARKER = '<!-- generated-by: gsd-doc-writer -->';
@@ -256,9 +257,15 @@ function cmdDocsInit(cwd, raw) {
     };
     // Inject project_root and agent installation status (mirrors withProjectRoot in init.cjs)
     result['project_root'] = cwd;
-    const agentStatus = checkAgentsInstalled();
+    const agentStatus = checkAgentsInstalled((0, runtime_slash_cjs_1.resolveRuntime)(cwd), cwd);
     result['agents_installed'] = agentStatus.agents_installed;
     result['missing_agents'] = agentStatus.missing_agents;
+    // #2402: withProjectRoot injects response_language when set; cmdDocsInit predates
+    // that helper and never picked it up, so docs-update's orchestrator-owned prompts
+    // silently stayed English even with response_language configured.
+    if (config.response_language) {
+        result['response_language'] = config.response_language;
+    }
     output(result, raw, undefined);
 }
-module.exports = { cmdDocsInit };
+module.exports = { cmdDocsInit, detectMonorepoWorkspaces };

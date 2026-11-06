@@ -1,6 +1,6 @@
 <purpose>
 
-Interactive command center for managing a milestone from a single terminal. Shows a dashboard of all phases with visual status, dispatches discuss inline and plan/execute as background agents, and loops back to the dashboard after each action. Enables parallel phase work from one terminal.
+Interactive command center for managing a milestone from a single terminal. Shows a dashboard of all phases with visual status, dispatches discuss inline and runs plan/execute inline (backgrounded when dispatch-should-flatten returns false), and loops back to the dashboard after each action. Enables parallel phase work from one terminal.
 
 </purpose>
 
@@ -19,35 +19,41 @@ Read all files referenced by the invoking prompt's execution_context before star
 Bootstrap via manager init:
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
-INIT=$(gsd_run query init.manager)
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+INIT=$(gsd_run query init.manager ${GSD_WS:+--ws=${GSD_WS##* }})
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
 
-Parse JSON for: `milestone_version`, `milestone_name`, `phase_count`, `completed_count`, `in_progress_count`, `phases`, `recommended_actions`, `all_complete`, `waiting_signal`, `manager_flags`, and the optional trio `queued_milestone_version`, `queued_milestone_name`, `queued_phases` (added in SDK fix `2495-2496-2497` — may be absent on older SDK versions, treat missing as empty).
+Parse JSON for: `milestone_version`, `milestone_name`, `phase_count`, `completed_count`, `in_progress_count`, `phases`, `recommended_actions`, `all_complete`, `waiting_signal`, `manager_flags`, `response_language`, and the optional trio `queued_milestone_version`, `queued_milestone_name`, `queued_phases` (added in SDK fix `2495-2496-2497` — may be absent on older SDK versions, treat missing as empty).
+
+**If `response_language` is set:** All user-facing output of this workflow — narration between tool calls, status updates, progress notes, findings, questions, prompts, and explanations — MUST be presented in `{response_language}`. Technical terms, code, file paths, and subagent prompts stay in English — only user-facing output is translated. Subagent dispatches (discuss/plan/execute) stay in English at the prompt level; include `response_language` in their spawn args per the workflow being dispatched.
 
 `manager_flags` contains per-step passthrough flags from config:
 - `manager_flags.discuss` — appended to `/gsd-discuss-phase` args (e.g. `"--auto --analyze"`)
 - `manager_flags.plan` — appended to plan agent init command
 - `manager_flags.execute` — appended to execute agent init command
 
-These are empty strings by default. Set via: `gsd-tools.cjs query config-set manager.flags.discuss "--auto --analyze"`
+These are empty strings by default. Set via: `gsd_run query config-set manager.flags.discuss "--auto --analyze"`
 
 **If error:** Display the error message and exit.
 
 Display startup banner:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► MANAGER
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► MANAGER
 
  {milestone_version} — {milestone_name}
  {phase_count} phases · {completed_count} complete
 
- ✓ Discuss → inline    ◆ Plan/Execute → background
+ ✓ Discuss → inline    ◆ Plan/Execute → inline (background when FLATTEN=false)
  Dashboard auto-refreshes when background work is active.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+---
 ```
 
 Proceed to dashboard step.
@@ -61,7 +67,12 @@ Proceed to dashboard step.
 **Every time this step is reached**, re-read state from disk to pick up changes from background agents:
 
 ```bash
-INIT=$(gsd_run query init.manager)
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+INIT=$(gsd_run query init.manager ${GSD_WS:+--ws=${GSD_WS##* }})
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
 ```
 
@@ -72,6 +83,7 @@ Build dashboard from JSON. Symbols: `✓` done, `◆` active, `○` pending, `·
 **Status mapping** (disk_status → D P E Status):
 
 - `complete` → `✓ ✓ ✓` `✓ Complete`
+- `executed` → `✓ ✓ ◆` `◆ Verification required`
 - `partial` → `✓ ✓ ◆` `◆ Executing...`
 - `planned` → `✓ ✓ ○` `○ Ready to execute`
 - `discussed` → `✓ ○ ·` `○ Ready to plan`
@@ -89,9 +101,7 @@ Use `deps_display` from init JSON for the Deps column — shows which phases thi
 Example output:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► DASHBOARD
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► DASHBOARD
  ████████████░░░░░░░░ 60%  (3/5 phases)
  ◆ Background: Planning Phase 4
  | # | Phase                | Deps | D | P | E | Status              |
@@ -113,9 +123,7 @@ Use `queued_milestone_version` and `queued_milestone_name` for the header. Phase
 Example:
 
 ```
- ───────────────────────────────────────────────────────────────
- ◆ Queued — {queued_milestone_version} {queued_milestone_name}  ({queued_phases.length} phases)
- ───────────────────────────────────────────────────────────────
+### ◆ Queued — {queued_milestone_version} {queued_milestone_name}  ({queued_phases.length} phases)
  | # | Phase                | Deps | Status       |
  |---|----------------------|------|--------------|
  | 31| Email Logs           | —    | · Queued     |
@@ -131,17 +139,14 @@ Queued phases are NOT eligible for the Continue action menu — they live in a f
 If `all_complete` is true:
 
 ```
-╔══════════════════════════════════════════════════════════════╗
-║  MILESTONE COMPLETE                                          ║
-╚══════════════════════════════════════════════════════════════╝
+### MILESTONE COMPLETE
 
-All {phase_count} phases done. Ready for final steps:
+All {phase_count} phases verified complete. Ready for final steps:
   → /gsd-verify-work — run acceptance testing
   → /gsd-complete-milestone — archive and wrap up
 ```
 
-
-**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `conversational prompting` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Gemini CLI, etc.) where `conversational prompting` is not available.
+**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `conversational prompting` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Antigravity, etc.) where `conversational prompting` is not available.
 Ask user via conversational prompting:
 - **question:** "All phases complete. What next?"
 - **options:** "Verify work" / "Complete milestone" / "Exit manager"
@@ -158,8 +163,9 @@ Handle responses:
 **Building options:**
 
 1. Collect all background actions (execute and plan recommendations) — there can be multiple of each.
-2. Collect the inline action (discuss recommendation, if any — there will be at most one since discuss is sequential).
-3. Build compound options:
+2. Collect verification actions (`verify`) for implementation-complete phases whose canonical verification has not passed.
+3. Collect the inline action (discuss recommendation, if any — there will be at most one since discuss is sequential).
+4. Build compound options:
 
    **If there are ANY recommended actions (background, inline, or both):**
    Create ONE primary "Continue" option that dispatches ALL of them together:
@@ -169,10 +175,11 @@ Handle responses:
      Continue:
        → Execute Phase 32 (background)
        → Plan Phase 34 (background)
+       → Verify Phase 33
        → Discuss Phase 35 (inline)
      ```
-   - This dispatches all background agents first, then runs the inline discuss (if any).
-   - If there is no inline discuss, the dashboard refreshes after spawning background agents.
+   - This dispatches all background agents first, runs verification actions inline, then runs the inline discuss (if any).
+   - If there is no inline discuss, the dashboard refreshes after spawning background agents and inline verification.
 
    **Important:** The Continue option must include EVERY action from `recommended_actions` — not just 2. If there are 3 actions, list 3. If there are 5, list 5.
 
@@ -183,9 +190,7 @@ Handle responses:
 Display recommendations compactly:
 
 ```
-───────────────────────────────────────────────────────────────
-▶ Next Steps
-───────────────────────────────────────────────────────────────
+### ▶ Next Steps
 
 Continue:
   → Execute Phase 32 (background)
@@ -219,16 +224,25 @@ Go to exit step.
 
 ### Compound Action (background + inline)
 
-When the user selects a compound option:
+When the user selects a compound option, behavior depends on whether the runtime supports background dispatch of nesting-capable orchestrators — the Plan Phase N / Execute Phase N handlers below resolve it via `gsd_run query dispatch-should-flatten` (#1708):
 
-1. **Spawn all background agents first** (plan/execute) — dispatch them in parallel using the Plan Phase N / Execute Phase N handlers below.
-2. **Then run the inline discuss:**
+- **If `FLATTEN` is `false` (the host can background a nesting-capable orchestrator — e.g. codex, cursor):** **Spawn all background agents first** (plan/execute) — dispatch them in parallel using the Plan Phase N / Execute Phase N handlers below — then run verification actions, then run the inline discuss; the background agents continue while you verify/discuss.
+- **Otherwise (`FLATTEN` is `true` — run inline):** run the chosen plan/execute step(s) **inline** via their handlers below (in order), then run verification actions, then run the inline discuss. There is no overlap.
+
+Inline verification:
+
+For each verification recommendation, dispatch by the recommended action's `command`:
+- If `command` contains `execute-phase`, run `Skill(skill="gsd-execute-phase", args="{PHASE_NUM} {manager_flags.execute}")`.
+- If `command` contains `verify-work`, run `Skill(skill="gsd-verify-work", args="{PHASE_NUM}")`.
+- If `command` is missing or unrecognized, stop and show the recommendation row instead of guessing.
+
+Inline discuss:
 
 ```
 Skill(skill="gsd-discuss-phase", args="{PHASE_NUM} {manager_flags.discuss}")
 ```
 
-After discuss completes, loop back to dashboard step (background agents continue running).
+After discuss completes, loop back to dashboard step.
 
 ### Discuss Phase N
 
@@ -242,7 +256,13 @@ After discuss completes, loop back to dashboard step.
 
 ### Plan Phase N
 
-Planning runs autonomously. Spawn a background agent that delegates to the Skill pipeline with any configured flags:
+Planning runs autonomously. **First resolve whether background dispatch is safe.** Background dispatch is only safe on a runtime where a backgrounded agent can still nest the pipeline's subagents (plan-checker / worktree executors / verifier). This is determined from the documentation-sourced dispatch capability in the registry (#1708); Cursor's backgrounded agents have no `Agent`/`Task` tool, and every other runtime either prohibits nested subagents or disables them by default. So run **inline** everywhere except where `dispatch-should-flatten` returns `false`.
+
+```bash
+FLATTEN=$(gsd_run query dispatch-should-flatten --raw 2>/dev/null || echo "true")
+```
+
+**If `FLATTEN` is `false`:** Spawn a background agent that delegates to the Skill pipeline with any configured flags:
 
 ```
 Agent(
@@ -264,7 +284,7 @@ Important: You are running in the background. Do NOT use conversational promptin
 )
 ```
 
-> **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling Agent() above with `run_in_background=true`, do NOT do any planning work for this phase independently. Return to the dashboard immediately and wait for the background agent to report back. Only resume planning-related work when the subagent result is available.
+> **ORCHESTRATOR RULE — BACKGROUND DISPATCH**: After calling Agent() above with `run_in_background=true`, do NOT do any planning work for this phase independently. Return to the dashboard immediately and wait for the background agent to report back. Only resume planning-related work when the subagent result is available. Never call `ScheduleWakeup` or any host wake/sleep-scheduling tool while waiting (#4079) — a partial-args wake call surfaces a red validation error; the dashboard loop is the wait.
 
 Display:
 
@@ -274,9 +294,29 @@ Display:
 
 Loop back to dashboard step.
 
+**Otherwise (`FLATTEN` is `true` — run inline):** Run plan inline so the plan-checker and quality gates actually run — do NOT wrap it in `Agent(run_in_background=true, …)`:
+
+```
+Skill(skill="gsd-plan-phase", args="{N} --auto {manager_flags.plan}")
+```
+
+Display while it runs:
+
+```
+◆ Planning Phase {N}: {phase_name}... (runs inline so the plan-checker runs — the dashboard resumes when it returns, ~1–5 min; expected, not a freeze)
+```
+
+Then loop back to dashboard step.
+
 ### Execute Phase N
 
-Execution runs autonomously. Spawn a background agent that delegates to the Skill pipeline with any configured flags:
+Execution runs autonomously. **First resolve whether background dispatch is safe.** Background dispatch is only safe on a runtime where a backgrounded agent can still nest the pipeline's subagents (plan-checker / worktree executors / verifier). This is determined from the documentation-sourced dispatch capability in the registry (#1708); Cursor's backgrounded agents have no `Agent`/`Task` tool, and every other runtime either prohibits nested subagents or disables them by default. So run **inline** everywhere except where `dispatch-should-flatten` returns `false`.
+
+```bash
+FLATTEN=$(gsd_run query dispatch-should-flatten --raw 2>/dev/null || echo "true")
+```
+
+**If `FLATTEN` is `false`:** Spawn a background agent that delegates to the Skill pipeline with any configured flags:
 
 ```
 Agent(
@@ -298,7 +338,7 @@ Important: You are running in the background. Do NOT use conversational promptin
 )
 ```
 
-> **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling Agent() above with `run_in_background=true`, do NOT do any execution work for this phase independently. Return to the dashboard immediately and wait for the background agent to report back. Only resume execution-related work when the subagent result is available.
+> **ORCHESTRATOR RULE — BACKGROUND DISPATCH**: After calling Agent() above with `run_in_background=true`, do NOT do any execution work for this phase independently. Return to the dashboard immediately and wait for the background agent to report back. Only resume execution-related work when the subagent result is available. Never call `ScheduleWakeup` or any host wake/sleep-scheduling tool while waiting (#4079) — a partial-args wake call surfaces a red validation error; the dashboard loop is the wait.
 
 Display:
 
@@ -307,6 +347,20 @@ Display:
 ```
 
 Loop back to dashboard step.
+
+**Otherwise (`FLATTEN` is `true` — run inline):** Run execute inline so worktree isolation and the verifier actually run — do NOT wrap it in `Agent(run_in_background=true, …)`:
+
+```
+Skill(skill="gsd-execute-phase", args="{N} {manager_flags.execute}")
+```
+
+Display while it runs:
+
+```
+◆ Executing Phase {N}: {phase_name}... (runs inline so worktree isolation and verification run — the dashboard resumes when it returns; expected, not a freeze)
+```
+
+Then loop back to dashboard step.
 
 </step>
 
@@ -357,15 +411,14 @@ Classify the error:
 Display final status with progress bar:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► SESSION END
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► SESSION END
 
  {milestone_version} — {milestone_name}
  {PROGRESS_BAR} {progress_pct}%  ({completed_count}/{phase_count} phases)
 
  Resume anytime: /gsd-manager
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+---
 ```
 
 **Note:** Any background agents still running will continue to completion. Their results will be visible on next `/gsd-manager` or `/gsd-progress` invocation.
@@ -380,8 +433,8 @@ Display final status with progress bar:
 - [ ] Dependency resolution: blocked phases show which deps are missing
 - [ ] Recommendations prioritize: execute > plan > discuss
 - [ ] Discuss phases run inline via Skill() — interactive questions work
-- [ ] Plan phases spawn background Task agents — return to dashboard immediately
-- [ ] Execute phases spawn background Task agents — return to dashboard immediately
+- [ ] Plan phases run inline (or as background Task agents on Codex) — dashboard resumes when complete
+- [ ] Execute phases run inline (or as background Task agents on Codex) — dashboard resumes when complete
 - [ ] Dashboard refreshes pick up changes from background agents via disk state
 - [ ] Background agent completion triggers notification and dashboard refresh
 - [ ] Background agent errors present retry/skip options

@@ -25,6 +25,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_crypto_1 = __importDefault(require("node:crypto"));
+const security_cjs_1 = require("./security.cjs");
 /* eslint-disable @typescript-eslint/no-require-imports */
 const sourceMod = require('./capability-source.cjs');
 const ledgerMod = require('./capability-ledger.cjs');
@@ -33,7 +34,7 @@ const consentMod = require('./capability-consent.cjs');
 const projectRootMod = require('./project-root.cjs');
 // #1459 finding 4: the SHARED hardened lock primitive (single source of truth for lifecycle + consent).
 const lockMod = require('./capability-lock.cjs');
-const { platformWriteSync, retryRenameSync } = require('./shell-command-projection.cjs');
+const { platformWriteSync, retryRenameSync, shellSingleQuote } = require('./shell-command-projection.cjs');
 // #1463: numeric major.minor.patch comparison for the outdated check (the SAME compare the resolver
 // and capability list use). -1 (a<b), 0 (equal), 1 (a>b).
 const semverMod = require('./semver-compare.cjs');
@@ -42,6 +43,15 @@ const semverMod = require('./semver-compare.cjs');
 // ---------------------------------------------------------------------------
 /** Stamp written onto every capability-owned shared-config entry, for surgical removal. */
 const CAP_MARKER = '_gsdCapability';
+const GIT_SHA_PIN_RE = /^sha:[0-9a-f]{7,40}$/i;
+function resolveIntegrityPin(integrity, parsed) {
+    if (typeof integrity === 'string' && integrity.length > 0)
+        return 'sha512';
+    if (parsed.kind === 'git' && typeof parsed.ref === 'string' && GIT_SHA_PIN_RE.test(parsed.ref)) {
+        return 'git-commit';
+    }
+    return 'none';
+}
 /** Keys that must never be used as object indices (prototype-pollution guard). */
 function isUnsafeKey(k) {
     return k === '__proto__' || k === 'constructor' || k === 'prototype';
@@ -193,7 +203,10 @@ function safeRmUnder(runtimeDir, rel) {
     catch {
         return false;
     }
-    if (realParent !== realRoot && !realParent.startsWith(realRoot + node_path_1.default.sep))
+    // Containment decision is the canonical LEXICAL predicate (ADR-4650 decision 6); lexical because
+    // both operands are already realpath-resolved here and the final component is deliberately
+    // handled as a link (see above).
+    if ((0, security_cjs_1.tryWithinRootLexical)(realParent, realRoot) === null)
         return false;
     const realTarget = node_path_1.default.join(realParent, node_path_1.default.basename(target));
     let st;
@@ -241,11 +254,11 @@ function confinedSharedFile(runtimeDir, relFile) {
     catch {
         // Parent does not exist yet (created inside the scope on write): a non-existent path cannot be a
         // symlink escaping the root, so a lexical containment check is sufficient.
-        if (parentDir !== realRoot && !parentDir.startsWith(realRoot + node_path_1.default.sep))
+        if ((0, security_cjs_1.tryWithinRootLexical)(parentDir, realRoot) === null)
             return null;
         return target;
     }
-    if (realParent !== realRoot && !realParent.startsWith(realRoot + node_path_1.default.sep))
+    if ((0, security_cjs_1.tryWithinRootLexical)(realParent, realRoot) === null)
         return null;
     return node_path_1.default.join(realParent, node_path_1.default.basename(target));
 }
@@ -253,6 +266,28 @@ function confinedSharedFile(runtimeDir, relFile) {
 // isSafeHookScriptPath; see confinedBundleScript for why). Only [A-Za-z0-9._/-], no leading
 // `-` segment, no `..`, not absolute.
 const SAFE_HOOK_SCRIPT_RE = /^[A-Za-z0-9._/-]+$/;
+// #3631 (defense-in-depth, mirrors capability-validator.cjs — KEEP BOTH IN SYNC): a declared script
+// path must not point into the space bundleContentHash (capability-consent.cts) excludes from the
+// consent-binding digest. A file whose basename ends `.pyc`/`.pyo` can contain perfectly valid
+// JavaScript and would be executed by `node` regardless of extension, and a `__pycache__`/
+// `.pytest_cache` segment marks a directory whose digest marker is suppressed — so a MANIFEST-DECLARED
+// executable surface must never be able to reach either, or the exclusion becomes reachable from a
+// path an attacker fully controls at declare-time rather than only via post-consent tamper.
+// Regex asymmetry is DELIBERATE, KEEP BOTH RULES IN SYNC WITH capability-validator.cjs (byte-identical
+// text, verified by the isSafeHookScriptPath parity test in tests/capability-registry.test.cjs):
+//   (i)   PYCACHE_SUFFIX_RE is case-INSENSITIVE (`/i`) on purpose — a validator should be STRICTER than
+//         the digest it defends, so it rejects `x.PYC` too even though bundleContentHash's own suffix
+//         match (hasPycacheFileSuffix, capability-consent.cts) is byte-exact and would still hash it.
+//   (ii)  The __pycache__/.pytest_cache SEGMENT match is case-SENSITIVE to match the digest's own
+//         byte-exact, case-sensitive directory-basename comparison (CPython always writes a lowercase
+//         `__pycache__`) — a validator segment match looser than the digest here would reject paths the
+//         digest would still hash, which is over-strict in the wrong direction for a defense-in-depth
+//         check layered on top of an already-correct digest.
+//   (iii) The `[/\\]` backslash alternations in both regexes are defensive/UNREACHABLE in practice:
+//         SAFE_HOOK_SCRIPT_RE (above) already rejects any backslash character outright, so a script
+//         string containing `\` never reaches either PYCACHE_*_RE check.
+const PYCACHE_SEGMENT_RE = /(?:^|[/\\])(__pycache__|\.pytest_cache)(?:[/\\]|$)/;
+const PYCACHE_SUFFIX_RE = /\.(pyc|pyo)$/i;
 function isSafeHookScriptPath(script) {
     if (typeof script !== 'string' || script.length === 0)
         return false;
@@ -267,18 +302,11 @@ function isSafeHookScriptPath(script) {
         if (seg.startsWith('-'))
             return false;
     }
+    if (PYCACHE_SEGMENT_RE.test(script))
+        return false;
+    if (PYCACHE_SUFFIX_RE.test(node_path_1.default.basename(script)))
+        return false;
     return true;
-}
-/**
- * #1460 (R) HIGH: POSIX single-quote an arbitrary string for safe inclusion in a shell command.
- * The emitted hook `command` is the ABSOLUTE confined script path, which begins with the
- * (non-manifest) install-prefix — commonly a home dir containing spaces/special chars (e.g.
- * "/Users/Bob Smith/.claude/..."). Written unquoted it would word-split (and, with a hostile
- * prefix, could inject). Wrapping in single quotes — with each embedded `'` escaped as `'\''` —
- * makes the whole path a single shell token that no metacharacter inside it can break.
- */
-function shellSingleQuote(value) {
-    return "'" + value.replace(/'/g, "'\\''") + "'";
 }
 /**
  * #1634: build the emitted hook `command` for an ABSOLUTE confined script path. For `.js`-family
@@ -328,7 +356,7 @@ function confinedBundleScript(capDirPath, script) {
         // disk): a non-existent root cannot be a symlink escaping itself, so confine lexically.
         realCapRoot = node_path_1.default.resolve(capDirPath);
         const targetLex = node_path_1.default.resolve(realCapRoot, script);
-        if (targetLex !== realCapRoot && !targetLex.startsWith(realCapRoot + node_path_1.default.sep))
+        if ((0, security_cjs_1.tryWithinRootLexical)(targetLex, realCapRoot) === null)
             return null;
         return targetLex;
     }
@@ -341,13 +369,13 @@ function confinedBundleScript(capDirPath, script) {
     catch {
         // Parent does not exist yet (created inside the bundle): lexical containment is sufficient
         // because a non-existent path cannot be a symlink escaping the root.
-        if (parentDir !== realCapRoot && !parentDir.startsWith(realCapRoot + node_path_1.default.sep))
+        if ((0, security_cjs_1.tryWithinRootLexical)(parentDir, realCapRoot) === null)
             return null;
         return target;
     }
     // The realpath'd parent chain must remain inside the bundle — an ancestor symlink escaping the
     // bundle is refused here (the symlink is followed by realpathSync, so its real location is checked).
-    if (realParent !== realCapRoot && !realParent.startsWith(realCapRoot + node_path_1.default.sep))
+    if ((0, security_cjs_1.tryWithinRootLexical)(realParent, realCapRoot) === null)
         return null;
     return node_path_1.default.join(realParent, node_path_1.default.basename(target));
 }
@@ -504,6 +532,14 @@ function applyCapabilitySharedEdits(args) {
             settings['hooks'] = hooksObj;
         }
         if (mcpEntries.length > 0) {
+            // #3515 (epic #1900 F20): the MCP config below is written VERBATIM — command/args/env/cwd
+            // are NOT confined to the bundle the way hook scripts are (confinedBundleScript, D5 rule 5).
+            // This asymmetry is INTENTIONAL: most real MCP servers legitimately resolve command/args/cwd
+            // to global or npx installs outside the capability bundle, so confinement would break them.
+            // The compensating controls are disclosure + re-consent: the consent prompt renders an
+            // explicit "not confined to the bundle" notice for every spawned server (summarizeDisclosure,
+            // capability-trust.cts), and disclosureSignature folds command/args/env/cwd + the FULL
+            // rawConfig as stable-sorted JSON (#1459 finding 5), so ANY config change forces re-consent.
             const mcpObj = (typeof settings['mcpServers'] === 'object' && settings['mcpServers'] !== null && !Array.isArray(settings['mcpServers']))
                 ? settings['mcpServers']
                 : {};
@@ -672,6 +708,59 @@ function warnIfConsentSkipped(opts, id) {
  * Best-effort: a consent-store write failure must not turn a successful install/upgrade into a
  * failure (the bundle is already committed) — it is surfaced as a warning, not a throw.
  */
+/**
+ * Resolve an `openai-http` reviewer lane's declared `hostConfigKey` to the destination it currently
+ * names, or `undefined` when this capability is not such a lane.
+ *
+ * Falls back to the lane's declared `defaultHost` when the key is unset, because that is exactly
+ * what the invocation path will do — binding the config value while the runtime uses the default
+ * would guarantee a mismatch on the very first review.
+ *
+ * Non-throwing: consent binding is best-effort and must never turn a successful install into a
+ * failure. An unresolvable host simply records nothing, which reads as "not bound" and allows.
+ */
+function resolveReviewerEgressHost(opts, manifest) {
+    try {
+        const reviewer = manifest['reviewer'];
+        if (reviewer === null || typeof reviewer !== 'object' || Array.isArray(reviewer))
+            return undefined;
+        const r = reviewer;
+        if (r['transport'] !== 'openai-http')
+            return undefined;
+        const invoke = r['invoke'];
+        if (invoke === null || typeof invoke !== 'object')
+            return undefined;
+        const inv = invoke;
+        const key = typeof inv['hostConfigKey'] === 'string' ? inv['hostConfigKey'] : '';
+        const fallback = typeof inv['defaultHost'] === 'string' ? inv['defaultHost'] : '';
+        let configured = '';
+        if (key) {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const cfgLoader = require('./config-loader.cjs');
+            const root = projectRootMod.consentProjectRoot(opts.runtimeDir);
+            const cfg = cfgLoader.loadConfigResolved ? (cfgLoader.loadConfigResolved(root).config ?? {}) : {};
+            let cur = cfg;
+            for (const part of key.split('.')) {
+                if (cur === null || typeof cur !== 'object') {
+                    cur = undefined;
+                    break;
+                }
+                cur = Object.prototype.hasOwnProperty.call(cur, part)
+                    ? cur[part]
+                    : undefined;
+            }
+            if (typeof cur === 'string')
+                configured = cur.trim();
+        }
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const { normalizeHost } = require('./review-lane-invocation.cjs');
+        const resolved = normalizeHost(configured || fallback);
+        return resolved || undefined;
+    }
+    catch {
+        return undefined;
+    }
+}
 function bindProjectConsent(opts, id, integrity, manifest) {
     // #1459 IC-07: a project-scope op WITHOUT a consent store cannot bind — warn (then nothing to do).
     if (!shouldBindConsent(opts)) {
@@ -689,6 +778,11 @@ function bindProjectConsent(opts, id, integrity, manifest) {
             integrity,
             disclosureSignature: trustMod.signatureForManifest(manifest),
             contentHash: consentMod.bundleContentHash(capDir(opts.runtimeDir, id)),
+            // ADR-2782 D5 rule 1 (#2799): bind the RESOLVED egress destination, not merely the config key
+            // that names it. The key lives in `.planning/config.json`, outside the SHA-pinned bundle, so
+            // without this the user consents to "wherever that key points" — a promise the bundle hash
+            // cannot keep. Phase 5b re-resolves and compares at invocation (rule 4).
+            reviewerHost: resolveReviewerEgressHost(opts, manifest),
         });
     }
     catch (err) {
@@ -788,6 +882,7 @@ async function installCapability(spec, opts) {
             stagedDir,
             strictKnownRegistries,
             hostVersion,
+            integrityPin: resolveIntegrityPin(opts.integrity, parsedPre),
         });
         if (!verdict.allowed) {
             return { status: 'blocked', disclosure: verdict.disclosure, blockReasons: verdict.blockReasons };
@@ -980,6 +1075,7 @@ async function upgradeCapability(spec, opts) {
             stagedDir,
             strictKnownRegistries,
             hostVersion,
+            integrityPin: resolveIntegrityPin(opts.integrity, parsedPre),
         });
         if (!verdict.allowed) {
             return { status: 'blocked', disclosure: verdict.disclosure, blockReasons: verdict.blockReasons };

@@ -43,6 +43,8 @@ Read ALL files from `<required_reading>`. Extract:
 **Context budget:** Load project skills first (lightweight). Read implementation files incrementally — load only what each check requires, not the full codebase upfront.
 
 **Project skills:** Check `.cursor/skills/` or `.agents/skills/` directory if either exists:
+
+**agent_skills:** self-load per @.cursor/gsd-core/references/agent-skills-bootstrap.md (agent type: `gsd-nyquist-auditor`)
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill (lightweight index ~130 lines)
 3. Load specific `rules/*.md` files as needed during implementation

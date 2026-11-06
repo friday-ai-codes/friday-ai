@@ -21,22 +21,23 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const capabilityRegistry = require('./capability-registry.cjs');
+const { hostBehaviorsFor } = require('./runtime-name-policy.cjs');
+const { resolveConfigHomeFromDescriptor } = require('./runtime-homes.cjs');
+const { resolveActiveRuntime } = require('./runtime-slash.cjs');
 
 /**
- * Runtimes whose agent config is static frontmatter/TOML baked at install time.
- * MUST stay in sync with the bake paths in bin/install.js. The parity test in
- * tests/stale-bake-guard.test.cjs asserts this matches the runtimes that
- * actually emit a baked model: line id #2256 (opencode), #49/#2256 (codex),
- * and #2093 (kilo).
+ * Runtimes whose agent config is static frontmatter/TOML baked at install time,
+ * DERIVED from the runtime descriptors (`hostBehaviors.bakesStaticAgentModel`,
+ * #5169) instead of a hand-kept list: line id #2256 (opencode), #49/#2256
+ * (codex), and #2093 (kilo) declare it, and a new baking runtime does too.
  */
-const STATIC_FRONTMATTER_RUNTIMES = Object.freeze(['codex', 'kilo', 'opencode']);
+const STATIC_FRONTMATTER_RUNTIMES = Object.freeze(
+  Object.keys(capabilityRegistry.runtimes)
+    .filter((id) => hostBehaviorsFor(id).bakesStaticAgentModel === true)
+    .sort(),
+);
 
-/** Per-runtime `gsd install` flag, for the remediation hint in the warning. */
-const INSTALL_FLAG_BY_RUNTIME = Object.freeze({
-  codex: '--codex',
-  opencode: '--opencode',
-  kilo: '--kilo',
-});
 
 const _warnedKeys = new Set();
 
@@ -64,7 +65,7 @@ function formatStaleBakeWarning({ runtime, configPath, configMtimeMs, agentMtime
   const signal = detectStaleBake({ runtime, configMtimeMs, agentMtimeMs });
   if (!signal) return '';
   const configDate = new Date(configMtimeMs).toISOString();
-  const installFlag = INSTALL_FLAG_BY_RUNTIME[runtime] || `--${runtime}`;
+  const installFlag = `--${runtime}`;
   return [
     `gsd: model config in ${configPath} changed since agents were last baked (${configDate}).`,
     `     Static-frontmatter runtime '${runtime}' ignores the new model_overrides`,
@@ -74,44 +75,27 @@ function formatStaleBakeWarning({ runtime, configPath, configMtimeMs, agentMtime
 }
 
 /**
- * Pure: resolve the active runtime id from a parsed config object.
- * Returns the runtime string, or `'claude'` when unset (the spawn-time default
- * for which the guard is a no-op).
+ * Resolve the active runtime id for the guard: the SAME chain every consumer of
+ * "which runtime is this install" reads — GSD_RUNTIME → config.runtime →
+ * per-install `.gsd-runtime` marker → `'claude'` (#5169, #4690). Returns
+ * `'claude'` when nothing is declared (the spawn-time default for which the
+ * guard is a no-op).
  */
-function resolveRuntimeFromConfig(config) {
-  if (config && typeof config === 'object'
-      && typeof config.runtime === 'string' && config.runtime) {
-    return config.runtime;
-  }
-  return 'claude';
+function resolveRuntimeFromConfig(config, env = process.env) {
+  return resolveActiveRuntime(config, env);
 }
 
 /**
- * Resolve the install root for a runtime's agent files, honoring the same env
- * vars the installer does (CODEX_HOME, OPENCODE_CONFIG_DIR, KILO_CONFIG_DIR).
- * Returns the absolute directory or `null` for unsupported runtimes.
+ * Resolve the install root for a runtime's agent files from the runtime
+ * descriptor's `configHome` (the same resolution the installer uses), then
+ * append `agents` — the installer writes agents to `<configHome>/agents`
+ * (plural; #2093). Returns the absolute directory or `null` for runtimes that
+ * do not bake a static agent model.
  */
 function resolveAgentDir(runtime, { env = process.env, homedir = os.homedir } = {}) {
-  if (runtime === 'opencode') {
-    const base = (env.OPENCODE_CONFIG_DIR && String(env.OPENCODE_CONFIG_DIR).trim()) || path.join(homedir(), '.config', 'opencode');
-    // #2093 fix: the installer writes agents to `<base>/agents` (plural — see
-    // bin/install.js's universal `agentsDest = path.join(targetDir, 'agents')`,
-    // verified against a live `--opencode --global` install). The prior
-    // singular `agent` never matched the real install output, so this guard's
-    // `findOldestAgentMtime` always hit ENOENT and warnIfStaleBake was a
-    // silent no-op for opencode in production — discovered while wiring the
-    // parallel kilo entry below (same bake mechanism, #2093).
-    return path.join(base, 'agents');
-  }
-  if (runtime === 'kilo') {
-    const base = (env.KILO_CONFIG_DIR && String(env.KILO_CONFIG_DIR).trim()) || path.join(homedir(), '.config', 'kilo');
-    return path.join(base, 'agents');
-  }
-  if (runtime === 'codex') {
-    const base = (env.CODEX_HOME && String(env.CODEX_HOME).trim()) || path.join(homedir(), '.codex');
-    return path.join(base, 'agents');
-  }
-  return null;
+  if (!STATIC_FRONTMATTER_RUNTIMES.includes(runtime)) return null;
+  const configHome = capabilityRegistry.runtimes[runtime].runtime.configHome;
+  return path.join(resolveConfigHomeFromDescriptor(configHome, { env, home: homedir() }), 'agents');
 }
 
 /**
@@ -168,8 +152,8 @@ function findOldestAgentMtime(runtime, { env = process.env, homedir = os.homedir
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     if (!entry.name.startsWith('gsd-')) continue;
-    const isAgentFile = ((runtime === 'opencode' || runtime === 'kilo') && entry.name.endsWith('.md'))
-      || (runtime === 'codex' && (entry.name.endsWith('.toml') || entry.name.endsWith('.md')));
+    const bakedExts = hostBehaviorsFor(runtime).bakedAgentFileExtensions;
+    const isAgentFile = Array.isArray(bakedExts) && bakedExts.some((ext) => entry.name.endsWith(ext));
     if (!isAgentFile) continue;
     try {
       const st = fsStatSync(path.join(dir, entry.name));
@@ -209,7 +193,7 @@ function warnIfStaleBake(cwd, options = {}) {
   } = options;
   try {
     const resolvedConfig = config || _readRuntimeConfig(cwd, { fsStatSync });
-    const runtime = resolveRuntimeFromConfig(resolvedConfig);
+    const runtime = resolveRuntimeFromConfig(resolvedConfig, env);
     if (!STATIC_FRONTMATTER_RUNTIMES.includes(runtime)) return false;
 
     const dedupKey = `${runtime}::${path.resolve(cwd || '.')}`;

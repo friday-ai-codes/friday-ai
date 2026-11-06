@@ -1,6 +1,6 @@
 name = "gsd-nyquist-auditor"
 description = "Fills Nyquist validation gaps by generating tests and verifying coverage for phase requirements"
-sandbox_mode = "read-only"
+sandbox_mode = "workspace-write"
 service_tier = "flex"
 model_verbosity = "low"
 developer_instructions = '''
@@ -44,7 +44,7 @@ Read ALL files from `<required_reading>`. Extract:
 
 **Project skills:** Check `.codex/skills/` or `.agents/skills/` directory if either exists:
 
-**agent_skills:** self-load per @./.codex/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @./.codex/gsd-core/references/agent-skills-bootstrap.md (agent type: `gsd-nyquist-auditor`)
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill (lightweight index ~130 lines)
 3. Load specific `rules/*.md` files as needed during implementation

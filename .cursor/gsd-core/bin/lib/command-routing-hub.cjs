@@ -15,12 +15,21 @@
  *           | { ok: false, kind: 'InvalidArgs',     arg: string, reason: string }
  *           | { ok: false, kind: 'HandlerRefusal',  reason: string }
  *           | { ok: false, kind: 'HandlerFailure',  message: string, cause?: Error }
+ *           | { ok: false, kind: 'VerificationStatusInvalid', message: string, reason: string, file: string }
  *
  * Invariants:
  *   - Hub always routes through CJS handlers. There is no SDK path (#175).
  *   - Hub never prints to stdout/stderr, never calls process.exit.
- *   - Hub never throws — all internal throws are caught and converted to
- *     { ok: false, kind: 'HandlerFailure', message, cause }.
+ *   - Hub never throws for an ordinary handler exception — those are caught
+ *     and converted to { ok: false, kind: 'HandlerFailure', message, cause }.
+ *   - EXCEPTION (ADR-3889): a thrown ExitError (the process-exit seam in
+ *     src/cli-exit.cts, e.g. from io.cts's error()) is deliberately
+ *     RE-THROWN, never converted — the throwing handler has already written
+ *     its own stderr and is terminating with a specific exit code; wrapping
+ *     it as a HandlerFailure would re-derive a generic message from
+ *     ExitError's constructor default and print a second, wrong stderr line.
+ *     It propagates through every caller up to the runMain() at the CLI
+ *     entrypoint, the only place ExitError is meant to be caught.
  *   - The kind taxonomy is closed. Callers switch on ERROR_KINDS values.
  *   - Each error variant carries ONLY its own typed payload (#176).
  *     No cross-variant `message`/`details` escape hatches.
@@ -33,6 +42,34 @@ const event_cjs_1 = require("./observability/event.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const observabilityLogger = require("./observability/logger.cjs");
 const { createNoOpLogger } = observabilityLogger;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cliExitModule = require("./cli-exit.cjs");
+const { ExitError } = cliExitModule;
+let _verification = null;
+/**
+ * #5118: the verification-status owner, required lazily (the hub is loaded by
+ * every command router; the owner's I/O graph is needed only when a handler
+ * actually throws). Its exported error code is the one matched below.
+ */
+function verificationOwner() {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    if (!_verification)
+        _verification = require('./verification.cjs');
+    return _verification;
+}
+/**
+ * #5118: a handler that threw verification.cts's VerificationStatusError (a
+ * report `status` outside the closed enum). Matched by the owner's exported
+ * code constant, never a restated literal.
+ */
+function asVerificationStatusError(err) {
+    if (!(err instanceof Error))
+        return null;
+    const code = err.code;
+    if (typeof code !== 'string' || code !== verificationOwner().VERIFICATION_STATUS_ERROR_CODE)
+        return null;
+    return err;
+}
 // ─── Error kind constants ─────────────────────────────────────────────────────
 /**
  * Closed error-kind enum. Export as a frozen object so callers can switch on
@@ -52,6 +89,13 @@ const ERROR_KINDS = Object.freeze({
     HandlerRefusal: 'HandlerRefusal',
     /** A handler threw an unexpected exception. */
     HandlerFailure: 'HandlerFailure',
+    /**
+     * #5118: a handler read a verification report whose `status` is outside the
+     * closed enum. The kind is PascalCase like every other (key === value); the
+     * Result carries the error's own ERROR_REASON in `reason`, so the CLI adapter
+     * fails with `error(message, reason)` and restates nothing.
+     */
+    VerificationStatusInvalid: 'VerificationStatusInvalid',
 });
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 /**
@@ -73,8 +117,14 @@ function _safeJson(value) {
 function makeUnknownCommand(command) {
     return Object.freeze({ ok: false, kind: ERROR_KINDS.UnknownCommand, command });
 }
-function makeInvalidArgs(arg, reason) {
-    return Object.freeze({ ok: false, kind: ERROR_KINDS.InvalidArgs, arg, reason });
+function makeInvalidArgs(arg, reason, exitReason) {
+    const obj = { ok: false, kind: ERROR_KINDS.InvalidArgs, arg, reason };
+    // Conditionally add exitReason only when truthy — preserves strict-keys
+    // invariant (2-arg callers must continue to produce a 4-key frozen result).
+    if (exitReason) {
+        obj.exitReason = exitReason;
+    }
+    return Object.freeze(obj);
 }
 function makeHandlerRefusal(reason) {
     return Object.freeze({ ok: false, kind: ERROR_KINDS.HandlerRefusal, reason });
@@ -100,6 +150,9 @@ function makeHandlerFailure(message, cause) {
     }
     return Object.freeze(obj);
 }
+function makeVerificationStatusInvalid(message, reason, file) {
+    return Object.freeze({ ok: false, kind: ERROR_KINDS.VerificationStatusInvalid, message, reason, file });
+}
 // ─── Handler-return shape validator (Finding 1) ───────────────────────────────
 /**
  * Required payload fields per ok:false kind.
@@ -113,7 +166,8 @@ const _VARIANT_SCHEMA = {
     },
     InvalidArgs: {
         required: ['arg', 'reason'],
-        allowed: new Set(['ok', 'kind', 'arg', 'reason']),
+        // Amendment #1642: exitReason? is allowed but not required.
+        allowed: new Set(['ok', 'kind', 'arg', 'reason', 'exitReason']),
     },
     HandlerRefusal: {
         required: ['reason'],
@@ -122,6 +176,10 @@ const _VARIANT_SCHEMA = {
     HandlerFailure: {
         required: ['message'],
         allowed: new Set(['ok', 'kind', 'message', 'cause']),
+    },
+    [ERROR_KINDS.VerificationStatusInvalid]: {
+        required: ['message', 'reason', 'file'],
+        allowed: new Set(['ok', 'kind', 'message', 'reason', 'file']),
     },
 };
 /**
@@ -189,7 +247,7 @@ function createHub({ cjsRegistry, manifest, logger } = {}) {
         }
         // err variant: already has kind + typed payload
         // Double-cast through unknown to satisfy strict index-signature check.
-        return hubResult; // eslint-disable-line @typescript-eslint/no-unsafe-return
+        return hubResult;
     }
     /**
      * Emit a DispatchEvent to the injected logger.
@@ -226,7 +284,32 @@ function createHub({ cjsRegistry, manifest, logger } = {}) {
             result = _dispatch(req);
         }
         catch (err) {
-            if (err instanceof Error) {
+            // ADR-3889: a handler that calls io.cts's error() (or otherwise throws
+            // ExitError directly) is deliberately terminating the CLI with a
+            // specific exit code and a stderr write it has ALREADY performed
+            // itself. Swallowing that into a HandlerFailure and re-deriving a
+            // message from err.message (ExitError's generic "process exit N"
+            // constructor default, since error() passes no message) would both
+            // duplicate the stderr output and discard the real exit code — this
+            // was invisible before ADR-3889 because io.cts's error() called
+            // process.exit() directly, which this try/catch could never observe
+            // (a process.exit() call terminates synchronously; it does not throw
+            // and unwind through here). Re-throwing preserves that same
+            // non-observability now that the termination mechanism is a throw:
+            // it propagates past this hub, past every non-family-router caller,
+            // up to the runMain() at the CLI entrypoint, which is the ONLY place
+            // ExitError is meant to be caught.
+            if (err instanceof ExitError) {
+                throw err;
+            }
+            // #5118: an out-of-set verification report status is a pure Result
+            // carrying the error's own reason — never a reason-less HandlerFailure,
+            // never a rethrow.
+            const statusError = asVerificationStatusError(err);
+            if (statusError) {
+                result = makeVerificationStatusInvalid(statusError.message, statusError.reason, statusError.file);
+            }
+            else if (err instanceof Error) {
                 result = makeHandlerFailure(err.message, err);
             }
             else {

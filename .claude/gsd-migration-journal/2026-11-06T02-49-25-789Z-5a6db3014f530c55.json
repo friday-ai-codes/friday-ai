@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "appliedAt": "2026-11-06T02:49:25.789Z",
+  "appliedMigrationIds": [
+    "2026-07-28-retire-config-root-commonjs-marker"
+  ],
+  "actions": [
+    {
+      "migrationId": "2026-07-28-retire-config-root-commonjs-marker",
+      "migrationChecksum": "sha256:8f2140cbe8f2dd8f7dfd52a0f6957c5edfe966c52d7e6e4d74ec7366930e0e1d",
+      "type": "remove-managed",
+      "relPath": "package.json",
+      "reason": "superseded by the hooks/ and plugin-dir markers (#2544); leaving it pins the shared config root to CommonJS and keeps GSD occupying a file it no longer writes",
+      "classification": "managed-pristine",
+      "originalHash": "dbf8353f77358bc12169b7bb7301e1978d5b503e002ee927229a8993672818fc",
+      "currentHash": "dbf8353f77358bc12169b7bb7301e1978d5b503e002ee927229a8993672818fc",
+      "rollbackRelPath": "gsd-migration-journal/2026-11-06T02-49-25-789Z-5a6db3014f530c55-rollback/package.json",
+      "status": "removed"
+    }
+  ]
+}

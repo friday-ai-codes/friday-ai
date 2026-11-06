@@ -29,7 +29,7 @@ If the prompt contains a `<required_reading>` block, you MUST use the `Read` too
 
 **Project skills:** Check `.codex/skills/` or `.agents/skills/` directory if either exists:
 
-**agent_skills:** self-load per @./.codex/gsd-core/references/agent-skills-bootstrap.md
+**agent_skills:** self-load per @.codex/gsd-core/references/agent-skills-bootstrap.md (agent type: `gsd-codebase-mapper`)
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill (lightweight index ~130 lines)
 3. Load specific `rules/*.md` files as needed during implementation
@@ -174,7 +174,7 @@ Write document(s) to `.planning/codebase/` using the templates below.
 **Document naming:** UPPERCASE.md (e.g., STACK.md, ARCHITECTURE.md)
 
 **Template filling:**
-1. Replace `[YYYY-MM-DD]` with the date provided in your prompt (the `Today's date:` line). NEVER guess or infer the date — always use the exact date from the prompt.
+1. Set the `**Analysis Date:**` line, the `*... analysis: ...*` footer, and any `<!-- refreshed: ... -->` header to the date provided in your prompt (the `Today's date:` line), overwriting whatever date is already there. NEVER guess or infer the date — always use the exact date from the prompt.
 2. Replace `[Placeholder text]` with findings from exploration
 3. If something is not found, use "Not detected" or "Not applicable"
 4. Always include file paths with backticks

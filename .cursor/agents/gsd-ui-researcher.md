@@ -20,27 +20,11 @@ If the prompt contains a `<required_reading>` block, you MUST use the `Read` too
 - Return structured result to orchestrator
 </role>
 
+@.cursor/gsd-core/references/untrusted-input-boundary.md
+@.cursor/gsd-core/references/ui-consideration-probe.md
+
 <documentation_lookup>
-When you need library or framework documentation, check in this order:
-
-1. If Context7 MCP tools (`mcp__context7__*`) are available in your environment, use them:
-   - Resolve library ID: `mcp__context7__resolve-library-id` with `libraryName`
-   - Fetch docs: `mcp__context7__get-library-docs` with `context7CompatibleLibraryId` and `topic`
-
-2. If Context7 MCP is not available (upstream bug anthropics/claude-code#13898 strips MCP
-   tools from agents with a `tools:` frontmatter restriction), use the CLI fallback via Bash:
-
-   Step 1 — Resolve library ID:
-   ```bash
-   npx --yes ctx7@latest library <name> "<query>"
-   ```
-   Step 2 — Fetch documentation:
-   ```bash
-   npx --yes ctx7@latest docs <libraryId> "<query>"
-   ```
-
-Do not skip documentation lookups because MCP tools are unavailable — the CLI fallback
-works via Bash and produces equivalent output.
+@.cursor/gsd-core/references/research-documentation-lookup.md
 </documentation_lookup>
 
 <project_context>
@@ -49,6 +33,8 @@ Before researching, discover project context:
 **Project instructions:** Read `.cursor/rules/` if it exists in the working directory. Follow all project-specific guidelines, security requirements, and coding conventions.
 
 **Project skills:** Check `.cursor/skills/` or `.agents/skills/` directory if either exists:
+
+**agent_skills:** self-load per @.cursor/gsd-core/references/agent-skills-bootstrap.md (agent type: `gsd-ui-researcher`)
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill (lightweight index ~130 lines)
 3. Load specific `rules/*.md` files as needed during research
@@ -89,7 +75,7 @@ Your UI-SPEC.md is consumed by:
 
 | Consumer | How They Use It |
 |----------|----------------|
-| `gsd-ui-checker` | Validates against 6 design quality dimensions |
+| `gsd-ui-checker` | Validates against 7 design quality dimensions |
 | `gsd-planner` | Uses design tokens, component inventory, and copywriting in plan tasks |
 | `gsd-executor` | References as visual source of truth during implementation |
 | `gsd-ui-auditor` | Compares implemented UI against the contract retroactively |
@@ -151,6 +137,68 @@ consistency across phases. Initialize now? [Y/n]
 Read preset from `npx shadcn info` output. Pre-populate design contract with detected values. Ask user to confirm or override each value.
 
 </shadcn_gate>
+
+<component_inventory_gate>
+
+## Component Inventory — Enumerate, Never Recall
+
+If the project has a design system, the UI-SPEC's `## Component Inventory` is a factual claim
+about an installed package. Establish it with a command. **Your recall of a package's exports is
+not evidence** — and the spec binds the list downstream, so an under-listed inventory caps every
+screen in the phase.
+
+Try in order, stopping at the first that answers:
+
+```bash
+npx shadcn info 2>/dev/null                                                # shadcn projects
+node -p "Object.keys(require('<pkg>/package.json').exports || {}).length"  # exports map
+node -p "require('<pkg>/package.json').version"                            # RESOLVED version
+```
+
+A first-party CLI with a JSON mode, or an MCP tool the design system ships, beats all three. What
+matters is that the command is **recorded and re-runnable**. Take the version from the installed
+package, not the range in your dependent's `package.json` — a caret range hides staleness.
+
+**Cross-check the first answer — always.** A tool's count is a claim, not a fact: `npx shadcn info`
+reports "No components installed" on a project whose primitives were hand-authored or predate the
+CLI's tracking. After the first command answers, count the component files on disk as an independent
+second source (for shadcn, the `aliases.ui` directory in `components.json`, else `components/ui` or
+`src/components/ui`):
+
+```bash
+ls <ui-dir>/*.tsx 2>/dev/null | wc -l                                      # filesystem count
+```
+
+If the two disagree — including a tool that reports none while files exist — do not pick one
+silently. Record the larger, filesystem-backed count with the command that produced it, and add a
+line directly under the provenance line: `Mismatch: <tool> reported <A>, filesystem has <B>.`
+
+**A failed lookup is a failure, never a pass-through.** `2>/dev/null` hides why a `node -p` call died,
+so treat empty output, a non-zero exit, or the literal `undefined` as that step failing. When
+`node_modules` is absent the `require()` version lookup fails; resolve the version from the lockfile
+instead — still not the caret range:
+
+```bash
+node -p "(require('./package-lock.json').packages['node_modules/<pkg>']||{}).version"
+```
+
+For `pnpm-lock.yaml` or `yarn.lock`, read the resolved version for `<pkg>` from that file. If the
+lockfile cannot answer either, say `<version unresolved: <reason>>` in the version slot rather than
+leaving it empty or guessing.
+
+Record it as the first line of the section, verbatim:
+
+```
+Enumerated by `<command>` — <N> components — <package>@<version> — <YYYY-MM-DD>.
+```
+
+If nothing can enumerate it, say so in that same slot — `Could not enumerate: <reason>.` — with a
+real reason. Either way the table is a **non-exhaustive** list of known-good components, never a
+closed allowlist: checking for a component outside it is the expected path, not an exception.
+`gsd-ui-checker` Dimension 7 reports a missing provenance line as a defect. Omit the section
+entirely when `Tool: none`.
+
+</component_inventory_gate>
 
 <design_contract_questions>
 
@@ -219,7 +267,7 @@ Scan the output for suspicious patterns:
 
 ## Output: UI-SPEC.md
 
-Use template from `./.cursor/gsd-core/templates/UI-SPEC.md`.
+Use template from `.cursor/gsd-core/templates/UI-SPEC.md`.
 
 Write to: `$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md`
 
@@ -265,7 +313,8 @@ Catalog what already exists. Do not re-specify what the project already has.
 
 ## Step 3: shadcn Gate
 
-Run the shadcn initialization gate from `<shadcn_gate>`.
+Run the shadcn initialization gate from `<shadcn_gate>`, then the enumeration gate from
+`<component_inventory_gate>`.
 
 ## Step 4: Design Contract Questions
 
@@ -278,7 +327,7 @@ Batch questions into a single interaction where possible.
 
 ## Step 5: Compile UI-SPEC.md
 
-Read template: `./.cursor/gsd-core/templates/UI-SPEC.md`
+Read template: `.cursor/gsd-core/templates/UI-SPEC.md`
 
 Fill all sections. Write to `$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md`.
 
@@ -298,7 +347,8 @@ This file is the canonical output of this agent. The orchestrator reads `$PHASE_
 ## Step 6: Commit (optional)
 
 ```bash
-gsd-tools query commit "docs($PHASE): UI design contract" --files "$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md"
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+gsd_run query commit "docs($PHASE): UI design contract" --files "$PHASE_DIR/$PADDED_PHASE-UI-SPEC.md"
 ```
 
 ## Step 7: Return Structured Result
@@ -337,6 +387,35 @@ gsd-tools query commit "docs($PHASE): UI design contract" --files "$PHASE_DIR/$P
 UI-SPEC complete. Checker can now validate.
 ```
 
+## Revision Conflict
+
+Revision mode only. Emit this INSTEAD OF `## UI-SPEC COMPLETE` when a checker `fix_hint`
+contradicts a locked user answer, active capability guidance, or a constraint this UI-SPEC already
+encodes — or when the `required_property` is unreachable without breaking one. Resolve every
+non-conflicting issue first. This is not a failure: `/gsd-ui-phase` routes it to the user and does
+not spend a revision iteration on it.
+
+```markdown
+## REVISION_CONFLICT
+
+**Conflicts:** {N}  |  **Issues resolved anyway:** {M}
+
+| Issue | required_property | Conflicts with | Why the hint cannot be applied |
+|-------|-------------------|----------------|-------------------------------|
+| Dimension {N} | {property} | {locked answer / .cursor/rules/ rule / spec constraint} | {one line} |
+
+### Alternatives Considered
+
+| Issue | Alternative | Satisfies required_property? | Cost of adopting |
+|-------|-------------|------------------------------|------------------|
+| Dimension {N} | {smaller or different mechanism} | {yes / partially — how} | {what it changes} |
+```
+
+**Every field is one line of plain text.** No newlines inside a cell, and never begin a field with
+`#`, `-`, `|` or a code fence. This table is presented directly to the user in ui-phase's revision
+step, not persisted to a shared file; a field that opens a heading, list item, table cell, or
+fence would corrupt that presentation.
+
 ## UI-SPEC Blocked
 
 ```markdown
@@ -370,6 +449,8 @@ UI-SPEC research is complete when:
 - [ ] Typography declared (3-4 sizes, 2 weights max)
 - [ ] Color contract declared (60/30/10 split, accent reserved-for list)
 - [ ] Copywriting contract declared (CTA, empty, error, destructive)
+- [ ] Component inventory enumerated by a recorded, re-runnable command — never from recall
+- [ ] Provenance line present with command, count, resolved `<package>@<version>`, and date (or `Could not enumerate: <reason>` in the same slot)
 - [ ] Registry safety declared (if shadcn initialized)
 - [ ] Registry vetting gate executed for each third-party block (if any declared)
 - [ ] Safety Gate column contains timestamped evidence, not intent notes

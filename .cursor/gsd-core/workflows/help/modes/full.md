@@ -1,3 +1,5 @@
+Apply response_language to all user-facing prose — narration between tool calls, status updates, progress notes, and findings included; preserve code, paths, and identifiers.
+
 <purpose>
 Display the complete GSD Core command reference. Output ONLY the reference content. Do NOT add project-specific analysis, git status, next-step suggestions, or any commentary beyond the reference.
 </purpose>
@@ -12,6 +14,20 @@ Display the complete GSD Core command reference. Output ONLY the reference conte
 1. `/gsd-new-project` - Initialize project (includes research, requirements, roadmap)
 2. `/gsd-plan-phase 1` - Create detailed plan for first phase
 3. `/gsd-execute-phase 1` - Execute the phase
+
+Not sure where to start? `/gsd-next` reads your project state and routes you to the right next action.
+
+### Smart Entry
+
+**`/gsd-next`**
+The state-aware front door. Detects your current situation and presents a short menu of the right next actions.
+
+- Reads `.planning/STATE.md`, git state, and verification signals via `gsd-tools smart-entry`
+- Classifies your situation (no-project, paused, blocked, planning, executing, needs-verify, idle, complete, …)
+- Shows a situation-appropriate menu with one recommended action, then dispatches
+- Launcher/router only — it never does the work itself; falls back to `/gsd-progress` if detection is unavailable
+
+Usage: `/gsd-next`
 
 ## Staying Updated
 
@@ -48,6 +64,16 @@ Creates all `.planning/` artifacts:
 
 Usage: `/gsd-new-project`
 
+**`/gsd-onboard [--fast] [--text]`**
+Guide first-time onboarding for an existing codebase.
+
+- Detects brownfield code, existing planning docs, and partial `.planning/` state
+- Routes through `/gsd-map-codebase`, `/gsd-ingest-docs`, and `/gsd-new-project` in the safe order
+- Creates `.planning/onboarding/SUMMARY.md` after project setup
+- Idempotent: confirms existing artifacts and does not overwrite planning silently
+
+Usage: `/gsd-onboard`
+
 **`/gsd-map-codebase [--fast] [--focus <area>] [--query <term>]`**
 Map an existing codebase for brownfield projects.
 
@@ -58,7 +84,7 @@ Map an existing codebase for brownfield projects.
 - Analyzes codebase with parallel Explore agents
 - Creates `.planning/codebase/` with 7 focused documents
 - Covers stack, architecture, structure, conventions, testing, integrations, concerns
-- Use before `/gsd-new-project` on existing codebases
+- Usually reached through `/gsd-onboard` for first-time existing-codebase setup; run directly to refresh or focus a map
 
 Usage: `/gsd-map-codebase`
 
@@ -81,18 +107,25 @@ Usage: `/gsd-discuss-phase 2`
 Usage: `/gsd-discuss-phase 2 --batch`
 Usage: `/gsd-discuss-phase 2 --batch=3`
 
-**`/gsd-plan-phase <number> [--research] [--skip-research] [--research-phase <N>] [--view] [--gaps] [--skip-verify] [--prd <file>] [--ingest <path-or-glob>] [--ingest-format <auto|nygard|madr|narrative>] [--reviews] [--text] [--tdd] [--mvp]`**
+**`/gsd-plan-phase <number> [--research] [--skip-research] [--research-phase <N>] [--view] [--gaps] [--skip-verify] [--skip-ui] [--prd <file>] [--ingest <path-or-glob>] [--ingest-format <auto|nygard|madr|narrative>] [--reviews] [--text] [--bounce] [--skip-bounce] [--chunked] [--tdd] [--mvp] [--granularity <coarse|standard|fine>] [--no-tracer] [--no-reversibility-gates]`**
 Create detailed execution plan for a specific phase.
 
 - `--skip-research` — bypass the research subagent
 - `--research-phase <N>` — research-only mode. Spawns the research agent for phase `<N>`, writes `RESEARCH.md`, then exits before the planner runs. Useful for cross-phase research, doc review before committing to a planning approach, and correction-without-replanning loops. Replaces the deleted `gsd-research-phase` standalone command (#3042).
-  - Modifiers: `--research` forces refresh (re-spawn researcher, no prompt). `--view` prints existing `RESEARCH.md` to stdout without spawning. With neither, prompts `update / view / skip` if `RESEARCH.md` already exists.
+  - Modifiers: `--research` forces refresh (re-spawn researcher). `--view` prints existing `RESEARCH.md` to stdout without spawning. With neither, auto-uses an existing `RESEARCH.md` (one-line notice, then clean exit).
 - `--gaps` — focus only on closing gaps from a prior plan-check
 - `--skip-verify` — skip the post-plan verifier loop
+- `--skip-ui` — skip the UI-SPEC gate for a detected frontend phase (not recommended for frontend phases)
 - `--ingest <path-or-glob>` — pre-ingest external ADRs/PRDs/SPECs before planning (see *PRD Express Path* below)
 - `--ingest-format <auto|nygard|madr|narrative>` — hint the ADR ingester's parser when `--ingest` is set; defaults to `auto`
+- `--bounce` — run the optional external plan-refinement pass (or set `workflow.plan_bounce: true` to activate by default); requires `workflow.plan_bounce_script`
+- `--skip-bounce` — disable the plan-refinement pass even when `workflow.plan_bounce` config enables it
+- `--chunked` — split the planner run into a short outline pass plus one short per-plan pass each (~3–5 min), committing each plan individually for crash resilience; re-running `--chunked` resumes from the last committed plan (or set `workflow.plan_chunked: true` to activate by default)
 - `--tdd` — plan in test-driven order (tests before code)
-- `--mvp` — vertical-slice MVP planning mode (see also `/gsd-mvp-phase`)
+- `--mvp` — MVP enrichment (user story + Walking Skeleton) on top of the default tracer-first ordering (see also `/gsd-mvp-phase`)
+- `--granularity <coarse|standard|fine>` — override the resolved plan granularity for this run (wins over per-phase/top-level config and project defaults)
+- `--no-tracer` — opt out of the default tracer-first slice and plan horizontal layers (legacy default)
+- `--no-reversibility-gates` — suppress the `checkpoint:decision` a `one-way`-door decision normally earns, for intentionally-unattended runs (ratings are still recorded)
 
 - Generates `.planning/phases/XX-phase-name/XX-YY-PLAN.md`
 - Breaks phase into concrete, actionable tasks
@@ -100,7 +133,7 @@ Create detailed execution plan for a specific phase.
 - Multiple plans per phase supported (XX-01, XX-02, etc.)
 
 Usage: `/gsd-plan-phase 1`
-Usage: `/gsd-plan-phase --research-phase 2` — research only on phase 2 (prompts if `RESEARCH.md` exists)
+Usage: `/gsd-plan-phase --research-phase 2` — research only on phase 2 (auto-uses existing `RESEARCH.md`, no prompt)
 Usage: `/gsd-plan-phase --research-phase 2 --view` — print existing `RESEARCH.md`, no spawn
 Usage: `/gsd-plan-phase --research-phase 2 --research` — force-refresh, no prompt
 Result: Creates `.planning/phases/01-foundation/01-01-PLAN.md`
@@ -161,6 +194,16 @@ Usage: `/gsd-quick`
 Usage: `/gsd-quick --full`
 Usage: `/gsd-quick --research --validate`
 Result: Creates `.planning/quick/NNN-slug/PLAN.md`, `.planning/quick/NNN-slug/NNN-slug-SUMMARY.md`
+
+---
+
+**`/gsd-quick-batch [--file <path>] [--jobs auto|N] [--validate] [--research] [--resume <batch-id>] [task list]`**
+Batch several `/gsd-quick`-shaped tasks together (inline list or `--file <path>`) — one coordinator plans, dispatches, and merges them as one run.
+
+Flags: `--jobs auto|N` (cap concurrency at `min(tasks, N, capacity)`) · `--validate` (plan-checker + post-merge verification) · `--research` (per-item researcher) · `--resume <batch-id>` (dispatch only eligible items). `--discuss`/`--full` are rejected.
+
+Usage: `/gsd-quick-batch --jobs 3 --validate`
+Result: Per-item artifacts under `.planning/quick/`; batch state in `.planning/quick-batches/<batch-id>/BATCH.json`
 
 ---
 
@@ -225,11 +268,13 @@ Start a new milestone through unified flow.
 - Requirements definition with scoping
 - Roadmap creation with phase breakdown
 - Optional `--reset-phase-numbers` flag restarts numbering at Phase 1 and archives old phase dirs first for safety
+- Optional `--ws <name>` flag scopes the milestone to a workstream and skips the shared `PROJECT.md` write
 
 Mirrors `/gsd-new-project` flow for brownfield projects (existing PROJECT.md).
 
 Usage: `/gsd-new-milestone "v2.0 Features"`
 Usage: `/gsd-new-milestone --reset-phase-numbers "v2.0 Features"`
+Usage: `/gsd-new-milestone --ws search "v2.0 Search"`
 
 **`/gsd-complete-milestone <version>`**
 Archive completed milestone and prepare for next version.
@@ -256,11 +301,15 @@ Check project status and intelligently route to next action.
 Modes:
 - **default** — progress report + intelligent routing
 - **`--next`** — auto-advance to the next logical step (use `--next --force` to bypass safety gates)
+- **`--next --auto`** — like `--next`, but chains steps automatically until milestone completion or a blocking decision
+- **`--next --converge`** — when the next action is planning, route it through `/gsd-plan-review-convergence` instead of `/gsd-plan-phase`; requires `workflow.plan_review_convergence=true`. `--cross-ai` is an alias. Reviewer flags (`--codex`, `--claude`, `--opencode`, `--ollama`, `--lm-studio`, `--llama-cpp`, `--all`) and `--max-cycles N` forward to the convergence loop.
 - **`--forensic`** — append a 6-check integrity audit after the progress report
 - **`--do "<text>"`** — smart router: dispatch freeform intent to the matching `/gsd-*` command (see *Smart Router* above)
 
 Usage: `/gsd-progress`
 Usage: `/gsd-progress --next`
+Usage: `/gsd-progress --next --auto`
+Usage: `/gsd-progress --next --auto --converge`
 Usage: `/gsd-progress --forensic`
 
 ### Session Management
@@ -368,7 +417,7 @@ Usage: `/gsd-capture Add auth token refresh`
 **`/gsd-capture --note <text>`**
 Zero-friction note capture — one command, instant save, no questions.
 
-- Saves timestamped note to `.planning/notes/` (or `./.cursor/notes/` globally)
+- Saves timestamped note to `.planning/notes/` (or `.cursor/notes/` globally)
 - Three subcommands: append (default), list, promote
 - Promote converts a note into a structured todo
 - Works without a project (falls back to global scope)
@@ -385,10 +434,20 @@ List pending todos and select one to work on.
 - Optional area filter (e.g., `/gsd-capture --list api`)
 - Loads full context for selected todo
 - Routes to appropriate action (work now, add to phase, brainstorm)
-- Moves todo to done/ when work begins
+- Moves todo to completed/ when work begins
 
 Usage: `/gsd-capture --list`
 Usage: `/gsd-capture --list api`
+
+**`/gsd-capture --list-seeds [status]`**
+List and audit captured seeds (read-only).
+
+- Lists all seeds with ID, status, scope, trigger, and title
+- Optional status filter (e.g., `/gsd-capture --list-seeds dormant`)
+- Does not modify any seed — enrich with `/gsd-capture --seed --enrich SEED-YYMMDD-XXX`
+
+Usage: `/gsd-capture --list-seeds`
+Usage: `/gsd-capture --list-seeds dormant`
 
 ### User Acceptance Testing
 
@@ -418,10 +477,10 @@ Usage: `/gsd-ship 4` or `/gsd-ship 4 --draft`
 
 ---
 
-**`/gsd-review --phase N [--gemini] [--claude] [--codex] [--coderabbit] [--opencode] [--qwen] [--cursor] [--agy] [--all]`**
+**`/gsd-review --phase N [--claude] [--codex] [--coderabbit] [--opencode] [--qwen] [--cursor] [--agy] [--all]`**
 Cross-AI peer review — invoke external AI CLIs to independently review phase plans.
 
-- Detects available CLIs (gemini, claude, codex, coderabbit, agy)
+- Detects available CLIs (claude, codex, coderabbit, agy)
 - Each CLI reviews plans independently with the same structured prompt
 - CodeRabbit reviews the current git diff (not a prompt) — may take up to 5 minutes
 - Produces REVIEWS.md with per-reviewer feedback and consensus summary
@@ -550,11 +609,12 @@ Usage: `/gsd-help --full`
 Usage: `/gsd-help debug`
 Usage: `/gsd-help --brief debug`
 
-**`/gsd-update [--sync] [--reapply]`**
+**`/gsd-update [--sync] [--reapply] [--next | --rc]`**
 Update GSD to latest version with changelog preview.
 
 - `--sync` — sync managed GSD skills across runtime roots (replaces the former `gsd-sync-skills`)
 - `--reapply` — reapply local modifications after an update (replaces the former `gsd-reapply-patches`)
+- `--next` (alias `--rc`) — install/refresh from the `@next` RC dist-tag instead of `@latest` (ADR #660); omit for the stable channel
 
 - Shows installed vs latest version comparison
 - Displays changelog entries for versions you've missed
@@ -581,8 +641,8 @@ The commands above cover the most common day-to-day flows. Every command listed 
 
 - **`/gsd-mvp-phase <phase-number>`** — Plan a phase as a vertical MVP slice (user story + SPIDR splitting) before handing off to plan-phase. Same end-state as `/gsd-plan-phase --mvp`, with a guided MVP-shaping intro.
 - **`/gsd-ultraplan-phase [phase]`** — [BETA] Offload plan phase to Cursor's ultraplan cloud; review in browser and import back.
-- **`/gsd-plan-review-convergence <phase> [--codex] [--gemini] [--claude] [--opencode] [--ollama] [--lm-studio] [--llama-cpp] [--all] [--text] [--ws <name>] [--max-cycles N]`** — Cross-AI plan convergence loop — replan with review feedback until no HIGH concerns remain. Supports both cloud reviewers (Codex/Gemini/Claude/OpenCode) and local model runtimes (Ollama, LM Studio, llama.cpp).
-- **`/gsd-autonomous [--from N] [--to N] [--only N] [--interactive]`** — Run all remaining phases autonomously: discuss → plan → execute per phase.
+- **`/gsd-plan-review-convergence <phase> [--claude] [--codex] [--coderabbit] [--opencode] [--qwen] [--cursor] [--agy/--antigravity] [--ollama] [--lm-studio] [--llama-cpp] [--kimi-code] [--all] [--text] [--ws <name>] [--max-cycles N]`** — Cross-AI plan convergence loop — replan with review feedback until no HIGH concerns remain. Supports both cloud reviewers (Claude/Codex/CodeRabbit/OpenCode/Qwen/Cursor/Antigravity/Kimi Code) and local model runtimes (Ollama, LM Studio, llama.cpp).
+- **`/gsd-autonomous [--from N] [--to N] [--only N] [--interactive] [--converge]`** — Run all remaining phases autonomously: discuss → plan → execute per phase. `--converge` routes planning through plan-review convergence; `--cross-ai` is an alias.
 
 ### Quality, Review & Verification
 
@@ -605,6 +665,8 @@ The commands above cover the most common day-to-day flows. Every command listed 
 ### Knowledge & Context
 
 - **`/gsd-graphify [build|query <term>|status|diff]`** — Build, query, and inspect the project knowledge graph in `.planning/graphs/`.
+- **`/gsd-mempalace-recall`** — Recall prior decisions, patterns, and surprises from MemPalace before planning.
+- **`/gsd-mempalace-capture [artifact-type]`** — File a phase artifact into MemPalace and mirror decision facts into its temporal KG.
 - **`/gsd-thread [list [--open|--resolved] | close <slug> | status <slug> | name | description]`** — Manage persistent context threads for cross-session work.
 - **`/gsd-profile-user [--questionnaire] [--refresh]`** — Generate developer behavioral profile and create Claude-discoverable artifacts.
 - **`/gsd-stats`** — Display project statistics: phases, plans, requirements, git metrics, and timeline.
@@ -625,7 +687,7 @@ The commands above cover the most common day-to-day flows. Every command listed 
 
 These six skills exist primarily for the model to perform two-stage hierarchical routing across 60+ skills. You can invoke them directly when you want to browse a category interactively.
 
-- **`/gsd-context`** — Codebase intelligence routing (map, graphify, docs, learnings).
+- **`/gsd-context`** — Codebase intelligence routing (map, graphify, docs, learnings, mempalace).
 - **`/gsd-ideate`** — Exploration / capture routing (explore, sketch, spike, spec, capture).
 - **`/gsd-manage`** — Configuration and workspace routing (workstreams, thread, update, ship, inbox).
 - **`/gsd-project`** — Project-lifecycle routing (milestones, audits, summary).
@@ -643,7 +705,7 @@ These six skills exist primarily for the model to perform two-stage hierarchical
 ├── config.json           # Workflow mode & gates
 ├── todos/                # Captured ideas and tasks
 │   ├── pending/          # Todos waiting to be worked on
-│   └── done/             # Completed todos
+│   └── completed/        # Completed todos
 ├── spikes/               # Spike experiments (/gsd-spike)
 │   ├── MANIFEST.md       # Spike inventory and verdicts
 │   └── NNN-name/         # Individual spike directories
@@ -656,7 +718,7 @@ These six skills exist primarily for the model to perform two-stage hierarchical
 ├── milestones/
 │   ├── v1.0-ROADMAP.md       # Archived roadmap snapshot
 │   ├── v1.0-REQUIREMENTS.md  # Archived requirements
-│   └── v1.0-phases/          # Archived phase dirs (via /gsd-cleanup or --archive-phases)
+│   └── v1.0-phases/          # Archived phase dirs (via /gsd-cleanup or milestone complete, which archives by default)
 │       ├── 01-foundation/
 │       └── 02-core-features/
 ├── codebase/             # Codebase map (brownfield projects)

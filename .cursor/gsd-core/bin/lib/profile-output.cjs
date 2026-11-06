@@ -20,12 +20,16 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_os_1 = __importDefault(require("node:os"));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const core = require("./core.cjs");
-const { output, error, loadConfig } = core;
+const io = require("./io.cjs");
+const { output, error } = io;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const configLoader = require("./config-loader.cjs");
+const { loadConfig } = configLoader;
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 const runtime_homes_cjs_1 = require("./runtime-homes.cjs");
 const runtime_slash_cjs_1 = require("./runtime-slash.cjs");
 const runtime_name_policy_cjs_1 = require("./runtime-name-policy.cjs");
+const frontmatter_fence_cjs_1 = require("./frontmatter-fence.cjs");
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DIMENSION_KEYS = [
     'communication_style', 'decision_speed', 'explanation_depth',
@@ -200,6 +204,7 @@ function buildClaudeMdWorkflowEnforcement(runtime) {
         'Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.',
         '',
         'Use these entry points:',
+        `- \`${String((0, runtime_slash_cjs_1.formatGsdSlash)('fast', runtime))}\` for a trivial task inline, with no subagents and no PLAN.md`,
         `- \`${String((0, runtime_slash_cjs_1.formatGsdSlash)('quick', runtime))}\` for small fixes, doc updates, and ad-hoc tasks`,
         `- \`${String((0, runtime_slash_cjs_1.formatGsdSlash)('debug', runtime))}\` for investigation and bug fixing`,
         `- \`${String((0, runtime_slash_cjs_1.formatGsdSlash)('execute-phase', runtime))}\` for planned phase work`,
@@ -474,10 +479,11 @@ function generateSkillsSection(cwd) {
  */
 function extractSkillFrontmatter(content) {
     const result = { name: '', description: '' };
-    const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
-    if (!fmMatch)
+    // The block is the one the one fence owner (`locateFrontmatterFence`) finds.
+    const fence = (0, frontmatter_fence_cjs_1.locateFrontmatterFence)(content);
+    if (!fence?.closed)
         return result;
-    const fmBlock = fmMatch[1];
+    const fmBlock = content.slice(fence.openEnd, fence.bodyEnd);
     const lines = fmBlock.split('\n');
     let currentKey = '';
     for (const line of lines) {
@@ -653,7 +659,21 @@ function cmdWriteProfile(cwd, options, raw) {
     }
     let outputPath = options.output;
     if (!outputPath) {
-        outputPath = node_path_1.default.join(node_os_1.default.homedir(), '.claude', 'gsd-core', 'USER-PROFILE.md');
+        // #1114: resolve the ACTIVE runtime's config home so the profile is written
+        // where the runtime's own workflows look for it. Previously this hardcoded the
+        // Claude home, so a Codex run wrote the profile under the Claude config dir
+        // while Codex advisor-mode (installed under the Codex home) checked the Codex
+        // dir and never found it. Mirrors cmdGenerateDevPreferences' runtime resolution.
+        let effectiveRuntime = 'claude';
+        try {
+            const config = loadConfig(cwd);
+            effectiveRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(process.env['GSD_RUNTIME'], config['runtime'], 'claude') || 'claude';
+        }
+        catch {
+            effectiveRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(process.env['GSD_RUNTIME'], 'claude') || 'claude';
+        }
+        // path.join (not a string literal) keeps the cline-install leaked-path lint quiet.
+        outputPath = node_path_1.default.join((0, runtime_homes_cjs_1.getGlobalConfigDir)(effectiveRuntime), 'gsd-core', 'USER-PROFILE.md');
     }
     else if (!node_path_1.default.isAbsolute(outputPath)) {
         outputPath = node_path_1.default.join(cwd, outputPath);
@@ -903,22 +923,50 @@ function cmdGenerateClaudeProfile(cwd, options, raw) {
         '<!-- gsd-profile-end -->',
     ];
     const sectionContent = sectionLines.join('\n');
+    // #2565: resolve target through effective runtime policy instead of
+    // hardcoded .claude/.cursor/rules/. Mirrors the #3163 fix applied to
+    // cmdGenerateClaudeMd above; that fix diverged when it didn't propagate
+    // here, leaving /gsd-profile-user writing Claude files on Codex installs.
+    // - Project scope: getProjectInstructionFile(runtime) is the single source
+    //   of truth (AGENTS.md for codex/opencode/kilo/kimi/unknown; GEMINI.md for
+    //   antigravity; .github/copilot-instructions.md for copilot).
+    // - Global scope: ~/.<config-home>/<instruction-basename>, derived from
+    //   getGlobalConfigDir + basename(getProjectInstructionFile), so codex lands
+    //   at ~/.codex/AGENTS.md. Claude global is preserved byte-for-byte (no
+    //   env-var drift beyond the prior hardcoded path).
+    // - GSD_RUNTIME env var takes precedence over config.runtime (mirrors the
+    //   #3163 env-precedence contract). Non-claude always wins over a stale
+    //   claude_md_path (#3163 rationale: an AGENTS-native project must never
+    //   write to .cursor/rules/ even if a prior Claude setup left claude_md_path).
+    let config = {};
+    try {
+        config = loadConfig(cwd);
+    }
+    catch { /* use defaults */ }
+    const effectiveRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(process.env['GSD_RUNTIME'], config['runtime']);
+    const isClaudeRuntime = !effectiveRuntime || effectiveRuntime === 'claude';
     let targetPath;
     if (options.global) {
-        targetPath = node_path_1.default.join(node_os_1.default.homedir(), '.claude', '.cursor/rules/');
+        if (isClaudeRuntime) {
+            targetPath = node_path_1.default.join(node_os_1.default.homedir(), '.claude', '.cursor/rules/');
+        }
+        else {
+            targetPath = node_path_1.default.join((0, runtime_homes_cjs_1.getGlobalConfigDir)(effectiveRuntime), node_path_1.default.basename((0, runtime_name_policy_cjs_1.getProjectInstructionFile)(effectiveRuntime)));
+        }
     }
     else if (options.output) {
         targetPath = node_path_1.default.isAbsolute(options.output) ? options.output : node_path_1.default.join(cwd, options.output);
     }
     else {
-        // Read claude_md_path from config, default to ./.cursor/rules/
-        let configClaudeMdPath = './.cursor/rules/';
-        try {
-            const config = loadConfig(cwd);
-            if (config['claude_md_path'])
-                configClaudeMdPath = config['claude_md_path'];
+        // Read claude_md_path from config; #1098 default is .claude/.cursor/rules/
+        // (kept consistent with cmdGenerateClaudeMd so the profile section and the
+        // managed sections land in the same file on a config-less project).
+        let configClaudeMdPath = '.claude/.cursor/rules/';
+        if (config['claude_md_path'])
+            configClaudeMdPath = config['claude_md_path'];
+        if (!isClaudeRuntime) {
+            configClaudeMdPath = (0, runtime_name_policy_cjs_1.getProjectInstructionFile)(effectiveRuntime);
         }
-        catch { /* use default */ }
         targetPath = node_path_1.default.isAbsolute(configClaudeMdPath) ? configClaudeMdPath : node_path_1.default.join(cwd, configClaudeMdPath);
     }
     let action;
@@ -986,19 +1034,36 @@ function cmdGenerateClaudeMd(cwd, options, raw) {
         }
     }
     let assemblyConfig = {};
-    let configClaudeMdPath = './.cursor/rules/';
+    // #1098: default the Claude-family instruction file to the project-scoped
+    // `.claude/.cursor/rules/` (a valid auto-loaded memory location) rather than a
+    // repo-root `.cursor/rules/`, so generated GSD content does not land next to — or
+    // pollute — a hand-crafted repo-root .cursor/rules/. An explicit `claude_md_path`
+    // config value or `--output` still wins.
+    let configClaudeMdPath = '.claude/.cursor/rules/';
     try {
         const config = loadConfig(cwd);
         if (config['claude_md_path'])
             configClaudeMdPath = config['claude_md_path'];
         if (config['claude_md_assembly'])
             assemblyConfig = config['claude_md_assembly'];
-        // #3163: When runtime is codex, override the output target to AGENTS.md
-        // regardless of claude_md_path, so Codex projects never write to .cursor/rules/.
-        // GSD_RUNTIME env var takes precedence over config.runtime, mirroring detectRuntime().
+        // #1529: When no explicit --output is provided, derive the instruction
+        // file from the runtime via the shared `getProjectInstructionFile` policy
+        // (single source of truth in runtime-name-policy.cjs, shared with the
+        // new-project.md bash workflow via `gsd-tools query
+        // project-instruction-file`). Previously this was a codex-only override
+        // (#3163) that left AGENTS-native runtimes (opencode/kilo/kimi) emitting
+        // .cursor/rules/; copilot now resolves to .github/copilot-instructions.md, and
+        // antigravity to GEMINI.md. GSD_RUNTIME env var takes precedence
+        // over config.runtime, mirroring detectRuntime().
+        //
+        // Non-claude runtimes always win over a stale `claude_md_path` (the #3163
+        // rationale: a Codex/AGENTS-native project must never write to .cursor/rules/
+        // even if a prior Claude setup left a `claude_md_path` behind). For the
+        // claude runtime, `claude_md_path` config is honored — it IS the
+        // Claude-specific output setting (per #1098 and the #3163 non-codex test).
         const effectiveRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(process.env['GSD_RUNTIME'], config['runtime']);
-        if (!options.output && effectiveRuntime === 'codex') {
-            configClaudeMdPath = './AGENTS.md';
+        if (!options.output && effectiveRuntime && effectiveRuntime !== 'claude') {
+            configClaudeMdPath = (0, runtime_name_policy_cjs_1.getProjectInstructionFile)(effectiveRuntime);
         }
     }
     catch { /* use default */ }
@@ -1036,6 +1101,26 @@ function cmdGenerateClaudeMd(cwd, options, raw) {
         action = 'created';
         (0, shell_command_projection_cjs_1.platformEnsureDir)(node_path_1.default.dirname(outputPath));
         (0, shell_command_projection_cjs_1.platformWriteSync)(outputPath, existingContent);
+    }
+    else if (!/<!-- gsd-[a-z]+-start/.test(existingContent) && !options.force) {
+        // #1098: the target instruction file already exists and contains NO GSD
+        // section markers — it is a hand-crafted .cursor/rules//AGENTS.md, not a
+        // GSD-managed one. Do NOT clobber it with generated project documentation
+        // (broad project detail belongs in PROJECT.md / REQUIREMENTS.md, which GSD
+        // already owns). Leave the file untouched and report a skip; `--force`
+        // overwrites intentionally.
+        output({
+            claude_md_path: outputPath,
+            action: 'skipped',
+            reason: 'existing instruction file has no GSD markers (hand-crafted); not overwriting. Pass --force to overwrite.',
+            sections_generated: [],
+            sections_fallback: [],
+            sections_skipped: MANAGED_SECTIONS,
+            sections_total: MANAGED_SECTIONS.length,
+            profile_status: 'skipped',
+            message: `Left existing ${node_path_1.default.basename(outputPath)} untouched (no GSD markers found). Broad project context lives in PROJECT.md / REQUIREMENTS.md; pass --force to overwrite this file with GSD-managed sections.`,
+        }, raw, undefined);
+        return;
     }
     else {
         action = 'updated';

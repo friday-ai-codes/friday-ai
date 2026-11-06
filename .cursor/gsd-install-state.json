@@ -18,6 +18,24 @@
       "appliedAt": "2026-06-05T15:40:45.690Z",
       "journal": null,
       "checksum": "sha256:3a9f1d97f64097fb313203d19c6d93a187a38df61dd299afa5eef73e16124e95"
+    },
+    {
+      "id": "2026-06-09-prune-stale-pristine-get-shit-done",
+      "appliedAt": "2026-11-06T02:49:28.533Z",
+      "journal": null,
+      "checksum": "sha256:6555dd044659276fbc204e81793cd92c5315d54e7316bcdd82d2c98d15a7e9e8"
+    },
+    {
+      "id": "2026-07-28-retire-config-root-commonjs-marker",
+      "appliedAt": "2026-11-06T02:49:28.533Z",
+      "journal": null,
+      "checksum": "sha256:8f2140cbe8f2dd8f7dfd52a0f6957c5edfe966c52d7e6e4d74ec7366930e0e1d"
+    },
+    {
+      "id": "2026-07-29-cursor-retire-commands-surface",
+      "appliedAt": "2026-11-06T02:49:28.533Z",
+      "journal": null,
+      "checksum": "sha256:d0b2b812a3f752650f2518b48280f74a5937c80ec8412bac493382dfa3db083f"
     }
   ]
 }

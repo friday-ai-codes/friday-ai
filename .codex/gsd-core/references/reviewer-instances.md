@@ -58,30 +58,39 @@ cannot diverge (`DEFECT.GENERATIVE-FIX`; parity-locked in
 
 ## Invocation
 
-For each selected INSTANCE, invoke its base `cli` using the instance's own `model`/`agent` —
-NOT the global `review.models.<cli>`. Each instance writes to its OWN per-instance output file
-and runs as a distinct reviewer identity.
+An instance resolves **through** a lane; it is not a lane itself (ADR-2782 D8). It takes no part in
+the roster, the flag set, or lane uniqueness — which is why an instance heading
+(`## OpenCode Review (opencode-deepseek)`) must never be read as a lane section.
 
-For an OpenCode-backed instance (the motivating adapter):
+Since Phase 5b (#2799) `invoke_reviewers` iterates declared lanes rather than hand-authored per-CLI
+blocks, so an instance is invoked through the same single seam as its base lane, with two
+substitutions:
 
 ```bash
-# $INSTANCE_MODEL / $INSTANCE_AGENT come from the instance spec; $INSTANCE_NAME is the
-# reviewer identity (e.g. opencode-deepseek). --agent is OpenCode's native subagent flag;
-# omit it when the instance has no agent.
-if [ -n "$INSTANCE_AGENT" ] && [ "$INSTANCE_AGENT" != "null" ]; then
-  cat /tmp/gsd-review-prompt-{phase}.md | opencode run --model "$INSTANCE_MODEL" --agent "$INSTANCE_AGENT" - 2>/dev/null > /tmp/gsd-review-${INSTANCE_NAME}-{phase}.md
-else
-  cat /tmp/gsd-review-prompt-{phase}.md | opencode run --model "$INSTANCE_MODEL" - 2>/dev/null > /tmp/gsd-review-${INSTANCE_NAME}-{phase}.md
-fi
-if [ ! -s /tmp/gsd-review-${INSTANCE_NAME}-{phase}.md ]; then
-  echo "OpenCode review ($INSTANCE_NAME) failed or returned empty output." > /tmp/gsd-review-${INSTANCE_NAME}-{phase}.md
-fi
+# $INSTANCE_NAME is the reviewer identity (e.g. opencode-deepseek); $INSTANCE_MODEL / $INSTANCE_AGENT
+# come from the instance spec. --run-dir is the run-scoped mktemp directory created once in
+# gather_context (#2358) — the same directory every lane uses.
+#
+# The instance's OWN model replaces the lane's configured model, and the output lands under the
+# INSTANCE name so two instances of one adapter never overwrite each other.
+gsd_run query review-lane invoke \
+  --slug "$INSTANCE_CLI" \
+  --run-dir "$RUN_DIR" --repo-root "$REPO_ROOT" \
+  --model "$INSTANCE_MODEL" ${INSTANCE_AGENT:+--agent "$INSTANCE_AGENT"} \
+  --as "$INSTANCE_NAME"
 ```
 
-For an instance backed by a DIFFERENT cli, reuse that cli's invocation block with two
-substitutions: use the instance's `model` in place of the global `review.models.<cli>` value,
-and write to `/tmp/gsd-review-${INSTANCE_NAME}-{phase}.md`. Only `opencode` honours an
-`agent` field in v1; ignore `agent` for other adapters.
+`--as` is what makes the run write `{run_dir}/gsd-review-${INSTANCE_NAME}.md` instead of the lane's
+own `{run_dir}/gsd-review-<slug>.md`.
+
+Everything the lane declares — probe, prompt channel, output channel, timeout floor, empty-output
+policy, handler — applies unchanged to an instance. That is the point of routing instances through
+the lane rather than duplicating its invocation: a cross-cutting fix reaches instances for free,
+where the previous per-adapter block had to be copied and kept in sync by hand.
+
+Only `opencode` honours an `agent` field in v1; it is ignored by other adapters. `model` and `agent`
+are opaque pass-through strings and are NEVER interpolated into a shell string — the runner spawns
+with an argv array and `shell: false`.
 
 ---
 
@@ -97,3 +106,34 @@ and write to `/tmp/gsd-review-${INSTANCE_NAME}-{phase}.md`. Only `opencode` hono
 - **Shared-adapter caveat:** when ≥2 invoked instances share the same base `cli`, print a
   one-line caveat immediately after the frontmatter (before the first section), e.g.:
   `> Note: opencode-deepseek and opencode-mimo share the opencode adapter; their consensus is cross-model, not cross-tool.`
+
+---
+
+## Interaction with the convergence loop (#2398)
+
+Running 2+ instances changes how `$gsd-plan-review-convergence` counts HIGHs. Its **consensus gate**
+(`plan-review-convergence.md`, step 5a, immediately before the counting rules) engages only when two
+or more reviewers actually ran in a cycle — which is precisely the configuration this file enables.
+
+Under that gate, a HIGH raised by exactly one instance is treated by what the claim asserts:
+
+- an **existence-class** claim (a symbol, file, flag, commit or ID exists / is absent / says X)
+  counts toward `current_high` only if source-grounding confirms it or another reviewer raised the
+  same concern;
+- a **judgment-class** claim (a design or correctness property) counts unless that instance's own
+  section opens with an evidence-quality discount marker — `[reviewed-without-source-citations]`
+  (#3194) or `[reviewed-without-repo-access]` (#2176).
+
+Judgment-class findings are deliberately exempt from the corroboration requirement: instances catch
+materially different classes of issue, so demanding two of them independently raise the same
+architectural concern would suppress the findings this feature exists to surface.
+
+A suppressed HIGH is still reported, tagged `(single-reviewer, unconfirmed)`. If every instance that
+ran carries a discount marker the gate disengages entirely, so a cycle in which nothing was verified
+can never be counted as converged.
+
+**Practical consequence for this file's use case:** instances of uneven reliability are safe to
+configure. A weak instance that returns no `file:line` evidence gets stamped, and its lone
+judgment-class HIGHs stop forcing replan cycles — while any instance that does produce grounded
+evidence keeps full blocking weight, alone, on exactly the architectural findings it was added to
+catch.

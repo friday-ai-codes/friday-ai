@@ -10,24 +10,38 @@ Valid GSD subagent types (use exact names — do not fall back to 'general-purpo
 
 <process>
 
+**Compact Content Gate.** Read and follow `gsd-core/references/compact-content-gate.md` now — it states the `workflow.compact_content` check and the resolution rule this spine defers to. When it directs a Read, read `gsd-core/workflows/docs-update/detail/elaboration.md` in full before continuing past this point; its content elaborates on three steps below (sequential_generation, fix_loop, verify_only_report).
+
 <step name="init_context" priority="first">
 Load docs-update context:
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "${CLAUDE_CONFIG_DIR:-./.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLAUDE_CONFIG_DIR:-./.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${HERMES_HOME:-$HOME/.hermes}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CURSOR_CONFIG_DIR:-$HOME/.cursor}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEX_HOME:-$HOME/.codex}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GEMINI_CONFIG_DIR:-$HOME/.gemini}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${COPILOT_CONFIG_DIR:-$HOME/.copilot}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${AUGMENT_CONFIG_DIR:-$HOME/.augment}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${TRAE_CONFIG_DIR:-$HOME/.trae}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${QWEN_CONFIG_DIR:-$HOME/.qwen}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${CLINE_CONFIG_DIR:-$HOME/.cline}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${GROK_AGENTS_HOME:-$HOME/.agents}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_bbf8cea71099f4fa3f441714e39fd4e5' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_bbf8cea71099f4fa3f441714e39fd4e5
+GSD_ARGS=${GSD_ARGS%$'\n'}
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.codex}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
 INIT=$(gsd_run query docs-init)
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
-AGENT_SKILLS=$(gsd_run query agent-skills gsd-doc-writer)
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+AGENT_SKILLS=$(gsd_run query agent-skills gsd-doc-writer ${GSD_WS:+--ws=${GSD_WS##* }})
+# #2994: dedicated init.docs-update call — additive to docs-init above, carries
+# only the section_manifest field (gates dispatch_monorepo_packages).
+INIT_DOCS_UPDATE=$(gsd_run query init.docs-update ${GSD_WS:+--ws=${GSD_WS##* }})
+if [[ "$INIT_DOCS_UPDATE" == @file:* ]]; then INIT_DOCS_UPDATE=$(cat "${INIT_DOCS_UPDATE#@file:}"); fi
+DOC_VERIFIER_MODEL=$(gsd_run query resolve-model gsd-doc-verifier --raw)
 ```
 
 Extract from init JSON:
-- `doc_writer_model` — model string to pass to each spawned agent (never hardcode a model name)
+- `doc_writer_model` — model string for the doc-writer spawns (never hardcode a model name); the doc-verifier spawn resolves its own `DOC_VERIFIER_MODEL`
 - `commit_docs` — whether to commit generated files when done
 - `existing_docs` — array of `{path, has_gsd_marker}` objects for existing Markdown files
 - `project_type` — object with boolean signals: `has_package_json`, `has_api_routes`, `has_cli_bin`, `is_open_source`, `has_deploy_config`, `is_monorepo`, `has_tests`
 - `doc_tooling` — object with booleans: `docusaurus`, `vitepress`, `mkdocs`, `storybook`
 - `monorepo_workspaces` — array of workspace glob patterns (empty if not a monorepo)
+- `section_manifest` — parsed from `INIT_DOCS_UPDATE` (not `INIT`); gates the `dispatch-monorepo-packages` section below
 - `project_root` — absolute path to the project root
+- `response_language` — if set, present all user-facing output of this workflow in that language — narration between tool calls, status updates, progress notes, findings, questions, prompts, and explanations; technical terms, code, file paths, and subagent prompts stay in English
 </step>
 
 <step name="classify_project">
@@ -61,6 +75,8 @@ Conditional docs queued: {list or "none"}
 </step>
 
 <step name="build_doc_queue">
+**Skip condition:** If `--verify-only` is present in `{{GSD_ARGS}}`: skip this step, `resolve_modes` and `preservation_check`, and go straight to `verify_only_report` (#5050). That step fact-checks every file in `existing_docs` from the init JSON and never reads the queue, so no question asked here (the gap list, the queue confirmation, the CONTRIBUTING.md confirmation) can change its result — and none of them has a text-mode fallback, so an unattended run would stop on an answer that is discarded.
+
 Assemble the complete doc queue from always-on docs plus conditional docs from classify_project.
 
 **Always-on docs (queued for every project, no exceptions):**
@@ -86,7 +102,7 @@ If CONTRIBUTING.md is in the conditional queue AND does NOT appear in the `exist
 
 1. If `--force` is present in `{{GSD_ARGS}}`: skip this check, include CONTRIBUTING.md in the queue.
 
-**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `AskUserQuestion` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-the agent runtimes (OpenAI Codex, Gemini CLI, etc.) where `AskUserQuestion` is not available.
+**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `AskUserQuestion` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-the agent runtimes (OpenAI Codex, Antigravity, etc.) where `AskUserQuestion` is not available.
 2. Otherwise, use AskUserQuestion to confirm:
 
 ```
@@ -279,7 +295,7 @@ Mode resolution:
 | architecture | docs/architecture/overview.md | create | new directory |
 | getting_started | docs/guides/getting-started.md | update | found, hand-written |
 | development | docs/guides/development.md | create | matched docs/guides/ |
-| testing | docs/guides/testing.md | create | matched docs/guides/ |
+| contributing | docs/guides/contributing.md | create | matched docs/guides/ |
 | configuration | docs/guides/configuration.md | create | matched docs/guides/ |
 | api | docs/api/reference.md | create | new directory |
 | deployment | docs/guides/deployment.md | update | found, hand-written |
@@ -381,6 +397,14 @@ These are foundational docs with no cross-references needed, making them ideal f
 Use `run_in_background=true` for all three to enable parallel execution.
 
 **Agent 1: README**
+
+<!-- #2508 runtime-aware-dispatch -->
+
+> **Runtime-aware dispatch (#2508 Phase 4).** GSD workflows dispatch specialized subagents by role. Before dispatching on a built-in-only runtime (kimi-code — three built-ins only), resolve the role to a built-in via `gsd_run query resolve-dispatch-type --requested <role> --raw`. On named-dispatch runtimes (the agent/OpenCode/…) the role is returned unchanged; on kimi-code it maps to `coder`/`explore`/`plan` by role-suffix. The persona rides `${AGENT_SKILLS_<ROLE>}` (Phase 3) regardless. See @gsd-core/references/runtime-aware-dispatch.md.
+
+<!-- #2517 model-omit-on-inherit -->
+
+> **Model omission (#2517).** Omit the `model` parameter entirely when the value it would carry (`doc_writer_model`, `DOC_VERIFIER_MODEL`) is `"inherit"` or empty. An empty value 404s on runtimes without native tier aliases — the default on non-the agent runtimes. Omitting it inherits the orchestrator's model. See @gsd-core/references/model-profile-resolution.md.
 
 ```
 Agent(
@@ -701,109 +725,12 @@ If any agent failed or its file is missing, note the failure and continue. Missi
 Continue to dispatch_monorepo_packages (if monorepo_workspaces is non-empty) or commit_docs.
 </step>
 
-<step name="dispatch_monorepo_packages" condition="monorepo_workspaces is non-empty">
-After Wave 2 collection, generate per-package READMEs for each monorepo workspace.
+If `section_manifest` (from `INIT_DOCS_UPDATE`) is `null` or `"dispatch-monorepo-packages"` is in its `included` list: read and execute `gsd-core/workflows/docs-update/steps/dispatch-monorepo-packages.md`. Otherwise skip — do not read the file; continue to commit_docs.
 
-**Condition:** Only run this step if `monorepo_workspaces` from the init JSON is non-empty.
+<step name="sequential_generation" condition="Task tool is NOT available (e.g. Antigravity, Codex, Copilot)">
+When the `Task` tool is unavailable, generate all queued docs sequentially in the current context instead of spawning subagents — this step replaces dispatch_wave_1, collect_wave_1, dispatch_wave_2, and collect_wave_2. Read `agents/gsd-doc-writer.md` once, then for each queued doc (Wave 1: README/ARCHITECTURE/CONFIGURATION, complete before Wave 2; Wave 2: GETTING-STARTED/DEVELOPMENT/TESTING plus any queued conditional docs, referencing Wave 1 outputs) construct the same doc_assignment fields the parallel path uses and write the file inline, using only file system tools (never browser-based tools). If `monorepo_workspaces` is non-empty, generate per-package READMEs sequentially afterward. Continue to verify_docs.
 
-**Resolve workspace packages from glob patterns:**
-
-```bash
-# Expand workspace globs to actual package directories
-for pattern in {monorepo_workspaces}; do
-  ls -d $pattern 2>/dev/null
-done
-```
-
-**For each resolved directory that contains a `package.json`:**
-
-Determine mode:
-- If `{package_dir}/README.md` exists: mode = `update`, read existing content
-- Else: mode = `create`
-
-Spawn a `gsd-doc-writer` agent with `run_in_background=true`:
-
-```
-Agent(
-  subagent_type="gsd-doc-writer",
-  model="{doc_writer_model}",
-  run_in_background=true,
-  description="Generate per-package README for {package_dir}",
-  prompt="<doc_assignment>
-type: readme
-mode: {create|update}
-scope: per_package
-package_dir: {absolute path to package directory}
-project_context: {INIT JSON with project_root set to package directory}
-{existing_content: | (include full README.md content here if mode is update, else omit)}
-</doc_assignment>
-
-{AGENT_SKILLS}
-
-Write {package_dir}/README.md directly. Return confirmation only — do not return doc content."
-)
-```
-
-> **ORCHESTRATOR RULE — CODEX RUNTIME**: After calling all per-package Agent() calls above with `run_in_background=true`, do NOT generate any package READMEs independently while the subagents are active. Wait for all agents to complete before proceeding. This prevents duplicate work and wasted context.
-
-Collect confirmations by reading each package agent's `outputFile` once it reports completion — each `run_in_background=true` Agent call returns an `async_launched` result carrying an `outputFile` path (with `canReadOutputFile: true`). Note failures in the final report.
-
-**Fallback when Task tool is unavailable:** Generate per-package READMEs sequentially inline after the `sequential_generation` step. For each package directory with a `package.json`, construct the equivalent `doc_assignment` block and generate the README following gsd-doc-writer instructions.
-
-Continue to commit_docs.
-</step>
-
-<step name="sequential_generation" condition="Task tool is NOT available (e.g. Antigravity, Gemini CLI, Codex, Copilot)">
-**Read the work manifest first:** `Read .planning/tmp/docs-work-manifest.json` — use `canonical_queue` items for generation order. Update `status` after each doc is generated. Write the updated manifest back to disk after all docs are complete.
-
-When the `Task` tool is unavailable, generate docs sequentially in the current context. This step replaces dispatch_wave_1, collect_wave_1, dispatch_wave_2, and collect_wave_2.
-
-**IMPORTANT:** Do NOT use `browser_subagent`, `Explore`, or any browser-based tool. Use only file system tools (Read, Bash, Write, Grep, Glob, or equivalent tools available in your runtime).
-
-Read `agents/gsd-doc-writer.md` instructions once before beginning. Follow the create_mode or update_mode instructions from that agent for each doc, using the same doc_assignment fields as the parallel path.
-
-**Wave 1 (sequential — complete all three before starting Wave 2):**
-
-For each Wave 1 doc, construct the equivalent doc_assignment block and generate the file inline:
-
-1. **README** — mode from resolve_modes; for update/supplement mode, include existing_content
-   - Construct doc_assignment: `type: readme`, `mode: {create|update|supplement}`, `preservation_mode: {value|null}`, `project_context: {INIT JSON}`, `existing_content:` (if update/supplement)
-   - Explore the codebase (Read, Grep, Glob, Bash) following gsd-doc-writer create_mode / update_mode instructions
-   - Write the file to the resolved path (README.md)
-
-2. **ARCHITECTURE** — mode from resolve_modes; for update/supplement mode, include existing_content
-   - Construct doc_assignment: `type: architecture`, `mode: {create|update|supplement}`, `preservation_mode: {value|null}`, `project_context: {INIT JSON}`, `existing_content:` (if update/supplement)
-   - Explore the codebase following gsd-doc-writer instructions
-   - Write the file to the resolved path (docs/ARCHITECTURE.md, or ARCHITECTURE.md if found at root as fallback)
-
-3. **CONFIGURATION** — mode from resolve_modes; for update/supplement mode, include existing_content
-   - Construct doc_assignment: `type: configuration`, `mode: {create|update|supplement}`, `preservation_mode: {value|null}`, `project_context: {INIT JSON}`, `existing_content:` (if update/supplement)
-   - Apply VERIFY markers to any infrastructure claim not discoverable from the repository
-   - Explore the codebase following gsd-doc-writer instructions
-   - Write the file to the resolved path (docs/CONFIGURATION.md, or CONFIGURATION.md if found at root as fallback)
-
-**Wave 2 (sequential — begin only after all Wave 1 docs are written):**
-
-Wave 2 docs can reference Wave 1 outputs since they are already written. Include `wave_1_outputs` in each doc_assignment.
-
-4. **GETTING-STARTED** — mode from resolve_modes; include wave_1_outputs: [README.md, docs/ARCHITECTURE.md, docs/CONFIGURATION.md]
-5. **DEVELOPMENT** — mode from resolve_modes; include wave_1_outputs
-6. **TESTING** — mode from resolve_modes; include wave_1_outputs
-7. **API** (only if queued) — mode from resolve_modes; include wave_1_outputs
-8. **DEPLOYMENT** (only if queued) — Apply VERIFY markers to any infrastructure claim not discoverable from the repository; include wave_1_outputs
-9. **CONTRIBUTING** (only if queued) — mode from resolve_modes; include wave_1_outputs
-
-**Monorepo per-package READMEs (only if `monorepo_workspaces` is non-empty):**
-
-After all 9 root-level docs are written, generate per-package READMEs sequentially:
-
-For each resolved package directory (from workspace glob expansion) that contains a `package.json`:
-- Determine mode: if `{package_dir}/README.md` exists, mode = `update`; else mode = `create`
-- Construct doc_assignment: `type: readme`, `mode: {create|update}`, `scope: per_package`, `package_dir: {absolute path}`, `project_context: {INIT JSON with project_root set to package directory}`, `existing_content:` (if update)
-- Follow gsd-doc-writer instructions for per_package scope
-- Write the file to `{package_dir}/README.md`
-
-Continue to verify_docs.
+Exact per-doc construction and the monorepo per-package loop: `gsd-core/workflows/docs-update/detail/elaboration.md` § 1.
 </step>
 
 <step name="verify_docs">
@@ -819,6 +746,21 @@ Extract `canonical_queue` (items with `status: "completed"`) and `review_queue` 
 
 **Skip condition:** If `--verify-only` is present in `{{GSD_ARGS}}`, this step was already handled by `verify_only_report` (early exit). Skip.
 
+**Result file contract (#5050).** The verifier does not choose where its result goes; the orchestrator assigns it. For each doc, compute once:
+
+- `doc_key`: the doc's path relative to `project_root`, `/`-separated, with `%` → `%25` first and then `/` → `%2F` (so `README.md` → `README.md`, `docs/product/README.md` → `docs%2Fproduct%2FREADME.md`). Escaping `%` first makes the key reversible, so two different paths can never share one.
+- `result_path`: `{project_root}/.planning/tmp/verify-{doc_key}.json`, absolute under `project_root`. A subagent's working directory is not guaranteed to be `project_root` (a run inside a `git worktree` is the common case), so every read of a result file and the final cleanup use this same absolute path — never a bare `.planning/tmp/...`.
+
+Pass `result_path` in the verifier's assignment block (the XML below) and read the result back from it.
+
+**Dispatch bound (#5050).** Verifier spawns are bounded by the host's negotiated dispatch capacity, the same query `quick-batch` and chunked planning use, which fails closed to `1` (one at a time) for a host that declares no limit:
+
+```bash
+DISPATCH_CAPACITY=$(gsd_run query dispatch-capacity --raw 2>/dev/null || echo 1)
+```
+
+Spawn the verifiers in batches of at most `DISPATCH_CAPACITY`, and wait for a batch to return before spawning the next, so a runtime with a concurrent-subagent cap never rejects a spawn. This applies to every verifier loop below and to `verify_only_report`.
+
 **Phase 1: Verify canonical docs (generated/updated docs)**
 
 For each doc in `canonical_queue` that was successfully written to disk:
@@ -829,10 +771,11 @@ For each doc in `canonical_queue` that was successfully written to disk:
    <verify_assignment>
    doc_path: {relative path to the doc file, e.g. README.md}
    project_root: {project_root from init JSON}
+   result_path: {project_root}/.planning/tmp/verify-{doc_key}.json
    </verify_assignment>
    ```
 
-2. After the verifier completes, read the result JSON from `.planning/tmp/verify-{doc_filename}.json`.
+2. After the verifier completes, read the result JSON from its `result_path`.
 
 3. Update the manifest: set `status: "verified"` for each canonical doc processed.
 
@@ -843,8 +786,8 @@ This is NOT optional. Every doc in `review_queue` MUST be verified.
 For each doc in `review_queue` from the manifest:
 
 1. Print: `◆ Spawning doc verifier for {doc_path}... (runs in a subagent — no output until it returns, ~1–5 min; expected, not a freeze)`
-   Spawn the `gsd-doc-verifier` agent with the same `<verify_assignment>` block as above.
-2. Read the result JSON from `.planning/tmp/verify-{doc_filename}.json`.
+   Spawn the `gsd-doc-verifier` agent with the same assignment block as above (including its `result_path`).
+2. Read the result JSON from its `result_path`.
 3. Update the manifest: set `status: "verified"` for each review_queue doc processed.
 
 Non-canonical docs with failures ARE eligible for the fix_loop. When a non-canonical doc has `claims_failed > 0`, dispatch it to gsd-doc-writer in `fix` mode with the failures array — the writer's fix mode does surgical corrections on specific lines regardless of doc type (no template needed). The writer MUST NOT restructure, rephrase, or reformat any content beyond the failing claims.
@@ -880,39 +823,16 @@ If any doc (canonical OR non-canonical) has `claims_failed > 0`: continue to fix
 </step>
 
 <step name="fix_loop">
-**Read the work manifest first:** `Read .planning/tmp/docs-work-manifest.json` — identify ALL docs (canonical AND non-canonical) with `claims_failed > 0` from the verification results in `.planning/tmp/verify-*.json`. Both queues are eligible for fixes.
+**Skip condition:** if every doc passed verification (no `claims_failed > 0`), skip this step entirely.
 
-Correct flagged inaccuracies by re-sending failing docs to the doc-writer in fix mode. Per D-06, max 2 iterations. Per D-05, halt immediately on regression.
+Otherwise, correct flagged inaccuracies by re-sending failing docs to `gsd-doc-writer` in `fix` mode (one spawn per doc, never batched), for at most 2 iterations (D-06). Each spawn carries a `<doc_assignment>` block: `type` (the doc's original type), `mode: fix`, `doc_path`, `project_context`, `existing_content` (current file content), and `failures:` — a structured array of `{line, claim, expected, actual}` objects, one per failed claim.
 
-**Skip condition:** If all docs passed verification (no failures), skip this step.
-
-**Iteration tracking:**
-- `MAX_FIX_ITERATIONS = 2`
-- `iteration = 0`
-- `previous_passed_docs` = set of doc_paths where claims_failed === 0 after initial verification
-
-**For each iteration (while iteration < MAX_FIX_ITERATIONS and there are docs with failures):**
-
-1. For each doc with `claims_failed > 0` in the latest verification_results:
+For each doc with a failure, per iteration:
    a. Read the current file content from disk. Record the pre-fix line count:
       ```bash
       PRE_FIX_LINES=$(wc -l < "{doc_path}" 2>/dev/null || echo 0)
       ```
-   b. Spawn `gsd-doc-writer` agent (or invoke sequentially) with a fix assignment:
-      ```xml
-      <doc_assignment>
-      type: {original doc type from the queue, e.g. readme}
-      mode: fix
-      doc_path: {relative path}
-      project_context: {INIT JSON}
-      existing_content: {current file content read from disk}
-      failures:
-        - line: {line}
-          claim: "{claim}"
-          expected: "{expected}"
-          actual: "{actual}"
-      </doc_assignment>
-      ```
+   b. Spawn `gsd-doc-writer` with the `<doc_assignment>` block above.
    c. One agent spawn per doc with failures. Do not batch multiple docs into one spawn.
    d. **Post-fix truncation guard:** After the fix agent completes, check for file corruption:
       ```bash
@@ -924,90 +844,17 @@ Correct flagged inaccuracies by re-sending failing docs to the doc-writer in fix
       - Mark this doc as `"fix-corrupted"` in the manifest; it will appear in remaining failures at the end
       - Do NOT attempt to fix this doc again this iteration. It is still included in the step 2 re-verification (so its failures are counted) but no further fix agent will be dispatched for it in this iteration.
 
-2. After all fix agents complete, re-verify ALL docs (not just the ones that were fixed):
-   - Re-run the same verification process as verify_docs step.
-   - Read updated result JSONs from `.planning/tmp/verify-{doc_filename}.json`.
+After each iteration's fix agents complete, re-verify ALL docs and check for regression (D-05): any doc that previously passed and now fails HALTS the loop immediately — remaining failures require manual review, no further fixes attempted. After 2 iterations with failures remaining, report them and continue.
 
-3. **Regression detection (D-05):**
-   For each doc in the new verification_results:
-   - If this doc was in `previous_passed_docs` (passed in the prior round) AND now has `claims_failed > 0`, this is a REGRESSION.
-   - If regression detected: HALT the loop immediately. Present:
-     ```
-     REGRESSION DETECTED -- halting fix loop.
+Continue to scan_for_secrets either way.
 
-     {doc_path} previously passed verification but now has {claims_failed} failures after fix iteration {iteration + 1}.
-
-     This means the fix introduced new errors. Remaining failures require manual review.
-     ```
-     Continue to scan_for_secrets (do not attempt further fixes).
-
-4. Update `previous_passed_docs` with docs that now pass.
-5. Increment `iteration`.
-
-**After loop exhaustion (iteration === MAX_FIX_ITERATIONS and failures remain):**
-
-Present remaining failures:
-```
-Fix loop completed ({MAX_FIX_ITERATIONS} iterations). Remaining failures:
-
-| Doc               | Failed Claims |
-|-------------------|---------------|
-| {doc_path}        | {count}       |
-
-These failures require manual correction. Review the verification output in .planning/tmp/verify-*.json for details.
-```
-
-Continue to scan_for_secrets.
+Exact iteration bookkeeping and the regression-halt report wording: `gsd-core/workflows/docs-update/detail/elaboration.md` § 2.
 </step>
 
 <step name="verify_only_report">
-**Reached when `--verify-only` is present in `{{GSD_ARGS}}`.** This is an early-exit step — do not proceed to dispatch, generation, commit, or report steps after this step.
+**Reached when `--verify-only` is present in `{{GSD_ARGS}}`** — an early-exit reporting mode: do not proceed to dispatch, generation, commit, or report steps after this step. Spawn `gsd-doc-verifier` (read-only) for every file in `existing_docs`, count `<!-- VERIFY:` markers in each, and present a combined claims-checked/passed/failed/markers table plus a "how to fix" pointer to `$gsd-docs-update` (or `--force` to regenerate everything). Clean up `{project_root}/.planning/tmp/verify-*.json` afterward. Compute `doc_key`/`result_path` and bound the spawns exactly as `verify_docs` § Result file contract and § Dispatch bound specify. End the workflow here.
 
-Invoke the gsd-doc-verifier agent in read-only mode for each file in `existing_docs` from the init JSON:
-
-1. For each doc in `existing_docs`:
-   a. Spawn `gsd-doc-verifier` (or invoke sequentially if Task tool is unavailable) with:
-      ```xml
-      <verify_assignment>
-      doc_path: {doc.path}
-      project_root: {project_root from init JSON}
-      </verify_assignment>
-      ```
-   b. Read the result JSON from `.planning/tmp/verify-{doc_filename}.json`.
-
-2. Also count VERIFY markers in each doc: grep for `<!-- VERIFY:` in the file content.
-
-Present a combined summary table:
-
-```
---verify-only audit:
-
-| File                     | Claims Checked | Passed | Failed | VERIFY Markers |
-|--------------------------|----------------|--------|--------|----------------|
-| README.md                | 12             | 10     | 2      | 0              |
-| docs/ARCHITECTURE.md     | 8              | 8      | 0      | 0              |
-| docs/CONFIGURATION.md    | 5              | 3      | 2      | 5              |
-| ...                 | ...            | ...    | ...    | ...            |
-
-Total: {total_checked} claims checked, {total_failed} failures, {total_markers} VERIFY markers requiring manual review
-```
-
-If any failures exist, show details:
-```
-Failed claims:
-  README.md:34 - "src/cli/index.ts" (expected: file exists, actual: file not found)
-  docs/CONFIGURATION.md:12 - "npm run deploy" (expected: script in package.json, actual: script not found)
-```
-
-Display note:
-```
-To fix failures automatically: $gsd-docs-update (runs generation + fix loop)
-To regenerate all docs from scratch: $gsd-docs-update --force
-```
-
-Clean up temp files: remove `.planning/tmp/verify-*.json` files.
-
-End workflow — do not proceed to any dispatch, commit, or report steps.
+Exact table format and failure-detail wording: `gsd-core/workflows/docs-update/detail/elaboration.md` § 3.
 </step>
 
 <step name="scan_for_secrets">

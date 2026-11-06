@@ -5,6 +5,7 @@ effort: low
 allowed-tools:
   - Read
   - Bash
+  - Grep
 requires: [phase, progress]
 ---
 <objective>
@@ -12,7 +13,7 @@ Display comprehensive project statistics including phase progress, plan executio
 </objective>
 
 <execution_context>
-@./.claude/gsd-core/workflows/stats.md
+@.claude/gsd-core/workflows/stats.md
 </execution_context>
 
 <process>

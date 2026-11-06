@@ -26,6 +26,9 @@ exports.SECTION_HEADERS = void 0;
 exports.countSectionDataRows = countSectionDataRows;
 exports.specSectionStatus = specSectionStatus;
 const node_fs_1 = __importDefault(require("node:fs"));
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cliExitModule = require("./cli-exit.cjs");
+const { ExitError, runMain } = cliExitModule;
 /**
  * Canonical SPEC section header matchers — the SINGLE source of truth for the headings
  * `templates/spec.md` renders. Suffix-tolerant by design: `prohibitions` matches BOTH
@@ -101,11 +104,13 @@ const VALID_KEYS = ['edges', 'prohibitions'];
 // 2 only on a usage error (missing args / bad key). `require.main === module` so it runs only when
 // the compiled `.cjs` is executed directly, never when imported by tests.
 if (require.main === module) {
-    const specFile = process.argv[2];
-    const key = process.argv[3];
-    if (!specFile || !key || !VALID_KEYS.includes(key)) {
-        process.stderr.write('usage: spec-section.cjs <specFile> <edges|prohibitions>\n');
-        process.exit(2);
-    }
-    process.stdout.write(JSON.stringify(specSectionStatus(specFile, key)) + '\n');
+    runMain(() => {
+        const specFile = process.argv[2];
+        const key = process.argv[3];
+        if (!specFile || !key || !VALID_KEYS.includes(key)) {
+            process.stderr.write('usage: spec-section.cjs <specFile> <edges|prohibitions>\n');
+            throw new ExitError(2);
+        }
+        process.stdout.write(JSON.stringify(specSectionStatus(specFile, key)) + '\n');
+    });
 }

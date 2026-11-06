@@ -1,3 +1,5 @@
+Apply response_language to all user-facing prose — narration between tool calls, status updates, progress notes, and findings included; preserve code, paths, and identifiers.
+
 <purpose>
 Display the complete GSD Core command reference. Output ONLY the reference content. Do NOT add project-specific analysis, git status, next-step suggestions, or any commentary beyond the reference.
 </purpose>
@@ -105,7 +107,7 @@ Usage: `$gsd-discuss-phase 2`
 Usage: `$gsd-discuss-phase 2 --batch`
 Usage: `$gsd-discuss-phase 2 --batch=3`
 
-**`$gsd-plan-phase <number> [--research] [--skip-research] [--research-phase <N>] [--view] [--gaps] [--skip-verify] [--prd <file>] [--ingest <path-or-glob>] [--ingest-format <auto|nygard|madr|narrative>] [--reviews] [--text] [--tdd] [--mvp]`**
+**`$gsd-plan-phase <number> [--research] [--skip-research] [--research-phase <N>] [--view] [--gaps] [--skip-verify] [--skip-ui] [--prd <file>] [--ingest <path-or-glob>] [--ingest-format <auto|nygard|madr|narrative>] [--reviews] [--text] [--bounce] [--skip-bounce] [--chunked] [--tdd] [--mvp] [--granularity <coarse|standard|fine>] [--no-tracer] [--no-reversibility-gates]`**
 Create detailed execution plan for a specific phase.
 
 - `--skip-research` — bypass the research subagent
@@ -113,10 +115,17 @@ Create detailed execution plan for a specific phase.
   - Modifiers: `--research` forces refresh (re-spawn researcher). `--view` prints existing `RESEARCH.md` to stdout without spawning. With neither, auto-uses an existing `RESEARCH.md` (one-line notice, then clean exit).
 - `--gaps` — focus only on closing gaps from a prior plan-check
 - `--skip-verify` — skip the post-plan verifier loop
+- `--skip-ui` — skip the UI-SPEC gate for a detected frontend phase (not recommended for frontend phases)
 - `--ingest <path-or-glob>` — pre-ingest external ADRs/PRDs/SPECs before planning (see *PRD Express Path* below)
 - `--ingest-format <auto|nygard|madr|narrative>` — hint the ADR ingester's parser when `--ingest` is set; defaults to `auto`
+- `--bounce` — run the optional external plan-refinement pass (or set `workflow.plan_bounce: true` to activate by default); requires `workflow.plan_bounce_script`
+- `--skip-bounce` — disable the plan-refinement pass even when `workflow.plan_bounce` config enables it
+- `--chunked` — split the planner run into a short outline pass plus one short per-plan pass each (~3–5 min), committing each plan individually for crash resilience; re-running `--chunked` resumes from the last committed plan (or set `workflow.plan_chunked: true` to activate by default)
 - `--tdd` — plan in test-driven order (tests before code)
-- `--mvp` — vertical-slice MVP planning mode (see also `$gsd-mvp-phase`)
+- `--mvp` — MVP enrichment (user story + Walking Skeleton) on top of the default tracer-first ordering (see also `$gsd-mvp-phase`)
+- `--granularity <coarse|standard|fine>` — override the resolved plan granularity for this run (wins over per-phase/top-level config and project defaults)
+- `--no-tracer` — opt out of the default tracer-first slice and plan horizontal layers (legacy default)
+- `--no-reversibility-gates` — suppress the `checkpoint:decision` a `one-way`-door decision normally earns, for intentionally-unattended runs (ratings are still recorded)
 
 - Generates `.planning/phases/XX-phase-name/XX-YY-PLAN.md`
 - Breaks phase into concrete, actionable tasks
@@ -188,6 +197,16 @@ Result: Creates `.planning/quick/NNN-slug/PLAN.md`, `.planning/quick/NNN-slug/NN
 
 ---
 
+**`$gsd-quick-batch [--file <path>] [--jobs auto|N] [--validate] [--research] [--resume <batch-id>] [task list]`**
+Batch several `$gsd-quick`-shaped tasks together (inline list or `--file <path>`) — one coordinator plans, dispatches, and merges them as one run.
+
+Flags: `--jobs auto|N` (cap concurrency at `min(tasks, N, capacity)`) · `--validate` (plan-checker + post-merge verification) · `--research` (per-item researcher) · `--resume <batch-id>` (dispatch only eligible items). `--discuss`/`--full` are rejected.
+
+Usage: `$gsd-quick-batch --jobs 3 --validate`
+Result: Per-item artifacts under `.planning/quick/`; batch state in `.planning/quick-batches/<batch-id>/BATCH.json`
+
+---
+
 **`$gsd-fast [description]`**
 Execute a trivial task inline — no subagents, no planning files, no overhead.
 
@@ -249,11 +268,13 @@ Start a new milestone through unified flow.
 - Requirements definition with scoping
 - Roadmap creation with phase breakdown
 - Optional `--reset-phase-numbers` flag restarts numbering at Phase 1 and archives old phase dirs first for safety
+- Optional `--ws <name>` flag scopes the milestone to a workstream and skips the shared `PROJECT.md` write
 
 Mirrors `$gsd-new-project` flow for brownfield projects (existing PROJECT.md).
 
 Usage: `$gsd-new-milestone "v2.0 Features"`
 Usage: `$gsd-new-milestone --reset-phase-numbers "v2.0 Features"`
+Usage: `$gsd-new-milestone --ws search "v2.0 Search"`
 
 **`$gsd-complete-milestone <version>`**
 Archive completed milestone and prepare for next version.
@@ -281,7 +302,7 @@ Modes:
 - **default** — progress report + intelligent routing
 - **`--next`** — auto-advance to the next logical step (use `--next --force` to bypass safety gates)
 - **`--next --auto`** — like `--next`, but chains steps automatically until milestone completion or a blocking decision
-- **`--next --converge`** — when the next action is planning, route it through `$gsd-plan-review-convergence` instead of `$gsd-plan-phase`; requires `workflow.plan_review_convergence=true`. `--cross-ai` is an alias. Reviewer flags (`--codex`, `--gemini`, `--claude`, `--opencode`, `--ollama`, `--lm-studio`, `--llama-cpp`, `--all`) and `--max-cycles N` forward to the convergence loop.
+- **`--next --converge`** — when the next action is planning, route it through `$gsd-plan-review-convergence` instead of `$gsd-plan-phase`; requires `workflow.plan_review_convergence=true`. `--cross-ai` is an alias. Reviewer flags (`--codex`, `--claude`, `--opencode`, `--ollama`, `--lm-studio`, `--llama-cpp`, `--all`) and `--max-cycles N` forward to the convergence loop.
 - **`--forensic`** — append a 6-check integrity audit after the progress report
 - **`--do "<text>"`** — smart router: dispatch freeform intent to the matching `/gsd-*` command (see *Smart Router* above)
 
@@ -396,7 +417,7 @@ Usage: `$gsd-capture Add auth token refresh`
 **`$gsd-capture --note <text>`**
 Zero-friction note capture — one command, instant save, no questions.
 
-- Saves timestamped note to `.planning/notes/` (or `./.codex/notes/` globally)
+- Saves timestamped note to `.planning/notes/` (or `.codex/notes/` globally)
 - Three subcommands: append (default), list, promote
 - Promote converts a note into a structured todo
 - Works without a project (falls back to global scope)
@@ -413,7 +434,7 @@ List pending todos and select one to work on.
 - Optional area filter (e.g., `$gsd-capture --list api`)
 - Loads full context for selected todo
 - Routes to appropriate action (work now, add to phase, brainstorm)
-- Moves todo to done/ when work begins
+- Moves todo to completed/ when work begins
 
 Usage: `$gsd-capture --list`
 Usage: `$gsd-capture --list api`
@@ -423,7 +444,7 @@ List and audit captured seeds (read-only).
 
 - Lists all seeds with ID, status, scope, trigger, and title
 - Optional status filter (e.g., `$gsd-capture --list-seeds dormant`)
-- Does not modify any seed — enrich with `$gsd-capture --seed --enrich SEED-NNN`
+- Does not modify any seed — enrich with `$gsd-capture --seed --enrich SEED-YYMMDD-XXX`
 
 Usage: `$gsd-capture --list-seeds`
 Usage: `$gsd-capture --list-seeds dormant`
@@ -456,10 +477,10 @@ Usage: `$gsd-ship 4` or `$gsd-ship 4 --draft`
 
 ---
 
-**`$gsd-review --phase N [--gemini] [--claude] [--codex] [--coderabbit] [--opencode] [--qwen] [--cursor] [--agy] [--all]`**
+**`$gsd-review --phase N [--claude] [--codex] [--coderabbit] [--opencode] [--qwen] [--cursor] [--agy] [--all]`**
 Cross-AI peer review — invoke external AI CLIs to independently review phase plans.
 
-- Detects available CLIs (gemini, claude, codex, coderabbit, agy)
+- Detects available CLIs (claude, codex, coderabbit, agy)
 - Each CLI reviews plans independently with the same structured prompt
 - CodeRabbit reviews the current git diff (not a prompt) — may take up to 5 minutes
 - Produces REVIEWS.md with per-reviewer feedback and consensus summary
@@ -620,7 +641,7 @@ The commands above cover the most common day-to-day flows. Every command listed 
 
 - **`$gsd-mvp-phase <phase-number>`** — Plan a phase as a vertical MVP slice (user story + SPIDR splitting) before handing off to plan-phase. Same end-state as `$gsd-plan-phase --mvp`, with a guided MVP-shaping intro.
 - **`$gsd-ultraplan-phase [phase]`** — [BETA] Offload plan phase to Claude Code's ultraplan cloud; review in browser and import back.
-- **`$gsd-plan-review-convergence <phase> [--codex] [--gemini] [--claude] [--opencode] [--ollama] [--lm-studio] [--llama-cpp] [--all] [--text] [--ws <name>] [--max-cycles N]`** — Cross-AI plan convergence loop — replan with review feedback until no HIGH concerns remain. Supports both cloud reviewers (Codex/Gemini/the agent/OpenCode) and local model runtimes (Ollama, LM Studio, llama.cpp).
+- **`$gsd-plan-review-convergence <phase> [--claude] [--codex] [--coderabbit] [--opencode] [--qwen] [--cursor] [--agy/--antigravity] [--ollama] [--lm-studio] [--llama-cpp] [--kimi-code] [--all] [--text] [--ws <name>] [--max-cycles N]`** — Cross-AI plan convergence loop — replan with review feedback until no HIGH concerns remain. Supports both cloud reviewers (the agent/Codex/CodeRabbit/OpenCode/Qwen/Cursor/Antigravity/Kimi Code) and local model runtimes (Ollama, LM Studio, llama.cpp).
 - **`$gsd-autonomous [--from N] [--to N] [--only N] [--interactive] [--converge]`** — Run all remaining phases autonomously: discuss → plan → execute per phase. `--converge` routes planning through plan-review convergence; `--cross-ai` is an alias.
 
 ### Quality, Review & Verification
@@ -684,7 +705,7 @@ These six skills exist primarily for the model to perform two-stage hierarchical
 ├── config.json           # Workflow mode & gates
 ├── todos/                # Captured ideas and tasks
 │   ├── pending/          # Todos waiting to be worked on
-│   └── done/             # Completed todos
+│   └── completed/        # Completed todos
 ├── spikes/               # Spike experiments ($gsd-spike)
 │   ├── MANIFEST.md       # Spike inventory and verdicts
 │   └── NNN-name/         # Individual spike directories

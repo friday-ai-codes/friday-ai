@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// gsd-hook-version: 1.7.0
+// gsd-hook-version: 1.20.1
 // gsd-cursor-post-tool.js — Cursor postToolUse hook (issue #777)
 //
 // Cursor invokes this script after each tool call completes.
@@ -22,6 +22,8 @@
 
 'use strict';
 
+const { allow } = require('./lib/hook-exit.js');
+
 const WRITE_TOOL_RE = /write|edit|replace|create|delete|remove|append|apply|patch|insert|mkdir/i;
 const PATH_KEY_RE = /^(path|file|file_?path|filepath|target_?path|target|dir|directory|uri|filename)$/i;
 const PLANNING_PATH_RE = /(^|[\\/])\.planning([\\/]|$)/;
@@ -29,7 +31,7 @@ const PLANNING_PATH_RE = /(^|[\\/])\.planning([\\/]|$)/;
 let raw = '';
 const stdinTimeout = setTimeout(() => {
   // Timeout guard: exit silently rather than hanging.
-  process.exit(0);
+  allow(undefined);
 }, 10000);
 
 process.stdin.setEncoding('utf8');
