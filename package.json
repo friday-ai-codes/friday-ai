@@ -11,13 +11,13 @@
  },
  "devDependencies": {
   "vitepress": "^1.6.4",
-  "vitepress-plugin-group-icons": "^1.7.5",
-  "vitepress-plugin-llms": "^1.13.1",
-  "vue": "^3.5.32"
+  "vitepress-plugin-group-icons": "^1.8.1",
+  "vitepress-plugin-llms": "^1.14.0",
+  "vue": "^3.5.45"
  },
- "packageManager": "pnpm@10.30.3+sha512.c961d1e0a2d8e354ecaa5166b822516668b7f44cb5bd95122d590dd81922f606f5473b6d23ec4a5be05e7fcd18e8488d47d978bbe981872f1145d06e9a740017",
+ "packageManager": "pnpm@10.34.9+sha512.f49b5a8ea0fdedb44bb3c0c1d6575092a53c2950d95b7ad15df11f17974877a2de3a01c07e934e9b28ce716e51c09a94962c7306d09be2e1e4b18a8c8762fd32",
  "dependencies": {
-  "@vue/language-server": "^3.3.9",
+  "@vue/language-server": "^3.3.14",
   "semgrep": "^0.0.1"
  }
 }
