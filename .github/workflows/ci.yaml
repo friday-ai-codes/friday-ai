@@ -46,7 +46,7 @@ concurrency:
 jobs:
   server-ci:
     name: server-ci (SQLite 默认)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: server
@@ -66,18 +66,24 @@ jobs:
         with:
           enable-cache: true
       - uses: actions/setup-python@v6
+        id: python
         with:
-          python-version-file: server/.python-version
-          allow-prereleases: true
+          python-version: "3.14"
+      # Bind uv to the installed binary even when server/.python-version pins a local patch.
+      - name: Select the installed Python for uv
+        run: echo "UV_PYTHON=${{ steps.python.outputs.python-path }}" >> "$GITHUB_ENV"
       - name: Install dependencies (含 dev 组)
-        run: uv sync --locked --dev
+        run: |
+          uv sync --locked --dev
+          python_version="$(.venv/bin/python --version)"
+          echo "Locked uv sync succeeded with $python_version." >> "$GITHUB_STEP_SUMMARY"
       - name: Django system check
-        run: uv run python manage.py check
+        run: uv run --locked python manage.py check
       # 全量 ruff 仍有大量历史遗留告警；作为 advisory baseline 不阻塞门禁，
       # 与历史 ci.yaml 既有约定一致（聚焦阶段不顺带清理 legacy lint）。
       - name: Ruff lint (advisory legacy baseline)
         continue-on-error: true
-        run: uv run ruff check .
+        run: uv run --locked ruff check .
       # 默认 addopts 即 SQLite 且 `-m 'not ... and not postgres_queue'`，
       # 无需显式 -m；该步骤即"SQLite 默认路径不受影响"的零回归门禁。
       #
@@ -87,14 +93,14 @@ jobs:
       - name: Pytest (SQLite 默认路径)
         run: |
           set -o pipefail
-          uv run pytest 2>&1 | tee pytest-output.log || {
+          uv run --locked pytest 2>&1 | tee pytest-output.log || {
             grep -E '^(FAILED|ERROR) ' pytest-output.log | head -50 | sed 's/^/::error::/'
             exit 1
           }
 
   postgres-queue:
     name: postgres-queue (durable Postgres)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     defaults:
       run:
         working-directory: server
@@ -124,22 +130,28 @@ jobs:
         with:
           enable-cache: true
       - uses: actions/setup-python@v6
+        id: python
         with:
-          python-version-file: server/.python-version
-          allow-prereleases: true
+          python-version: "3.14"
+      # Bind uv to the installed binary even when server/.python-version pins a local patch.
+      - name: Select the installed Python for uv
+        run: echo "UV_PYTHON=${{ steps.python.outputs.python-path }}" >> "$GITHUB_ENV"
       - name: Install dependencies (含 dev 组)
-        run: uv sync --locked --dev
+        run: |
+          uv sync --locked --dev
+          python_version="$(.venv/bin/python --version)"
+          echo "Locked uv sync succeeded with $python_version." >> "$GITHUB_STEP_SUMMARY"
       # 迁移角色短路 web-only 启动副作用（DURABLE-02）；对真实 Postgres 建含
       # procrastinate 的全部表，避免测试期 `relation "procrastinate_jobs" does not exist`（Pitfall 3）。
       - name: Migrate (建 procrastinate 表)
         env:
           FRIDAY_PROCESS_ROLE: migrate
-        run: uv run python manage.py migrate --noinput
+        run: uv run --locked python manage.py migrate --noinput
       # --allow-hosts 放行 pytest-socket（默认 --disable-socket）对 127.0.0.1:5432 的 TCP 连接（Pitfall 2）。
       # 覆盖 defer/priority/retry-backoff/stalled rescue(forged-heartbeat)/并发 worker 竞争/SQLite fallback 退化。
       # 注：真实 kill-worker E2E 为 human_needed（见 60-VALIDATION.md），CI 以 forged-heartbeat 自动逼近 rescue。
       - name: Pytest -m postgres_queue (durable Postgres 行为)
-        run: uv run pytest -m postgres_queue --allow-hosts=127.0.0.1,localhost
+        run: uv run --locked pytest -m postgres_queue --allow-hosts=127.0.0.1,localhost
 
   web-ci:
     name: web-ci (类型检查 + 单测)
