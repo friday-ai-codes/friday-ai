@@ -27,6 +27,9 @@
  * the additive, importable server surface a host (or the bin shim) drives.
  */
 'use strict';
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SERVER_NAME = exports.PROTOCOL_VERSION = void 0;
 exports.handleMessage = handleMessage;
@@ -36,9 +39,62 @@ const stateIo = require("./state-io.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const shellCommandProjection = require("./shell-command-projection.cjs");
 const { dispatchGsdCommand } = shellCommandProjection;
+const node_fs_1 = __importDefault(require("node:fs"));
+const node_path_1 = __importDefault(require("node:path"));
+const mcp_catalog_cjs_1 = require("./mcp-catalog.cjs");
 exports.PROTOCOL_VERSION = '2024-11-05';
 exports.SERVER_NAME = 'gsd-core';
-const SERVER_VERSION = '1.7.0';
+// #3072: resolve SERVER_VERSION from package.json (source tree) or the
+// installed gsd-core/VERSION marker, WITHOUT a top-level `require(...)` —
+// mirrors the established, already-precedented resolver in
+// `runtime-artifact-conversion.cts`'s `gsdVersion()` (#1383): a top-level
+// require would throw on any runtime whose root has no package.json/VERSION,
+// and `scripts/sync-manifest-versions.cjs` is not a fit here — its
+// `VERSIONED_MANIFESTS` list stamps a `version` FIELD into hand-authored JSON
+// manifests (plugin.json, marketplace.json, vscode/package.json); a `.cts`
+// source constant is not a JSON document that script can round-trip through
+// `readJson`/`setByPath`, and teaching it to text-edit TypeScript source
+// would be a much larger footprint than this lazy, cached, defensive read.
+// Resolved once per process (never per-request) and cached; a failed lookup
+// degrades to '0.0.0' (never `undefined`, never a crash) rather than making
+// `initialize`'s `serverInfo.version` field absent or malformed.
+const SEMVER_PREFIX = /^\d+\.\d+\.\d+/;
+let cachedServerVersion;
+function resolveServerVersion() {
+    if (cachedServerVersion !== undefined)
+        return cachedServerVersion;
+    let version = '0.0.0';
+    try {
+        const v = node_fs_1.default.readFileSync(node_path_1.default.join(__dirname, '..', '..', 'VERSION'), 'utf8').trim();
+        if (SEMVER_PREFIX.test(v))
+            version = v;
+    }
+    catch {
+        /* not an installed tree (no gsd-core/VERSION) */
+    }
+    if (version === '0.0.0') {
+        try {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy, defensive: a top-level require would throw on a runtime root with no package.json.
+            const pkg = require(node_path_1.default.join(__dirname, '..', '..', '..', 'package.json'));
+            if (pkg && typeof pkg.version === 'string' && SEMVER_PREFIX.test(pkg.version))
+                version = pkg.version;
+        }
+        catch {
+            /* runtime root has no package.json */
+        }
+    }
+    cachedServerVersion = version;
+    return version;
+}
+// Catalog is built once per process, lazily, and cached (design "Shape" /
+// Gall's Law — no watching, no invalidation; Known limits: the package is
+// immutable in every install mode we ship).
+let cachedCatalog;
+function getCatalog() {
+    if (cachedCatalog === undefined)
+        cachedCatalog = (0, mcp_catalog_cjs_1.buildCatalog)();
+    return cachedCatalog;
+}
 // JSON-RPC 2.0 error codes.
 const PARSE_ERROR = -32700;
 const INVALID_REQUEST = -32600;
@@ -53,10 +109,10 @@ const TOOLS = [
             type: 'object',
             properties: {
                 family: { type: 'string', description: 'Command family (e.g. "query", "state", "phase").' },
-                subcommand: { type: 'string', description: 'Subcommand name.' },
+                subcommand: { type: 'string', description: 'Subcommand name, if the command takes one. Omit or leave empty for family-only commands.' },
                 args: { type: 'array', items: {}, description: 'Positional args.' },
             },
-            required: ['family', 'subcommand'],
+            required: ['family'],
         },
     },
     {
@@ -93,6 +149,32 @@ function okResponse(id, result) {
 function asString(v) {
     return typeof v === 'string' ? v : null;
 }
+/** Extract the {@link REASON} carried by a `CatalogError`, if any (see `mcp-catalog.cts`). */
+function catalogErrorReason(err) {
+    const reason = err && typeof err === 'object' ? err.reason : undefined;
+    return typeof reason === 'string' ? reason : undefined;
+}
+function catalogErrorMessage(err) {
+    return err instanceof Error ? err.message : String(err);
+}
+/**
+ * Map a `mcp-catalog.cts` `CatalogError.reason` to a JSON-RPC error code.
+ * `READ_FAILED` is a server-side IO/compose failure (`INTERNAL_ERROR`);
+ * every other reason (unknown uri/prompt/cursor/root, malformed/traversal
+ * uri, wrong-typed param) is a client-supplied-value problem (`INVALID_PARAMS`)
+ * — deliberately never `METHOD_NOT_FOUND`, so a refusal is never
+ * indistinguishable from the method simply not existing (test-matrix rows
+ * 33/35).
+ */
+function catalogErrorCode(err) {
+    return catalogErrorReason(err) === mcp_catalog_cjs_1.REASON.READ_FAILED ? INTERNAL_ERROR : INVALID_PARAMS;
+}
+function wireResource(entry) {
+    return { uri: entry.uri, name: entry.name, title: entry.title, description: entry.description, mimeType: entry.mimeType };
+}
+function wirePrompt(entry) {
+    return { name: entry.name, title: entry.title, description: entry.description };
+}
 function callTool(name, args, ctx) {
     const a = (args && typeof args === 'object' ? args : {});
     const cwd = asString(ctx.cwd) || process.cwd();
@@ -100,10 +182,13 @@ function callTool(name, args, ctx) {
         if (name === 'gsd_invoke_command') {
             const family = asString(a.family);
             const subcommand = asString(a.subcommand);
-            if (!family || !subcommand) {
-                return { isError: true, content: [{ type: 'text', text: 'gsd_invoke_command requires string "family" and "subcommand".' }] };
+            if (!family) {
+                return { isError: true, content: [{ type: 'text', text: 'gsd_invoke_command requires a non-empty string "family".' }] };
             }
-            const res = dispatchGsdCommand({ family, subcommand, args: Array.isArray(a.args) ? a.args : [], cwd });
+            if (a.subcommand !== undefined && subcommand === null) {
+                return { isError: true, content: [{ type: 'text', text: 'gsd_invoke_command requires string "subcommand" when provided.' }] };
+            }
+            const res = dispatchGsdCommand({ family, subcommand: subcommand ?? undefined, args: Array.isArray(a.args) ? a.args : [], cwd });
             if (!res.ok) {
                 return { isError: true, content: [{ type: 'text', text: res.stderr || res.stdout || `dispatch failed (exit ${res.code})` }] };
             }
@@ -148,8 +233,12 @@ function handleMessage(request, ctx = {}) {
         case 'initialize':
             result = {
                 protocolVersion: exports.PROTOCOL_VERSION,
-                capabilities: { tools: {} },
-                serverInfo: { name: exports.SERVER_NAME, version: SERVER_VERSION },
+                // #3072: resources/prompts declared alongside tools. Deliberately NO
+                // subscribe/listChanged — nothing ever sends those notifications
+                // (design row 2 / Hyrum's Law: advertising an unimplemented
+                // notification is a lie a host would act on).
+                capabilities: ctx.prompts === false ? { tools: {}, resources: {} } : { tools: {}, resources: {}, prompts: {} },
+                serverInfo: { name: exports.SERVER_NAME, version: resolveServerVersion() },
             };
             break;
         case 'tools/list':
@@ -161,6 +250,56 @@ function handleMessage(request, ctx = {}) {
             if (!toolName)
                 return errorResponse(id, INVALID_PARAMS, 'tools/call requires string "name".');
             result = callTool(toolName, params.arguments, ctx);
+            break;
+        }
+        case 'resources/list': {
+            const params = (request.params && typeof request.params === 'object' ? request.params : {});
+            try {
+                const cursor = typeof params.cursor === 'string' ? params.cursor : undefined;
+                const pageSize = typeof params.pageSize === 'number' ? params.pageSize : undefined;
+                const page = (0, mcp_catalog_cjs_1.listResources)(getCatalog(), { cursor, pageSize });
+                result = page.nextCursor === undefined
+                    ? { resources: page.resources.map(wireResource) }
+                    : { resources: page.resources.map(wireResource), nextCursor: page.nextCursor };
+            }
+            catch (e) {
+                return errorResponse(id, catalogErrorCode(e), catalogErrorMessage(e));
+            }
+            break;
+        }
+        case 'resources/read': {
+            const params = (request.params && typeof request.params === 'object' ? request.params : {});
+            try {
+                const read = (0, mcp_catalog_cjs_1.readResource)(getCatalog(), params.uri);
+                result = { contents: [{ uri: read.uri, mimeType: read.mimeType, text: read.text }] };
+            }
+            catch (e) {
+                return errorResponse(id, catalogErrorCode(e), catalogErrorMessage(e));
+            }
+            break;
+        }
+        case 'prompts/list':
+            if (ctx.prompts === false)
+                return isNotification ? null : errorResponse(id, METHOD_NOT_FOUND, 'Method not found: prompts/list.');
+            result = {
+                prompts: [...getCatalog().prompts.values()]
+                    .map(wirePrompt)
+                    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
+            };
+            break;
+        case 'prompts/get': {
+            if (ctx.prompts === false)
+                return isNotification ? null : errorResponse(id, METHOD_NOT_FOUND, 'Method not found: prompts/get.');
+            const params = (request.params && typeof request.params === 'object' ? request.params : {});
+            const name = asString(params.name);
+            if (!name)
+                return errorResponse(id, INVALID_PARAMS, 'prompts/get requires string "name".');
+            try {
+                result = (0, mcp_catalog_cjs_1.getPrompt)(getCatalog(), name, params.arguments);
+            }
+            catch (e) {
+                return errorResponse(id, catalogErrorCode(e), catalogErrorMessage(e));
+            }
             break;
         }
         default:

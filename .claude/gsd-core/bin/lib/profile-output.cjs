@@ -29,6 +29,7 @@ const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs")
 const runtime_homes_cjs_1 = require("./runtime-homes.cjs");
 const runtime_slash_cjs_1 = require("./runtime-slash.cjs");
 const runtime_name_policy_cjs_1 = require("./runtime-name-policy.cjs");
+const frontmatter_fence_cjs_1 = require("./frontmatter-fence.cjs");
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DIMENSION_KEYS = [
     'communication_style', 'decision_speed', 'explanation_depth',
@@ -203,6 +204,7 @@ function buildClaudeMdWorkflowEnforcement(runtime) {
         'Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.',
         '',
         'Use these entry points:',
+        `- \`${String((0, runtime_slash_cjs_1.formatGsdSlash)('fast', runtime))}\` for a trivial task inline, with no subagents and no PLAN.md`,
         `- \`${String((0, runtime_slash_cjs_1.formatGsdSlash)('quick', runtime))}\` for small fixes, doc updates, and ad-hoc tasks`,
         `- \`${String((0, runtime_slash_cjs_1.formatGsdSlash)('debug', runtime))}\` for investigation and bug fixing`,
         `- \`${String((0, runtime_slash_cjs_1.formatGsdSlash)('execute-phase', runtime))}\` for planned phase work`,
@@ -477,10 +479,11 @@ function generateSkillsSection(cwd) {
  */
 function extractSkillFrontmatter(content) {
     const result = { name: '', description: '' };
-    const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
-    if (!fmMatch)
+    // The block is the one the one fence owner (`locateFrontmatterFence`) finds.
+    const fence = (0, frontmatter_fence_cjs_1.locateFrontmatterFence)(content);
+    if (!fence?.closed)
         return result;
-    const fmBlock = fmMatch[1];
+    const fmBlock = content.slice(fence.openEnd, fence.bodyEnd);
     const lines = fmBlock.split('\n');
     let currentKey = '';
     for (const line of lines) {
@@ -920,24 +923,50 @@ function cmdGenerateClaudeProfile(cwd, options, raw) {
         '<!-- GSD:profile-end -->',
     ];
     const sectionContent = sectionLines.join('\n');
+    // #2565: resolve target through effective runtime policy instead of
+    // hardcoded .claude/CLAUDE.md. Mirrors the #3163 fix applied to
+    // cmdGenerateClaudeMd above; that fix diverged when it didn't propagate
+    // here, leaving /gsd-profile-user writing Claude files on Codex installs.
+    // - Project scope: getProjectInstructionFile(runtime) is the single source
+    //   of truth (AGENTS.md for codex/opencode/kilo/kimi/unknown; GEMINI.md for
+    //   antigravity; .github/copilot-instructions.md for copilot).
+    // - Global scope: ~/.<config-home>/<instruction-basename>, derived from
+    //   getGlobalConfigDir + basename(getProjectInstructionFile), so codex lands
+    //   at ~/.codex/AGENTS.md. Claude global is preserved byte-for-byte (no
+    //   env-var drift beyond the prior hardcoded path).
+    // - GSD_RUNTIME env var takes precedence over config.runtime (mirrors the
+    //   #3163 env-precedence contract). Non-claude always wins over a stale
+    //   claude_md_path (#3163 rationale: an AGENTS-native project must never
+    //   write to CLAUDE.md even if a prior Claude setup left claude_md_path).
+    let config = {};
+    try {
+        config = loadConfig(cwd);
+    }
+    catch { /* use defaults */ }
+    const effectiveRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(process.env['GSD_RUNTIME'], config['runtime']);
+    const isClaudeRuntime = !effectiveRuntime || effectiveRuntime === 'claude';
     let targetPath;
     if (options.global) {
-        targetPath = node_path_1.default.join(node_os_1.default.homedir(), '.claude', 'CLAUDE.md');
+        if (isClaudeRuntime) {
+            targetPath = node_path_1.default.join(node_os_1.default.homedir(), '.claude', 'CLAUDE.md');
+        }
+        else {
+            targetPath = node_path_1.default.join((0, runtime_homes_cjs_1.getGlobalConfigDir)(effectiveRuntime), node_path_1.default.basename((0, runtime_name_policy_cjs_1.getProjectInstructionFile)(effectiveRuntime)));
+        }
     }
     else if (options.output) {
         targetPath = node_path_1.default.isAbsolute(options.output) ? options.output : node_path_1.default.join(cwd, options.output);
     }
     else {
-        // Read claude_md_path from config; #1098 default is ./.claude/CLAUDE.md
+        // Read claude_md_path from config; #1098 default is .claude/CLAUDE.md
         // (kept consistent with cmdGenerateClaudeMd so the profile section and the
         // managed sections land in the same file on a config-less project).
-        let configClaudeMdPath = './.claude/CLAUDE.md';
-        try {
-            const config = loadConfig(cwd);
-            if (config['claude_md_path'])
-                configClaudeMdPath = config['claude_md_path'];
+        let configClaudeMdPath = '.claude/CLAUDE.md';
+        if (config['claude_md_path'])
+            configClaudeMdPath = config['claude_md_path'];
+        if (!isClaudeRuntime) {
+            configClaudeMdPath = (0, runtime_name_policy_cjs_1.getProjectInstructionFile)(effectiveRuntime);
         }
-        catch { /* use default */ }
         targetPath = node_path_1.default.isAbsolute(configClaudeMdPath) ? configClaudeMdPath : node_path_1.default.join(cwd, configClaudeMdPath);
     }
     let action;

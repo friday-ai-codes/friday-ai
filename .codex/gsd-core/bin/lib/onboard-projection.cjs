@@ -117,7 +117,11 @@ function listPlanningDocCandidates(cwd) {
     return [...candidates].sort();
 }
 function listCodebaseMapFiles(cwd) {
-    const codebaseDir = node_path_1.default.join(planningRoot(cwd), 'codebase');
+    // #3964: project-scoped, agreeing with init's map-codebase surface and
+    // verify.cts's codebase drift check — a flat-root read made
+    // has_codebase_map/needs_codebase_map answer for the wrong project under
+    // GSD_PROJECT.
+    const codebaseDir = node_path_1.default.join(planningDir(cwd), 'codebase');
     if (!node_fs_1.default.existsSync(codebaseDir))
         return [];
     return REQUIRED_CODEBASE_MAP_FILES.filter((file) => node_fs_1.default.existsSync(node_path_1.default.join(codebaseDir, file)));
@@ -269,7 +273,9 @@ function buildOnboardProjection(cwd, options) {
             projectExists,
             mapReadiness: mapReadinessValue,
             onboardingSummaryExists,
-            onboardingSummaryPath: toPosixPath(node_path_1.default.relative(cwd, onboardingSummaryPath)),
+            // #2376: absolute (anchored on cwd/project_root), not orchestrator-cwd-relative —
+            // a spawned subagent's own cwd may differ from the orchestrator's.
+            onboardingSummaryPath: toPosixPath(onboardingSummaryPath),
             hasPlanningArtifacts,
             missingPlanningFiles,
             handoffCommands,
@@ -289,13 +295,14 @@ function buildOnboardProjection(cwd, options) {
         doc_candidate_count: docCandidates.length,
         doc_candidates: docCandidates,
         onboarding_summary_exists: onboardingSummaryExists,
-        onboarding_summary_path: toPosixPath(node_path_1.default.relative(cwd, onboardingSummaryPath)),
-        project_path: toPosixPath(node_path_1.default.relative(cwd, node_fs_1.default.existsSync(projectRootPath) ? projectRootPath : projectScopedPath)),
-        requirements_path: toPosixPath(node_path_1.default.relative(cwd, node_path_1.default.join(planningDir(cwd), 'REQUIREMENTS.md'))),
-        roadmap_path: toPosixPath(node_path_1.default.relative(cwd, node_path_1.default.join(planningDir(cwd), 'ROADMAP.md'))),
-        state_path: toPosixPath(node_path_1.default.relative(cwd, node_path_1.default.join(planningDir(cwd), 'STATE.md'))),
-        codebase_dir: toPosixPath(node_path_1.default.relative(cwd, node_path_1.default.join(planningRoot(cwd), 'codebase'))),
-        onboarding_dir: toPosixPath(node_path_1.default.relative(cwd, node_path_1.default.join(planningRoot(cwd), 'onboarding'))),
+        // #2376: absolute — see comment on onboardingSummaryPath above.
+        onboarding_summary_path: toPosixPath(onboardingSummaryPath),
+        project_path: toPosixPath(node_fs_1.default.existsSync(projectRootPath) ? projectRootPath : projectScopedPath),
+        requirements_path: toPosixPath(node_path_1.default.join(planningDir(cwd), 'REQUIREMENTS.md')),
+        roadmap_path: toPosixPath(node_path_1.default.join(planningDir(cwd), 'ROADMAP.md')),
+        state_path: toPosixPath(node_path_1.default.join(planningDir(cwd), 'STATE.md')),
+        codebase_dir: toPosixPath(node_path_1.default.join(planningRoot(cwd), 'codebase')),
+        onboarding_dir: toPosixPath(node_path_1.default.join(planningRoot(cwd), 'onboarding')),
     };
 }
 module.exports = {

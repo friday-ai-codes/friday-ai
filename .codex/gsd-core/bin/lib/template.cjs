@@ -23,7 +23,7 @@ const phaseIdMod = require("./phase-id.cjs");
 const { normalizePhaseName } = phaseIdMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const phaseLocatorMod = require("./phase-locator.cjs");
-const { findPhaseInternal } = phaseLocatorMod;
+const { phaseDirectoryOptions, findPhaseInternal } = phaseLocatorMod;
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
@@ -80,7 +80,7 @@ function cmdTemplateFill(cwd, templateType, options, raw) {
     if (!options.phase) {
         error('--phase required');
     }
-    const phaseInfo = findPhaseInternal(cwd, options.phase);
+    const phaseInfo = findPhaseInternal(cwd, options.phase, undefined, phaseDirectoryOptions(cwd));
     if (!phaseInfo || !phaseInfo.found) {
         output({ error: 'Phase not found', phase: options.phase }, raw, undefined);
         return;

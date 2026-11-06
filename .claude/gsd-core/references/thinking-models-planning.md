@@ -30,15 +30,33 @@ Identify the single hardest constraint in this phase -- the one thing that, if i
 
 **Counters:** Over-analyzing cheap decisions, under-analyzing costly ones.
 
-For each significant decision in this plan, classify as REVERSIBLE (can change later with low cost) or IRREVERSIBLE (changing later requires migration, breaking changes, or significant rework). Spend analysis time proportional to irreversibility. For irreversible decisions, document the rationale in the plan.
+For each significant decision in this plan, ask what undoing it would cost three phases from now, and rate it `reversible` (local and cheap to change), `costly` (undo touches many call sites or needs a coordinated change), or `one-way` (undo requires a migration, breaks a published contract, or is impossible). Spend analysis time proportional to the rating. Record the rating and a one-line rationale on the task that implements the decision, via `<reversibility>`; a `one-way` rating also earns a `checkpoint:decision` before that task. When unsure, rate it `reversible` — rating everything `one-way` is checkpoint fatigue, not diligence.
 
-## 5. Curse of Knowledge Counter
+This is the reasoning step that produces the rating. The taxonomy itself, the emission rules, and the anti-patterns live in @.claude/gsd-core/references/planner-reversibility.md — do not maintain a second classification here.
+
+## 5. Occam's Razor
+
+**Counters:** Plans that prescribe avoidable dependencies, abstractions, files, or speculative flexibility before execution begins.
+
+This check complements the planner's RESEARCH.md `dont_hand_roll` guidance and the plan checker's Dimension 12 (Pattern Compliance): those sources identify capabilities and established patterns, while this check orders otherwise sufficient implementation choices. The executor applies the related check later in `thinking-models-execution.md`, after the plan has already selected an approach.
+
+After preserving locked user decisions and complete requirement coverage, choose the first option that is demonstrably sufficient for the task's `<done>` condition:
+
+1. Existing project behavior, helper, or established pattern
+2. Standard-library capability
+3. Native platform capability
+4. Already-installed dependency
+5. Minimum new implementation
+
+This ordering is a sufficiency check, not permission to make the task smaller. It must never reduce requested scope or override locked user decisions, requirement coverage, security, validation, accessibility, error handling, or verification. The planner uses it when choosing implementation actions; the plan checker flags a new abstraction or dependency only when a higher rung is demonstrably sufficient.
+
+## 6. Curse of Knowledge Counter
 
 **Counters:** Plan-to-executor ambiguity from compressed instructions.
 
 For each `<action>` step, re-read it as if you have NEVER seen this codebase. Is every noun unambiguous (which file? which function? which endpoint?)? Is every verb specific (add WHERE? modify HOW?)? If a step could be interpreted two ways, rewrite it. Include file paths, function names, and expected behavior in every action step.
 
-## 6. Base Rate Neglect Counter
+## 7. Base Rate Neglect Counter
 
 **Counters:** Planners ignoring low-confidence research caveats.
 

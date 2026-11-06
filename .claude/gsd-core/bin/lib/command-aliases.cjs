@@ -248,6 +248,14 @@ exports.VERIFY_COMMAND_ALIASES = [
         ],
         "subcommand": "codebase-drift",
         "mutation": false
+    },
+    {
+        "canonical": "verify.context-drift",
+        "aliases": [
+            "verify context-drift"
+        ],
+        "subcommand": "context-drift",
+        "mutation": false
     }
 ];
 exports.INIT_COMMAND_ALIASES = [
@@ -300,6 +308,14 @@ exports.INIT_COMMAND_ALIASES = [
         "mutation": false
     },
     {
+        "canonical": "init.quick-batch",
+        "aliases": [
+            "init quick-batch"
+        ],
+        "subcommand": "quick-batch",
+        "mutation": false
+    },
+    {
         "canonical": "init.ingest-docs",
         "aliases": [
             "init ingest-docs"
@@ -329,6 +345,30 @@ exports.INIT_COMMAND_ALIASES = [
             "init phase-op"
         ],
         "subcommand": "phase-op",
+        "mutation": false
+    },
+    {
+        "canonical": "init.code-review",
+        "aliases": [
+            "init code-review"
+        ],
+        "subcommand": "code-review",
+        "mutation": false
+    },
+    {
+        "canonical": "init.review",
+        "aliases": [
+            "init review"
+        ],
+        "subcommand": "review",
+        "mutation": false
+    },
+    {
+        "canonical": "init.discuss-phase-assumptions",
+        "aliases": [
+            "init discuss-phase-assumptions"
+        ],
+        "subcommand": "discuss-phase-assumptions",
         "mutation": false
     },
     {
@@ -369,6 +409,54 @@ exports.INIT_COMMAND_ALIASES = [
             "init manager"
         ],
         "subcommand": "manager",
+        "mutation": false
+    },
+    {
+        "canonical": "init.complete-milestone",
+        "aliases": [
+            "init complete-milestone"
+        ],
+        "subcommand": "complete-milestone",
+        "mutation": false
+    },
+    {
+        "canonical": "init.autonomous",
+        "aliases": [
+            "init autonomous"
+        ],
+        "subcommand": "autonomous",
+        "mutation": false
+    },
+    {
+        "canonical": "init.docs-update",
+        "aliases": [
+            "init docs-update"
+        ],
+        "subcommand": "docs-update",
+        "mutation": false
+    },
+    {
+        "canonical": "init.update",
+        "aliases": [
+            "init update"
+        ],
+        "subcommand": "update",
+        "mutation": false
+    },
+    {
+        "canonical": "init.transition",
+        "aliases": [
+            "init transition"
+        ],
+        "subcommand": "transition",
+        "mutation": false
+    },
+    {
+        "canonical": "init.debug",
+        "aliases": [
+            "init debug"
+        ],
+        "subcommand": "debug",
         "mutation": false
     },
     {
@@ -540,6 +628,14 @@ exports.ROADMAP_COMMAND_ALIASES = [
         "mutation": false
     },
     {
+        "canonical": "roadmap.milestone-scope",
+        "aliases": [
+            "roadmap milestone-scope"
+        ],
+        "subcommand": "milestone-scope",
+        "mutation": false
+    },
+    {
         "canonical": "roadmap.get-phase",
         "aliases": [
             "roadmap get-phase"
@@ -610,6 +706,20 @@ exports.NON_FAMILY_COMMAND_ALIASES = [
     {
         "canonical": "commit",
         "aliases": [],
+        "mutation": true
+    },
+    {
+        "canonical": "commit-docs-guard.disable",
+        "aliases": [
+            "commit-docs-guard disable"
+        ],
+        "mutation": true
+    },
+    {
+        "canonical": "commit-docs-guard.enable",
+        "aliases": [
+            "commit-docs-guard enable"
+        ],
         "mutation": true
     },
     {
@@ -729,6 +839,20 @@ exports.NON_FAMILY_COMMAND_ALIASES = [
         "mutation": true
     },
     {
+        "canonical": "requirements.ready-ids",
+        "aliases": [
+            "requirements ready-ids"
+        ],
+        "mutation": false
+    },
+    {
+        "canonical": "requirements.revert-phase",
+        "aliases": [
+            "requirements revert-phase"
+        ],
+        "mutation": true
+    },
+    {
         "canonical": "stats.json",
         "aliases": [
             "stats json"
@@ -767,6 +891,13 @@ exports.NON_FAMILY_COMMAND_ALIASES = [
             "todo match-phase"
         ],
         "mutation": false
+    },
+    {
+        "canonical": "uat.complete-session",
+        "aliases": [
+            "uat complete-session"
+        ],
+        "mutation": true
     },
     {
         "canonical": "uat.render-checkpoint",

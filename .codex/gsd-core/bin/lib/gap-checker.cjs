@@ -19,19 +19,23 @@
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
-const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const io = require("./io.cjs");
-const { output, error } = io;
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const phaseId = require("./phase-id.cjs");
-const { escapeRegex } = phaseId;
+const { output, error, formatDiagnosticToken } = io;
+const pattern_cjs_1 = require("./pattern.cjs");
+const gate_evidence_cjs_1 = require("./gate-evidence.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
 const { planningPaths, planningDir, findContextMdIn } = planningWorkspace;
 const decisions_cjs_1 = require("./decisions.cjs");
 const markdown_sectionizer_cjs_1 = require("./markdown-sectionizer.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const phaseIdMod = require("./phase-id.cjs");
+const { scopeToPhase } = phaseIdMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const planningScopeMod = require("./planning-scope.cjs");
+const { SCOPE } = planningScopeMod;
 /**
  * Parse REQ-IDs from REQUIREMENTS.md content.
  *
@@ -50,6 +54,17 @@ function parseRequirements(reqMd) {
     // The **ID** is extracted from the bullet text caller-side — the seam provides
     // the raw text; we parse the bold-ID prefix from it here.
     const boldIdRe = new RegExp(`^\\*\\*(${ID_PATTERN})\\*\\*\\s*(.*)$`);
+    // The shipped template (gsd-core/templates/requirements.md) writes
+    // `- [ ] **AUTH-01**: User can sign up` — a single separator delimiter
+    // between the bold ID and the description. Strip AT MOST ONE leading
+    // delimiter (plus its surrounding whitespace) before the final `.trim()`,
+    // mirroring roadmap-parser.cts's `stripLeadingDelimiter` delimiter set
+    // (em dash, en dash, colon, hyphen) — that helper is not exported, and its
+    // own `+`-quantified strip removes an entire delimiter RUN, which would
+    // also eat a second, meaningful marker (`**X-01**: -- weird` must keep the
+    // `--`), so the set is mirrored here with a single-occurrence match instead
+    // of reused verbatim.
+    const ONE_LEADING_DELIMITER_RE = /^\s*[—–:-]\s*/;
     for (const bullet of (0, markdown_sectionizer_cjs_1.iterateBullets)(reqMd)) {
         if (bullet.marker !== 'checkbox-unchecked' && bullet.marker !== 'checkbox-checked')
             continue;
@@ -61,7 +76,8 @@ function parseRequirements(reqMd) {
             continue;
         if (!seen.has(id)) {
             seen.add(id);
-            out.push({ id, text: (m[2] || '').trim() });
+            const rawText = m[2] || '';
+            out.push({ id, text: rawText.replace(ONE_LEADING_DELIMITER_RE, '').trim() });
         }
     }
     // Pipe-table-row path and separator-row skip stay caller-side
@@ -91,7 +107,7 @@ function parseRequirements(reqMd) {
 }
 function detectCoverage(items, planText) {
     return items.map(it => {
-        const re = new RegExp('\\b' + escapeRegex(it.id) + '\\b');
+        const re = new RegExp('\\b' + (0, pattern_cjs_1.escapeRegex)(it.id) + '\\b');
         return {
             source: it.source,
             item: it.id,
@@ -124,21 +140,42 @@ function formatGapTable(rows) {
     }).join('\n');
     return `## Post-Planning Gap Analysis\n\n${header}\n${body}\n`;
 }
+function parseJsonEvidence(text, span) {
+    try {
+        return (0, gate_evidence_cjs_1.evidenceFound)(JSON.parse(text));
+    }
+    catch (err) {
+        return (0, gate_evidence_cjs_1.evidenceFromError)(err, span);
+    }
+}
+/**
+ * Is the gap analysis enabled? An ABSENT config means the default (enabled). A config that exists
+ * but cannot be read or parsed also runs the analysis (the conservative direction: the check is not
+ * silently switched off), and is reported in `unreadable` so the verdict is never a clean pass
+ * (#5170, ADR-5057 §4).
+ */
 function readGate(cwd) {
     const cfgPath = node_path_1.default.join(planningDir(cwd), 'config.json');
-    try {
-        const raw = JSON.parse(node_fs_1.default.readFileSync(cfgPath, 'utf-8'));
+    const text = (0, gate_evidence_cjs_1.readTextEvidence)(cfgPath);
+    if (text.kind === 'none')
+        return { enabled: true, unreadable: [] };
+    if (text.kind === 'unreadable')
+        return { enabled: true, unreadable: [{ reason: text.reason, span: cfgPath }] };
+    const parsed = parseJsonEvidence(text.value, cfgPath);
+    if (parsed.kind === 'unreadable')
+        return { enabled: true, unreadable: [{ reason: parsed.reason, span: cfgPath }] };
+    if (parsed.kind === 'found') {
+        const raw = parsed.value;
         if (raw && typeof raw === 'object' && 'workflow' in raw) {
             const wf = raw['workflow'];
             if (wf && typeof wf === 'object' && 'post_planning_gaps' in wf) {
                 const val = wf['post_planning_gaps'];
                 if (typeof val === 'boolean')
-                    return val;
+                    return { enabled: val, unreadable: [] };
             }
         }
     }
-    catch { /* fall through */ }
-    return true;
+    return { enabled: true, unreadable: [] };
 }
 /**
  * Same-prefix ascending numeric range, e.g. `SEL-01..SEL-03`. Both sides must
@@ -152,6 +189,38 @@ const PHASE_REQ_RANGE_RE = /^(.+-)(\d+)\.\.(.+-)(\d+)$/;
  * against pathological input like `X-1..X-100000` ballooning the comparison set.
  */
 const MAX_PHASE_REQ_RANGE = 1000;
+/**
+ * Shape filter applied to `--phase-req-ids` tokens AFTER range expansion
+ * (#3189). ROADMAP `**Requirements:**` lines routinely carry prose trailing
+ * the real ID list — locked-decision annotations, ambiguity scores,
+ * prohibitions, dates — and the function's own contract says callers may pass
+ * that roadmap value through verbatim. Without a shape filter every prose word
+ * survives the whitespace split and is reported as an individually-missing
+ * requirement, drowning the real coverage signal.
+ *
+ * The filter is intentionally wider than `ID_PATTERN` (which mandates a hyphen
+ * and so would reject the hyphen-less `R1`..`R8` family real roadmaps use).
+ * Three load-bearing details (#3189):
+ *
+ *   1. The digit lookahead `(?=.*\d)` matters. Without it ALL-CAPS prose tokens
+ *      that appear in annotations (`LOCKED`, `TBD`-as-prose, `NONE`-as-prose)
+ *      would pass and still reach the report as fake IDs. Every real
+ *      requirement ID carries a digit (`R1`, `SEL-01`, `P1-P3`).
+ *   2. It MUST run after `expandPhaseReqIdToken`. Filtering before would
+ *      discard the range tokens themselves (`SEL-01..SEL-03` matches no
+ *      single-ID shape), silently undoing the #1269 / #1419 range expansion.
+ *   3. It is NOT reusable as `ID_PATTERN`. `ID_PATTERN` mandates a hyphen,
+ *      so it rejects `R1`..`R8` and would leave only range-shaped tokens
+ *      standing — a silently-empty report, which is worse.
+ *
+ * Accepts both hyphen-less digit-bearing IDs (`R1`, `R8`) and prefix-hyphen
+ * IDs (`REQ-01`, `SEL-01`, `BACK-07`), including multi-segment prefixes
+ * (`REQ2-01`). Rejects prose (`LOCKED`), punctuation (`—`, `##`, `+`),
+ * dates, version-likes (`0.12;`), backtick fragments, and any token still
+ * containing `.` (so invalid range tokens returned literal by
+ * `expandPhaseReqIdToken` are dropped rather than surfaced as fake IDs).
+ */
+const PHASE_REQ_ID_SHAPE_RE = /^(?=.*\d)[A-Z][A-Z0-9]*(?:[-_][A-Za-z0-9]+)*$/;
 /**
  * Expand a single `--phase-req-ids` token in place. If it is a valid ascending
  * same-prefix numeric range (`<PREFIX>-NN..<PREFIX>-MM`, identical prefix both
@@ -212,6 +281,15 @@ function expandPhaseReqIdToken(token) {
  * spanning more than MAX_PHASE_REQ_RANGE IDs) stays literal — no partial
  * expansion, no guessing.
  *
+ * ID-shape filter (#3189): STRICTLY AFTER range expansion, every token is
+ * filtered through `PHASE_REQ_ID_SHAPE_RE`. ROADMAP `**Requirements:**` lines
+ * routinely carry prose trailing the real ID list (locked-decision annotations,
+ * ambiguity scores, prohibitions, dates); without the filter every prose word
+ * would be reported as an individually-missing requirement. Tokens that cannot
+ * be requirement IDs (prose, punctuation, dates, invalid range tokens left
+ * literal by `expandPhaseReqIdToken`) are dropped; an input whose every token
+ * is dropped collapses to `null` (skip semantics).
+ *
  * Tolerates JSON-array-ish input (`["REQ-01","REQ-02"]`) since callers may pass
  * the roadmap value through verbatim.
  */
@@ -229,22 +307,37 @@ function normalizePhaseReqIds(rawVal) {
     const ids = v.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
     // Expand range tokens (#1269) per-token AFTER the split, preserving input order.
     const expanded = ids.flatMap(expandPhaseReqIdToken);
-    return expanded.length === 0 ? null : expanded;
+    // #3189: drop tokens that cannot be requirement IDs (prose, punctuation,
+    // dates, invalid range tokens left literal by expandPhaseReqIdToken). MUST
+    // run after expand so valid ranges still expand (filtering before would
+    // discard `SEL-01..SEL-03` itself, undoing #1269 / #1419).
+    const filtered = expanded.filter(t => PHASE_REQ_ID_SHAPE_RE.test(t));
+    return filtered.length === 0 ? null : filtered;
 }
 function runGapAnalysis(cwd, phaseDir, options = {}) {
     const phaseReqIds = normalizePhaseReqIds(options.phaseReqIds);
-    if (!readGate(cwd)) {
+    const gate = readGate(cwd);
+    const unreadable = [...gate.unreadable];
+    const unreadableField = () => (unreadable.length > 0 ? { unreadable } : {});
+    if (!gate.enabled) {
         return {
             enabled: false,
             rows: [],
             table: '',
             summary: 'workflow.post_planning_gaps disabled — skipping post-planning gap analysis',
             counts: { total: 0, covered: 0, uncovered: 0 },
+            phase_dir_read_error: null,
+            phase_dir_scope: SCOPE.COMPLETE,
         };
     }
     const absPhaseDir = node_path_1.default.isAbsolute(phaseDir) ? phaseDir : node_path_1.default.join(cwd, phaseDir);
     const reqPath = planningPaths(cwd).requirements;
-    const reqMd = node_fs_1.default.existsSync(reqPath) ? node_fs_1.default.readFileSync(reqPath, 'utf-8') : '';
+    // An absent REQUIREMENTS.md has no requirements; one that exists but cannot be read is `unreadable`
+    // (a thrown read used to crash, and `existsSync` said "absent" for an EACCES on a parent).
+    const reqRead = (0, gate_evidence_cjs_1.readTextEvidence)(reqPath);
+    if (reqRead.kind === 'unreadable')
+        unreadable.push({ reason: reqRead.reason, span: reqPath });
+    const reqMd = reqRead.kind === 'found' ? reqRead.value : '';
     let reqItems = parseRequirements(reqMd).map(r => ({ ...r, source: 'REQUIREMENTS.md' }));
     // Scope the requirements comparison to the phase's mapped REQ-IDs (#447).
     // A phase that maps no requirements (phase_req_ids null/TBD) must not report
@@ -258,38 +351,70 @@ function runGapAnalysis(cwd, phaseDir, options = {}) {
         const wanted = new Set(phaseReqIds);
         const foundIds = new Set(reqItems.map(r => r.id));
         reqItems = reqItems.filter(r => wanted.has(r.id));
-        ghostReqIds = phaseReqIds.filter(id => !foundIds.has(id));
+        // An unreadable REQUIREMENTS.md registers nothing, so "missing from REQUIREMENTS.md" would be a
+        // false claim about every ID; the unreadable read is reported instead.
+        ghostReqIds = reqRead.kind === 'unreadable' ? [] : phaseReqIds.filter(id => !foundIds.has(id));
     }
     // Read the phase directory once; reuse the listing for both context detection
     // and plan-file enumeration (avoids redundant readdirSync calls).
-    let phaseDirFiles = [];
-    try {
-        if (node_fs_1.default.existsSync(absPhaseDir))
-            phaseDirFiles = node_fs_1.default.readdirSync(absPhaseDir);
-    }
-    catch { /* unreadable */ }
-    const ctxFile = findContextMdIn(phaseDirFiles);
+    //
+    // #4014 (epic #3473 B4): findContextMdIn's directory-string form now owns
+    // the listing + ENOENT-vs-other discrimination, retiring the local
+    // existsSync-guarded readdirSync try/catch — ENOENT (genuinely absent)
+    // and a successful-but-empty read both resolve to SCOPE.COMPLETE with an
+    // empty listing, exactly like the existsSync guard's short-circuit did.
+    const { files: phaseDirFiles, scope: phaseDirScope } = findContextMdIn(absPhaseDir);
+    // #3885 (ADR-3473 §8.5): `phaseDirReadError` stays additive for the
+    // shipped `phase_dir_read_error` JSON field — derived from `phaseDirScope`
+    // rather than from its own caught error, since findContextMdIn's
+    // directory-string form reports SCOPE, not the raw errno message.
+    const phaseDirReadError = phaseDirScope === SCOPE.UNREADABLE
+        ? `Could not read phase directory ${formatDiagnosticToken(absPhaseDir)}`
+        : null;
+    if (phaseDirScope === SCOPE.UNREADABLE)
+        unreadable.push({ reason: 'the directory could not be listed', span: absPhaseDir });
+    // #3511-class: scope the raw listing to this phase dir before the
+    // phase-numbered -CONTEXT.md predicate. `phaseDirFiles` itself stays raw —
+    // it is also reused below only as a `.length > 0` guard ahead of
+    // scanPhasePlans's own plan-sequence-numbered enumeration, a different
+    // grammar that must not be scoped by phase number.
+    const scopedPhaseDirFiles = scopeToPhase(phaseDirFiles, node_path_1.default.basename(absPhaseDir));
+    const ctxFile = findContextMdIn(scopedPhaseDirFiles);
     const ctxPath = ctxFile ? node_path_1.default.join(absPhaseDir, ctxFile) : null;
-    const ctxMd = ctxPath ? node_fs_1.default.readFileSync(ctxPath, 'utf-8') : '';
+    const ctxRead = ctxPath ? (0, gate_evidence_cjs_1.readTextEvidence)(ctxPath) : null;
+    if (ctxPath && ctxRead && ctxRead.kind === 'unreadable')
+        unreadable.push({ reason: ctxRead.reason, span: ctxPath });
+    const ctxMd = ctxRead && ctxRead.kind === 'found' ? ctxRead.value : '';
     // Use extractDecisions so gap-checker can distinguish could-not-parse from none-present.
     const ctxExtraction = (0, decisions_cjs_1.extractDecisions)(ctxMd);
     const dItems = ctxExtraction.decisions.map(d => ({ ...d, source: 'CONTEXT.md' }));
     const items = [...reqItems, ...dItems];
     let planText = '';
-    try {
-        if (phaseDirFiles.length > 0) {
-            const files = phaseDirFiles.filter(f => /-PLAN\.md$/.test(f));
-            planText = files.map(f => {
-                try {
-                    return node_fs_1.default.readFileSync(node_path_1.default.join(absPhaseDir, f), 'utf-8');
-                }
-                catch {
-                    return '';
-                }
+    if (phaseDirFiles.length > 0) {
+        // #3183 (lint-plan-count-drift): source the live plan-file list from
+        // the single owner (scanPhasePlans) instead of a local `-PLAN\.md$`
+        // filter on the already-read listing — picks up bare PLAN.md, nested
+        // plans/, and excludes superseded plans, none of which the prior
+        // root-only exact-suffix filter did.
+        // #5170: a scan that did not see every plan (an existing nested plans/ that could not be read,
+        // SCOPE.TRUNCATED) is `unreadable`, never a short plan set that reports the missing plans' IDs
+        // as "Not covered".
+        const planSet = (0, gate_evidence_cjs_1.readPlanSetEvidence)(absPhaseDir);
+        if (planSet.kind === 'unreadable') {
+            unreadable.push({ reason: planSet.reason, span: planSet.span ?? absPhaseDir });
+        }
+        else {
+            planText = planSet.value.map(f => {
+                const planPath = node_path_1.default.join(absPhaseDir, f);
+                const plan = (0, gate_evidence_cjs_1.readTextEvidence)(planPath);
+                // A plan that exists but cannot be read is `unreadable`, never an empty slice of the text the
+                // coverage is detected in (it would report every ID it holds as "Not covered").
+                if (plan.kind === 'unreadable')
+                    unreadable.push({ reason: plan.reason, span: planPath });
+                return plan.kind === 'found' ? plan.value : '';
             }).join('\n');
         }
     }
-    catch { /* unreadable */ }
     // FIX D (#1365): surface decision could-not-parse independently of whether
     // requirements items exist. Without this, a could-not-parse on decisions is
     // silently masked whenever REQUIREMENTS.md has ≥1 item — the mismatch must
@@ -298,7 +423,16 @@ function runGapAnalysis(cwd, phaseDir, options = {}) {
         const mismatchMsg = '## Post-Planning Gap Analysis\n\nextracted 0 of N — possible format mismatch in CONTEXT.md decisions block.\n';
         // If there are also requirement items, include them in the return with the
         // mismatch summary appended, so the caller still sees requirement coverage.
-        if (items.length > 0) {
+        // #2334 HIGH 1: gate on `ghostReqIds.length > 0` too — identical defect to
+        // the one fixed at #2316-6b (~34 lines below, at the `items.length === 0`
+        // early return): a phase whose EVERY cited REQ-ID is unregistered has
+        // `items.length === 0` (all its requirement items were filtered out at
+        // ~line 297) but still has real ghost rows to report. Without this guard,
+        // a single malformed `<decisions>` line in CONTEXT.md made an all-ghost
+        // phase's ghost rows silently vanish (this could-not-parse branch fell
+        // through to the bare `mismatchMsg`-only return below, dropping ghost
+        // rows that the general path further down correctly surfaces).
+        if (items.length > 0 || ghostReqIds.length > 0) {
             const rows = sortRows([
                 ...detectCoverage(items, planText),
                 ...ghostReqIds.map(id => ({ source: 'REQUIREMENTS.md', item: id, status: 'Missing from REQUIREMENTS.md' })),
@@ -314,6 +448,9 @@ function runGapAnalysis(cwd, phaseDir, options = {}) {
                 table: formatGapTable(rows) + '\n' + coverageSummary + '\n\n' + mismatchMsg,
                 summary: coverageSummary + '; extracted 0 of N — possible format mismatch',
                 counts: { total: rows.length, covered, uncovered },
+                phase_dir_read_error: phaseDirReadError,
+                phase_dir_scope: phaseDirScope,
+                ...unreadableField(),
             };
         }
         return {
@@ -322,16 +459,28 @@ function runGapAnalysis(cwd, phaseDir, options = {}) {
             table: mismatchMsg,
             summary: 'extracted 0 of N — possible format mismatch',
             counts: { total: 0, covered: 0, uncovered: 0 },
+            phase_dir_read_error: phaseDirReadError,
+            phase_dir_scope: phaseDirScope,
+            ...unreadableField(),
         };
     }
     // #1365: if no items at all, surface a clean no-check message.
-    if (items.length === 0) {
+    // #2316-6b: this must NOT fire when `ghostReqIds` is non-empty — a phase
+    // whose EVERY cited REQ-ID is unregistered has `items.length === 0` (all
+    // its requirement items were filtered out at ~line 297) but still has real
+    // ghost rows to report below. Without this guard, an all-orphan phase
+    // reported LESS than a partially-orphan one (which falls through to the
+    // general path further down and correctly surfaces its ghost rows).
+    if (items.length === 0 && ghostReqIds.length === 0) {
         return {
             enabled: true,
             rows: [],
             table: '## Post-Planning Gap Analysis\n\nNo requirements or decisions to check.\n',
             summary: 'no requirements or decisions to check',
             counts: { total: 0, covered: 0, uncovered: 0 },
+            phase_dir_read_error: phaseDirReadError,
+            phase_dir_scope: phaseDirScope,
+            ...unreadableField(),
         };
     }
     const rows = sortRows([
@@ -349,6 +498,9 @@ function runGapAnalysis(cwd, phaseDir, options = {}) {
         table: formatGapTable(rows) + '\n' + summary + '\n',
         summary,
         counts: { total: rows.length, covered, uncovered },
+        phase_dir_read_error: phaseDirReadError,
+        phase_dir_scope: phaseDirScope,
+        ...unreadableField(),
     };
 }
 function cmdGapAnalysis(cwd, args, raw) {

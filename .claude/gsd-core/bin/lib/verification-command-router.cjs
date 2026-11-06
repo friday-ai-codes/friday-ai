@@ -13,7 +13,7 @@
 const cjsCommandRouterAdapter = require("./cjs-command-router-adapter.cjs");
 const { routeCjsCommandFamily } = cjsCommandRouterAdapter;
 // ─── Implementation ───────────────────────────────────────────────────────────
-const VERIFICATION_SUBCOMMANDS = ['status'];
+const VERIFICATION_SUBCOMMANDS = ['status', 'resolve-file', 'fingerprint', 'append-audit'];
 function routeVerificationCommand({ verification, args, cwd, raw, error, }) {
     routeCjsCommandFamily({
         args,
@@ -23,6 +23,9 @@ function routeVerificationCommand({ verification, args, cwd, raw, error, }) {
         unknownMessage: (_subcommand, available) => `Unknown verification subcommand. Available: ${available.join(', ')}`,
         handlers: {
             status: () => verification.cmdVerificationStatus(cwd, args[2], raw),
+            'resolve-file': () => verification.cmdVerificationResolveFile(cwd, args[2], raw),
+            fingerprint: () => verification.cmdVerificationFingerprint(cwd, args[2], args.slice(3), raw),
+            'append-audit': () => verification.cmdVerificationAppendAudit(cwd, args[2], args.slice(3), raw),
         },
     });
 }

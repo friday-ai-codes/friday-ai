@@ -6,7 +6,8 @@
  * Intel files live in .planning/intel/ and store structured data about
  * the project's files, APIs, dependencies, architecture, and tech stack.
  *
- * All public functions gate on intel.enabled config (no-op when false).
+ * All public functions gate on isCapabilityActive('intel', cwd) — the shared
+ * tri-state resolver (installed + surfaced + intel.enabled config key).
  *
  * ADR-457 build-at-publish: the hand-written bin/lib/intel.cjs collapsed
  * to a TypeScript source of truth. Behaviour is preserved byte-for-behaviour
@@ -19,6 +20,12 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_crypto_1 = __importDefault(require("node:crypto"));
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const capabilityStateMod = require("./capability-state.cjs");
+const { isCapabilityActive } = capabilityStateMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const ioMod = require("./io.cjs");
+const { formatDiagnosticToken } = ioMod;
 // ─── Constants ───────────────────────────────────────────────────────────────
 const INTEL_DIR = '.planning/intel';
 const INTEL_FILES = {
@@ -28,6 +35,16 @@ const INTEL_FILES = {
     arch: 'arch-decisions.json',
     stack: 'stack.json',
 };
+/**
+ * ADR-3473 §8.5 / #3885: recursion bound for the intel JSON search walk.
+ * Restored from the retired SDK lineage (`sdk/src/query/intel.ts` at `11918dcc3^`),
+ * lost in the ADR-0174 consolidation. Unlike the original, hitting the ceiling is
+ * NOT reported as a silent "no match" — the walk that stops early sets a
+ * `truncated` flag threaded back up to `intelQuery`'s result (Decision 4: a
+ * routine that discards an input says so). The bound is on DEPTH only; breadth
+ * (sibling count at any given depth) is unaffected.
+ */
+const MAX_JSON_SEARCH_DEPTH = 48;
 // ─── Internal helpers ────────────────────────────────────────────────────────
 /**
  * Ensure the intel directory exists under the given planning dir.
@@ -38,30 +55,20 @@ function ensureIntelDir(planningDir) {
     return intelPath;
 }
 /**
- * Check whether intel is enabled in the project config.
- * Reads config.json directly via fs. Returns false by default
- * (when no config, no intel key, or on error).
+ * Check whether intel is active (installed, surfaced, and config-enabled) for the project at cwd.
+ * Delegates to the shared tri-state capability resolver (isCapabilityActive) which honours the
+ * install profile, runtime surface, and activationKey (intel.enabled config gate).
+ *
+ * NOTE: planningDir is the legacy entry-point; cwd is derived as path.dirname(planningDir).
+ * Callers that have cwd directly may call isCapabilityActive('intel', cwd) themselves.
+ *
+ * INVARIANT: planningDir is always `<cwd>/.planning` (i.e. path.join(cwd, '.planning')).
+ * The intel-command-router always constructs planningDir as path.join(cwd, '.planning'),
+ * so path.dirname(planningDir) === cwd is guaranteed. If a workstream-aware planningDir
+ * were ever passed here, the dirname would be wrong — but no caller does that.
  */
-function isIntelEnabled(planningDir) {
-    try {
-        const configPath = node_path_1.default.join(planningDir, 'config.json');
-        const raw = (0, shell_command_projection_cjs_1.platformReadSync)(configPath);
-        if (raw === null)
-            return false;
-        const config = JSON.parse(raw);
-        if (config &&
-            typeof config === 'object' &&
-            'intel' in config &&
-            config.intel &&
-            typeof config.intel === 'object' &&
-            'enabled' in config.intel &&
-            config.intel.enabled === true)
-            return true;
-        return false;
-    }
-    catch (_e) {
-        return false;
-    }
+function isIntelCapabilityActive(planningDir) {
+    return isCapabilityActive('intel', node_path_1.default.dirname(planningDir));
 }
 /**
  * Return the standard disabled response object.
@@ -77,16 +84,42 @@ function intelFilePath(planningDir, filename) {
 }
 /**
  * Safely read and parse a JSON intel file.
- * Returns null if file doesn't exist or can't be parsed.
+ *
+ * Returns null for THREE distinct on-disk states, only one of which is a
+ * "quiet" case (#3885, ADR-3473 §8.5):
+ *   - ABSENT (ENOENT, via platformReadSync returning null): silent — not
+ *     every project has every intel file, and callers already loop over
+ *     the full INTEL_FILES set expecting misses. Never pushed to `errors`.
+ *   - UNREADABLE (EACCES/EIO/... — platformReadSync rethrows anything that
+ *     isn't ENOENT): surfaced, naming the file, when `errors` is supplied.
+ *   - MALFORMED (JSON.parse throws on a file that WAS read successfully):
+ *     also surfaced, naming the file — a corrupt intel file used to read
+ *     identically to "no matches", which is the same defect one layer down.
+ *
+ * `errors` is an optional accumulator so callers that want to thread the
+ * outcome into their own result shape can pass an array and read it back
+ * after the call; callers that omit it keep the prior fold-to-null shape.
  */
-function safeReadJson(filePath) {
+function safeReadJson(filePath, errors) {
+    let raw;
     try {
-        const raw = (0, shell_command_projection_cjs_1.platformReadSync)(filePath);
-        if (raw === null)
-            return null;
+        raw = (0, shell_command_projection_cjs_1.platformReadSync)(filePath);
+    }
+    catch (err) {
+        if (errors) {
+            errors.push(`Could not read ${formatDiagnosticToken(filePath)}: ${formatDiagnosticToken(err?.message ?? String(err))}`);
+        }
+        return null;
+    }
+    if (raw === null)
+        return null; // ENOENT — genuinely absent, not an error.
+    try {
         return JSON.parse(raw);
     }
-    catch (_e) {
+    catch (err) {
+        if (errors) {
+            errors.push(`Could not parse ${formatDiagnosticToken(filePath)}: ${formatDiagnosticToken(err?.message ?? String(err))}`);
+        }
         return null;
     }
 }
@@ -101,22 +134,23 @@ function hashFile(filePath) {
             return null;
         return node_crypto_1.default.createHash('sha256').update(content).digest('hex');
     }
-    catch (_e) {
+    catch {
         return null;
     }
 }
 /**
  * Search for a term (case-insensitive) in a JSON object's keys and string values.
- * Returns an array of matching entries.
+ * Returns matching entries plus whether the walk hit MAX_JSON_SEARCH_DEPTH.
  */
 function searchJsonEntries(data, term) {
     if (!data || typeof data !== 'object')
-        return [];
+        return { matches: [], truncated: false };
     const entries = data.entries || data;
     if (!entries || typeof entries !== 'object')
-        return [];
+        return { matches: [], truncated: false };
     const lowerTerm = term.toLowerCase();
     const matches = [];
+    const state = { truncated: false };
     for (const [key, value] of Object.entries(entries)) {
         if (key === '_meta')
             continue;
@@ -125,74 +159,76 @@ function searchJsonEntries(data, term) {
             matches.push({ key, value });
             continue;
         }
-        // Check string value match (recursive for objects)
-        if (matchesInValue(value, lowerTerm)) {
+        // Check string value match (recursive for objects/arrays, bounded by depth)
+        if (matchesInValue(value, lowerTerm, 0, state)) {
             matches.push({ key, value });
         }
     }
-    return matches;
+    return { matches, truncated: state.truncated };
 }
 /**
  * Recursively check if a term appears in any string value.
+ *
+ * `depth` counts container unwraps already performed (starts at 0 for the
+ * entry's own value). Strings never fail the ceiling check themselves — only
+ * a container (object/array) refuses to recurse one level deeper once
+ * `depth > MAX_JSON_SEARCH_DEPTH`, at which point `state.truncated` is set so
+ * the caller can report "I stopped looking" rather than a bare "no match".
+ * The bound is on nesting depth only, never on sibling breadth.
  */
-function matchesInValue(value, lowerTerm) {
+function matchesInValue(value, lowerTerm, depth, state) {
     if (typeof value === 'string') {
         return value.toLowerCase().includes(lowerTerm);
     }
     if (Array.isArray(value)) {
-        return value.some(v => matchesInValue(v, lowerTerm));
+        if (depth > MAX_JSON_SEARCH_DEPTH) {
+            state.truncated = true;
+            return false;
+        }
+        return value.some(v => matchesInValue(v, lowerTerm, depth + 1, state));
     }
     if (value && typeof value === 'object') {
-        return Object.values(value).some(v => matchesInValue(v, lowerTerm));
+        if (depth > MAX_JSON_SEARCH_DEPTH) {
+            state.truncated = true;
+            return false;
+        }
+        return Object.values(value).some(v => matchesInValue(v, lowerTerm, depth + 1, state));
     }
     return false;
 }
 /**
- * Search for a term in arch.md text content.
- * Returns matching lines.
- */
-function searchArchMd(filePath, term) {
-    try {
-        const content = (0, shell_command_projection_cjs_1.platformReadSync)(filePath);
-        if (content === null)
-            return [];
-        const lowerTerm = term.toLowerCase();
-        const lines = content.split(/\r?\n/);
-        return lines.filter(line => line.toLowerCase().includes(lowerTerm));
-    }
-    catch (_e) {
-        return [];
-    }
-}
-/**
  * Query intel files for a search term.
- * Searches across all JSON intel files (keys and values) and arch.md (text lines).
+ * Searches across all JSON intel files in INTEL_FILES (keys and values), including arch-decisions.json (parsed as JSON, not as text).
  */
 function intelQuery(term, planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     const matches = [];
     let total = 0;
+    let truncated = false;
+    const readErrors = [];
     // Search all JSON intel files
     for (const [_key, filename] of Object.entries(INTEL_FILES)) {
         const filePath = intelFilePath(planningDir, filename);
-        const data = safeReadJson(filePath);
+        const data = safeReadJson(filePath, readErrors);
         if (!data)
             continue;
-        const found = searchJsonEntries(data, term);
+        const { matches: found, truncated: fileTruncated } = searchJsonEntries(data, term);
+        if (fileTruncated)
+            truncated = true;
         if (found.length > 0) {
             matches.push({ source: filename, entries: found });
             total += found.length;
         }
     }
-    return { matches, term, total };
+    return { matches, term, total, truncated, read_errors: readErrors };
 }
 /**
  * Report status and staleness of each intel file.
  * A file is considered stale if its updated_at is older than 24 hours.
  */
 function intelStatus(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     const STALE_MS = 24 * 60 * 60 * 1000; // 24 hours
     const now = Date.now();
@@ -202,13 +238,14 @@ function intelStatus(planningDir) {
         const filePath = intelFilePath(planningDir, filename);
         const exists = node_fs_1.default.existsSync(filePath);
         if (!exists) {
-            files[filename] = { exists: false, updated_at: null, stale: true };
+            files[filename] = { exists: false, updated_at: null, stale: true, read_error: null };
             overallStale = true;
             continue;
         }
         let updatedAt = null;
         // All intel files are JSON — read _meta.updated_at
-        const data = safeReadJson(filePath);
+        const readErrors = [];
+        const data = safeReadJson(filePath, readErrors);
         if (data && data._meta && data._meta.updated_at) {
             updatedAt = data._meta.updated_at;
         }
@@ -219,7 +256,7 @@ function intelStatus(planningDir) {
         }
         if (stale)
             overallStale = true;
-        files[filename] = { exists: true, updated_at: updatedAt, stale };
+        files[filename] = { exists: true, updated_at: updatedAt, stale, read_error: readErrors[0] ?? null };
     }
     return { files, overall_stale: overallStale };
 }
@@ -227,12 +264,18 @@ function intelStatus(planningDir) {
  * Show changes since the last full refresh by comparing file hashes.
  */
 function intelDiff(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     const snapshotPath = intelFilePath(planningDir, '.last-refresh.json');
-    const snapshot = safeReadJson(snapshotPath);
+    const readErrors = [];
+    const snapshot = safeReadJson(snapshotPath, readErrors);
     if (!snapshot) {
-        return { no_baseline: true };
+        // #3885 (ADR-3473 §8.5): `no_baseline: true` stays true for BOTH a
+        // genuinely-never-snapshotted project (ENOENT, read_error stays null)
+        // AND a present-but-unreadable/malformed snapshot — collapsing those
+        // two into a bare `no_baseline: true` would manufacture "you've never
+        // run a refresh" out of a read failure. `read_error` names which one.
+        return { no_baseline: true, read_error: readErrors[0] ?? null };
     }
     const prevHashes = snapshot.hashes || {};
     const changed = [];
@@ -259,7 +302,7 @@ function intelDiff(planningDir) {
  * The actual update is performed by the intel-updater agent (PLAN-02).
  */
 function intelUpdate(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     return {
         action: 'spawn_agent',
@@ -297,7 +340,7 @@ function saveRefreshSnapshot(planningDir) {
  * Writes .last-refresh.json with accurate timestamps and hashes.
  */
 function intelSnapshot(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     return saveRefreshSnapshot(planningDir);
 }
@@ -305,7 +348,7 @@ function intelSnapshot(planningDir) {
  * Validate all intel files for correctness and freshness.
  */
 function intelValidate(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     const errors = [];
     const warnings = [];
@@ -345,7 +388,7 @@ function intelValidate(planningDir) {
         }
         // Validate entries are objects with expected fields
         if (data.entries && typeof data.entries === 'object') {
-            // files.json: check exports are actual symbol names (no spaces)
+            // file-roles.json (INTEL_FILES key 'files'): check exports are actual symbol names (no spaces)
             if (key === 'files') {
                 for (const [entryPath, entry] of Object.entries(data.entries)) {
                     const entryObj = entry;
@@ -365,7 +408,7 @@ function intelValidate(planningDir) {
                     }
                 }
             }
-            // deps.json: check entries have version, type, used_by
+            // dependency-graph.json (INTEL_FILES key 'deps'): check entries have version, type, used_by
             if (key === 'deps') {
                 for (const [depName, entry] of Object.entries(data.entries)) {
                     const entryObj = entry;
@@ -392,12 +435,14 @@ function intelValidate(planningDir) {
  * mistake silence for "nothing exists".
  */
 function intelApiSurface(planningDir) {
-    if (!isIntelEnabled(planningDir))
+    if (!isIntelCapabilityActive(planningDir))
         return disabledResponse();
     const intelPath = ensureIntelDir(planningDir);
     const apiMapPath = node_path_1.default.join(intelPath, INTEL_FILES.apis);
     const outputPath = node_path_1.default.join(intelPath, 'API-SURFACE.md');
-    const data = safeReadJson(apiMapPath);
+    const readErrors = [];
+    const data = safeReadJson(apiMapPath, readErrors);
+    const readError = readErrors[0] ?? null;
     const entries = (data && data.entries && typeof data.entries === 'object')
         ? Object.entries(data.entries)
         : [];
@@ -415,7 +460,14 @@ function intelApiSurface(planningDir) {
     lines.push('> Generated from `.planning/intel/api-map.json`. Do not edit by hand.');
     lines.push('');
     if (symbolCount === 0) {
-        lines.push('> **Incomplete:** api-map.json has no entries (intel extraction is regex/JS-only or not yet populated).');
+        if (readError) {
+            // #3885: a read/parse failure is NOT "not yet populated" — say so,
+            // rather than manufacturing the wrong reason for the empty surface.
+            lines.push(`> **Incomplete:** ${readError}`);
+        }
+        else {
+            lines.push('> **Incomplete:** api-map.json has no entries (intel extraction is regex/JS-only or not yet populated).');
+        }
         lines.push('> Treat absence here as "unknown", not "does not exist".');
         lines.push('');
     }
@@ -437,13 +489,13 @@ function intelApiSurface(planningDir) {
         }
     }
     (0, shell_command_projection_cjs_1.platformWriteSync)(outputPath, lines.join('\n'));
-    return { written: outputPath, symbolCount, stale };
+    return { written: outputPath, symbolCount, stale, read_error: readError };
 }
 /**
  * Patch _meta.updated_at in a JSON intel file to the current timestamp.
  * Reads the file, updates _meta.updated_at, increments version, writes back.
  *
- * NOTE: Does not gate on isIntelEnabled — operates on arbitrary file paths
+ * NOTE: Does not gate on isCapabilityActive — operates on arbitrary file paths
  * for use by agents patching individual files outside the intel store.
  */
 function intelPatchMeta(filePath) {
@@ -475,7 +527,7 @@ function intelPatchMeta(filePath) {
 /**
  * Extract exports from a JS/CJS file by parsing module.exports or exports.X patterns.
  *
- * NOTE: Does not gate on isIntelEnabled — operates on arbitrary source files
+ * NOTE: Does not gate on isCapabilityActive — operates on arbitrary source files
  * for use by agents building intel data from project files.
  */
 function intelExtractExports(filePath) {
@@ -600,7 +652,7 @@ module.exports = {
     intelApiSurface,
     // Utilities
     ensureIntelDir,
-    isIntelEnabled,
+    isIntelCapabilityActive,
     // Constants
     INTEL_FILES,
     INTEL_DIR,

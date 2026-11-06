@@ -16,41 +16,119 @@
  * detected. The instance→cli mapping lives HERE (single source; see the parity
  * test in tests/review-reviewer-instances.test.cjs — DEFECT.GENERATIVE-FIX).
  *
- * KNOWN_REVIEWER_SLUGS (post-review #2092): registry-derived, not a flat
- * hand-maintained array. Each capability-runtime descriptor that is a valid
- * reviewer CLI declares `runtime.hostBehaviors.reviewerCli: true`
- * (capabilities/<id>/capability.json); this module reads that flag off the
- * generated capability-registry.cjs at require-time. A handful of reviewer
- * CLIs are NOT install-time runtimes at all (no capabilities/<id>/ descriptor
- * exists) — those stay a small hardcoded tail:
- *   - `gemini` — hook-event dialect name only (see runtime-hooks-surface.cts);
- *     the Gemini CLI reviewer is not an installable runtime (#1928 folded
- *     gemini into antigravity's descriptor).
- *   - `coderabbit` / `ollama` / `lm_studio` / `llama_cpp` — third-party
- *     review/model CLIs with no GSD install surface at all.
+ * KNOWN_REVIEWER_SLUGS (ADR-2782 D9, Phase 5a #2798): derived from declared
+ * `reviewer` bodies in the capability registry, not a hand-maintained tail.
+ * A capability of EITHER `role: "runtime"` (the six dual-purpose hosts —
+ * antigravity/claude/codex/cursor/opencode/qwen) or the lane-only
+ * `role: "reviewer"` (coderabbit/ollama/lm_studio/llama_cpp) may carry
+ * a `reviewer` body, and it is the body's `reviewer.slug` — NOT the capability
+ * id — that becomes the roster entry: the two differ for `lm-studio` (id) /
+ * `lm_studio` (slug) and `llama-cpp` (id) / `llama_cpp` (slug), ADR-2782's
+ * three-namespace trap (`id` must be kebab; `slug` keeps the shipped roster's
+ * snake form).
+ *
+ * `runtime.hostBehaviors.reviewerCli` is GONE (Phase 7, #2801). It survived one
+ * release as a derived legacy alias — a capability setting only the flag
+ * contributed its capability id as a slug — and that window closed when 1.10.0
+ * shipped after Phase 5a's 1.9.0. A declared `reviewer` body is now the ONLY
+ * route onto the roster. A manifest still carrying the key contributes no lane
+ * and is told so: `collectReviewerWarnings`
+ * (`gsd-core/bin/lib/capability-validator.cjs`) emits a removal notice on both
+ * the build-time registry generation and the third-party overlay load path.
+ *
+ * Before this phase the five non-runtime reviewers (`gemini`, `coderabbit`,
+ * `ollama`, `lm_studio`, `llama_cpp`) had no `capabilities/<id>/` descriptor at
+ * all and were a hardcoded `NON_RUNTIME_REVIEWER_SLUGS` tail. Phase 5a gives
+ * each one a lane-only `role: "reviewer"` capability (ADR-2782 D3), so the
+ * tail is deleted outright. See
+ * `docs/adr/2782-reviewer-lane-capability-surface.md`.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.INSTANCE_NAME_PATTERN = exports.KNOWN_REVIEWER_SLUGS = void 0;
+exports.deriveReviewerSlugs = deriveReviewerSlugs;
 exports.normalizeConfiguredDefaultReviewers = normalizeConfiguredDefaultReviewers;
 exports.normalizeReviewerInstances = normalizeReviewerInstances;
 exports.resolveReviewerSelection = resolveReviewerSelection;
-const NON_RUNTIME_REVIEWER_SLUGS = [
-    'gemini',
-    'coderabbit',
-    'ollama',
-    'lm_studio',
-    'llama_cpp',
-];
-function deriveRuntimeReviewerSlugs() {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const registry = require('./capability-registry.cjs');
-    const runtimes = registry.runtimes || {};
-    return Object.keys(runtimes).filter((id) => runtimes[id]?.runtime?.hostBehaviors?.reviewerCli === true);
+/**
+ * Derive the reviewer-slug roster from a capability registry.
+ *
+ * Exported (rather than a require()-time-only side effect) so tests can
+ * exercise the derivation directly against a synthetic registry — the real
+ * roster below is a single call against the generated
+ * `capability-registry.cjs`, and `tests/review-lane-descriptor.test.cjs`'s
+ * `checkReviewerLaneParity` separately guards that the real roster still
+ * agrees with `src/review-lane-descriptor.cts` and the workflow.
+ *
+ * Reads `registry.capabilities` — every declared capability regardless of
+ * role — because a `role: "reviewer"` lane-only capability is never stored in
+ * `registry.runtimes` (that map is role:"runtime" only). A capability
+ * contributes exactly one slug — its declared `reviewer.slug` — or none. The
+ * result is collected into a Set (so a slug can never appear twice, even if
+ * two distinct capabilities somehow named the same one) and returned as a
+ * SORTED array, so the roster's order never depends on `Object.values()`
+ * iteration / registry build order.
+ */
+function deriveReviewerSlugs(registry) {
+    const capabilities = registry.capabilities || {};
+    const slugs = new Set();
+    for (const cap of Object.values(capabilities)) {
+        // Trim before the emptiness test: `length > 0` alone admits a whitespace-only
+        // slug ("   ") verbatim into the roster, where it can never match a real lane
+        // but still occupies a roster entry. Unreachable through the checked-in
+        // registry today, but this function is EXPORTED for reuse and carries no
+        // other validation, so it should not depend on its caller's hygiene.
+        const rawSlug = cap?.reviewer?.slug;
+        const declaredSlug = typeof rawSlug === 'string' ? rawSlug.trim() : '';
+        if (declaredSlug.length > 0)
+            slugs.add(declaredSlug);
+    }
+    return [...slugs].sort();
 }
-exports.KNOWN_REVIEWER_SLUGS = [
-    ...deriveRuntimeReviewerSlugs(),
-    ...NON_RUNTIME_REVIEWER_SLUGS,
-];
+/**
+ * The roster, derived once at module load.
+ *
+ * GUARDED, because this runs at `require()` time: an uncaught throw here does not
+ * degrade reviewer selection, it breaks `require()` of this module for EVERY
+ * consumer. The sibling `capability-trust.cjs` already holds this line — its
+ * `discloseExecutableSurfaces` is documented "TOTAL: never throws, for any
+ * manifest shape" and wrapped accordingly — and this module handles the same
+ * class of registry-derived input, so it should not be the asymmetric one.
+ *
+ * A malformed registry yields an EMPTY roster rather than a crash. That is a
+ * visible degradation, not a silent one: under ADR-2782 D4 an explicitly
+ * requested reviewer that is unavailable is an ERROR, so `/gsd:review --claude`
+ * against an empty roster fails loudly instead of quietly reviewing with nobody.
+ *
+ * Unreachable through the checked-in registry today (it is generated, JSON-sourced
+ * and code-reviewed, so it cannot carry a getter or a Proxy). Guarded anyway —
+ * reachability analysis is not a contract, and the next caller should not have to
+ * redo it.
+ */
+exports.KNOWN_REVIEWER_SLUGS = (() => {
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        return deriveReviewerSlugs(require('./capability-registry.cjs'));
+    }
+    catch {
+        return [];
+    }
+})();
+/**
+ * #5359: map a lane flag alias (`agy` for `--agy`) to its canonical slug via the
+ * descriptor roster's declared `flags` (same source as `review-lane explicit-from-argv`).
+ * Guarded like KNOWN_REVIEWER_SLUGS: a load failure degrades to the plain error.
+ */
+function laneSlugForAlias(name, lanes) {
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const roster = lanes ?? require('./review-lane-descriptor.cjs').REVIEWER_LANES;
+        // `l.slug !== name`: an undetected canonical slug (`--codex` flag) is not an alias.
+        return roster.find((l) => l.slug !== name && l.flags.includes(`--${name}`))?.slug;
+    }
+    catch {
+        return undefined;
+    }
+}
 /** Instance names are lowercase slugs that must not shadow a built-in slug. */
 exports.INSTANCE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 function normalizeConfiguredDefaultReviewers(rawValue) {
@@ -164,12 +242,30 @@ function resolveReviewerSelection(input) {
     let selected = [];
     if (explicitFlags.size > 0) {
         source = 'explicit_flags';
+        // ADR-2782 D4: absent-safe governs DISCOVERY, never explicit selection.
+        // Not finding a lane nobody asked for is normal; failing to run a lane
+        // somebody asked for is an error. Every miss used to be an `info`, so a
+        // PARTIAL miss (`--codex --qwen` with qwen absent) ran the review with a
+        // thinner reviewer set while present_results reported success — "a cross-AI
+        // review that silently drops a lane is blind in one eye" (review.md).
+        // A total miss already errored, but only as a side effect of the selected
+        // set being empty; the partial case had no signal at all.
+        const priorErrorCount = errors.length;
         selected = [...explicitFlags].filter((slug) => detected.has(slug));
-        const missing = [...explicitFlags].filter((slug) => !detected.has(slug));
-        if (missing.length > 0) {
-            infos.push(`explicit reviewers missing on host: ${missing.join(', ')}`);
+        // Sorted so the error order does not depend on flag order on the command line.
+        const missing = [...explicitFlags].filter((slug) => !detected.has(slug)).sort();
+        for (const slug of missing) {
+            const canonical = laneSlugForAlias(slug, input.lanes);
+            errors.push(canonical
+                ? `explicit reviewer '${slug}' is a flag alias; pass its canonical slug '${canonical}'`
+                : `explicit reviewer '${slug}' is not available on this host`);
         }
-        if (selected.length === 0 && errors.length === 0) {
+        // Guarded on the error count as it stood BEFORE this branch, so the
+        // aggregate message fires under exactly the conditions it did previously.
+        // Guarding on `errors.length` would let the per-slug errors just pushed
+        // suppress it, silently dropping a message this change did not intend to
+        // remove.
+        if (selected.length === 0 && priorErrorCount === 0) {
             errors.push('no selected reviewers are available for explicit flags');
         }
     }

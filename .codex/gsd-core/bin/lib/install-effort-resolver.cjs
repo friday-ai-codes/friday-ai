@@ -19,13 +19,32 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
  *
  * Pure with respect to config: `readGsdEffectiveEffortConfig` performs the config
  * reads; `resolveInstallTimeEffort` is pure given a pre-merged effort object.
+ *
+ * #2875 defect fix: this module sits on the `installRuntimeArtifacts` call
+ * tree (reached both directly from `runtime-artifact-conversion.cts`'s
+ * effort-injection rewrite pass, and transitively via
+ * `install-model-override-resolver.cts`'s `_readGsdConfigFile` reuse) — every
+ * DESTINATION/config fs touch below routes through `installFs()`
+ * (install-fs-adapter.cts), matching `retired-artifact-cleanup.cts` /
+ * `user-artifact-staging.cts`'s existing precedent. `config-defaults.manifest.json`
+ * (`_getGsdEffortCatalog`) stays on raw `node:fs`, deliberately: it is
+ * PACKAGE-SOURCE (ships under `gsd-core/bin/shared/`, resolved from
+ * `__dirname`, never the install destination), the same class of read
+ * `install-fs-adapter.cts`'s module doc documents as "DELIBERATELY NOT
+ * ROUTED" for `findInstallSourceRoot`/`readGsdCommandNames`.
  */
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
-const node_os_1 = __importDefault(require("node:os"));
+const runtime_homes_cjs_1 = require("./runtime-homes.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- install-fs-adapter.cjs is an export= CommonJS module
+const installFsAdapter = require("./install-fs-adapter.cjs");
+const { installFs } = installFsAdapter;
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- model-resolver.cjs is an export= CommonJS module
 const modelResolver = require("./model-resolver.cjs");
 const { EFFORT_SET: GSD_EFFORT_SET } = modelResolver;
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- model-catalog.cjs is an export= CommonJS module
+const modelCatalog = require("./model-catalog.cjs");
+const { mergeEffortTierDefaults } = modelCatalog;
 /**
  * #2517 — Read a single GSD config file (defaults.json or per-project
  * config.json) into a plain object, returning null on missing/empty files
@@ -33,11 +52,11 @@ const { EFFORT_SET: GSD_EFFORT_SET } = modelResolver;
  * mask broken configs (review finding #5).
  */
 function _readGsdConfigFile(absPath, label) {
-    if (!node_fs_1.default.existsSync(absPath))
+    if (!installFs().existsSync(absPath))
         return null;
     let raw;
     try {
-        raw = node_fs_1.default.readFileSync(absPath, 'utf-8');
+        raw = installFs().readFileSync(absPath, 'utf-8');
     }
     catch (err) {
         process.stderr.write(`gsd: warning — could not read ${label} (${absPath}): ${err.message}\n`);
@@ -93,6 +112,35 @@ function _getGsdEffortCatalog() {
     return _gsdEffortCatalogCache;
 }
 /**
+ * #2875 defect fix (Generative Fix Divergence — the exact class this module
+ * exists to remove): the upward walk from a runtime install root looking for
+ * `.planning/config.json`, capped at 8 ancestor levels, was duplicated
+ * verbatim three times — once here, and twice more in
+ * `install-model-override-resolver.cts` (`readGsdEffectiveModelOverrides`,
+ * `readGsdRuntimeProfileResolver`) after that module was extracted FROM this
+ * one specifically to stop duplicating shared install-time config logic.
+ * Single-sourced here so the cap and the walk semantics (depth 0 = targetDir
+ * itself, depth 7 = the last checked ancestor, 8 levels up is never reached)
+ * can only diverge if this function changes.
+ *
+ * @param targetDir  Runtime install root to start the walk from.
+ * @returns the first `.planning/config.json` found walking upward from
+ *   `targetDir` (inclusive) through up to 8 ancestor levels, or `null`.
+ */
+function _findAncestorGsdConfigPath(targetDir) {
+    let probeDir = node_path_1.default.resolve(targetDir);
+    for (let depth = 0; depth < 8; depth += 1) {
+        const candidate = node_path_1.default.join(probeDir, '.planning', 'config.json');
+        if (installFs().existsSync(candidate))
+            return candidate;
+        const parent = node_path_1.default.dirname(probeDir);
+        if (parent === probeDir)
+            break;
+        probeDir = parent;
+    }
+    return null;
+}
+/**
  * #443 — Read the merged `effort` config block for install-time effort resolution.
  *
  * Probes the same config sources as readGsdRuntimeProfileResolver (per-project
@@ -106,21 +154,12 @@ function _getGsdEffortCatalog() {
  * @param targetDir  Runtime install root (walks up to find .planning/).
  */
 function readGsdEffectiveEffortConfig(targetDir = null) {
-    const homeDefaults = _readGsdConfigFile(node_path_1.default.join(node_os_1.default.homedir(), '.gsd', 'defaults.json'), '~/.gsd/defaults.json');
+    const homeDefaults = _readGsdConfigFile(node_path_1.default.join((0, runtime_homes_cjs_1.resolveGsdHome)(), '.gsd', 'defaults.json'), '~/.gsd/defaults.json');
     let projectConfig = null;
     if (targetDir) {
-        let probeDir = node_path_1.default.resolve(targetDir);
-        for (let depth = 0; depth < 8; depth += 1) {
-            const candidate = node_path_1.default.join(probeDir, '.planning', 'config.json');
-            if (node_fs_1.default.existsSync(candidate)) {
-                projectConfig = _readGsdConfigFile(candidate, '.planning/config.json');
-                break;
-            }
-            const parent = node_path_1.default.dirname(probeDir);
-            if (parent === probeDir)
-                break;
-            probeDir = parent;
-        }
+        const candidate = _findAncestorGsdConfigPath(targetDir);
+        if (candidate)
+            projectConfig = _readGsdConfigFile(candidate, '.planning/config.json');
     }
     const homeEffort = (homeDefaults && homeDefaults.effort && typeof homeDefaults.effort === 'object' && !Array.isArray(homeDefaults.effort))
         ? homeDefaults.effort
@@ -133,6 +172,11 @@ function readGsdEffectiveEffortConfig(targetDir = null) {
     // Per-project wins on conflict within each sub-field. Merge field-by-field so
     // a project config that only sets agent_overrides still inherits global
     // routing_tier_defaults and default.
+    // #3531 (10c): routing_tier_defaults is deep-merged per-tier like
+    // agent_overrides — a project block naming only `heavy` must not discard the
+    // home block's `light`/`standard` entries (the top-level spread would
+    // otherwise replace the whole block, the same defect class as the
+    // manifest-replacement this change fixes).
     return {
         ...(homeEffort || {}),
         ...(projectEffort || {}),
@@ -140,6 +184,11 @@ function readGsdEffectiveEffortConfig(targetDir = null) {
         agent_overrides: {
             ...((homeEffort && homeEffort.agent_overrides) || {}),
             ...((projectEffort && projectEffort.agent_overrides) || {}),
+        },
+        // Deep-merge routing_tier_defaults (project wins per-tier)
+        routing_tier_defaults: {
+            ...((homeEffort && homeEffort.routing_tier_defaults) || {}),
+            ...((projectEffort && projectEffort.routing_tier_defaults) || {}),
         },
     };
 }
@@ -150,8 +199,10 @@ function readGsdEffectiveEffortConfig(targetDir = null) {
  *
  * Precedence (mirrors resolveEffortInternal):
  *   1. effortCfg.agent_overrides[agentName]
- *   2. effortCfg.routing_tier_defaults[agentTier]  (if effortCfg present)
- *      — OR manifest tier defaults when effortCfg is null
+ *   2. routing_tier_defaults merged over the manifest tier defaults
+ *      (#3531/10c: a config block — present or partial — no longer disables
+ *      the built-in tier ladder; invalid config values are dropped by the
+ *      merge so the manifest value for the tier surfaces)
  *   3. effortCfg.default
  *   4. 'high' (hardcoded fallback)
  *
@@ -177,20 +228,11 @@ function resolveInstallTimeEffort(effortCfg, agentName) {
     const { AGENT_DEFAULT_TIERS, EFFORT_MANIFEST_TIER_DEFAULTS, EFFORT_MANIFEST_DEFAULT } = _getGsdEffortCatalog();
     const agentTier = AGENT_DEFAULT_TIERS[agentName];
     if (agentTier) {
-        if (effortCfg && effortCfg.routing_tier_defaults &&
-            typeof effortCfg.routing_tier_defaults === 'object' &&
-            !Array.isArray(effortCfg.routing_tier_defaults)) {
-            const v = effortCfg.routing_tier_defaults[agentTier];
-            if (typeof v === 'string' && GSD_EFFORT_SET.has(v))
-                return v;
-        }
-        else if (!effortCfg) {
-            // No effort config — use manifest tier defaults
-            const v = EFFORT_MANIFEST_TIER_DEFAULTS[agentTier];
-            if (typeof v === 'string' && GSD_EFFORT_SET.has(v))
-                return v;
-        }
-        // effortCfg exists but has no routing_tier_defaults — fall through
+        const isValidEffort = (v) => typeof v === 'string' && GSD_EFFORT_SET.has(v);
+        const merged = mergeEffortTierDefaults(EFFORT_MANIFEST_TIER_DEFAULTS, effortCfg ? effortCfg.routing_tier_defaults : undefined, isValidEffort);
+        const v = merged[agentTier];
+        if (isValidEffort(v))
+            return v;
     }
     // Step 3: effort.default
     if (effortCfg) {
@@ -210,4 +252,5 @@ module.exports = {
     resolveInstallTimeEffort,
     _getGsdEffortCatalog,
     _readGsdConfigFile,
+    _findAncestorGsdConfigPath,
 };

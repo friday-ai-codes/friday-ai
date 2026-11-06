@@ -13,10 +13,38 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_os_1 = __importDefault(require("node:os"));
+// #2874 (ADR-58 cleanup phase): route the staging functions' fs calls
+// through the installRuntimeArtifacts call tree's injectable seam — see
+// install-fs-adapter.cts's module doc. Resolves to real `node:fs` unless the
+// top-level installRuntimeArtifacts call injected a `deps.fs`. Only the
+// staging functions reachable FROM that call tree are routed
+// (stageSkillsForProfile / stageAgentsForProfile /
+// stageAgentsForRuntimeWithConverter / stageSkillsForRuntimeAsSkills /
+// stageCommandsForRuntimeFlat / buildNamespaceBundleMap) — the profile-marker
+// and manifest-loading helpers below are not on that call tree and keep
+// using real `fs` directly.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const installFsAdapter = require("./install-fs-adapter.cjs");
+const { installFs, mkInstallTempDir } = installFsAdapter;
 const shell_command_projection_cjs_1 = require("./shell-command-projection.cjs");
+const frontmatter_fence_cjs_1 = require("./frontmatter-fence.cjs");
+// #2322: reuse the existing pure path-containment seam (ADR-1239 Phase C-2)
+// instead of hand-rolling a new traversal check for capability skill stems.
+const external_descriptor_trust_cjs_1 = require("./external-descriptor-trust.cjs");
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- capability-ledger.cjs is an export= CommonJS module
+const capabilityLedger = require("./capability-ledger.cjs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const conversionModule = require("./runtime-artifact-conversion.cjs");
-const { applyAgentPathRewrites: _applyAgentPathRewrites, processAttribution: _processAttribution, normalizeAgentBodyForRuntime: _normalizeAgentBodyForRuntime, readGsdCommandNames: _readGsdCommandNames, } = conversionModule;
+const { applyAgentPathRewrites: _applyAgentPathRewrites, processAttribution: _processAttribution, normalizeAgentBodyForRuntime: _normalizeAgentBodyForRuntime, readGsdCommandNames: _readGsdCommandNames, deriveAgentName: _deriveAgentName, applyAgentFrontmatterExtensions: _applyAgentFrontmatterExtensions, appendAgentTools: _appendAgentTools, _shieldAgentConverterPrefix, } = conversionModule;
+// #2995 (epic #1671 Phase 6.4): agent bodies join the fragment model. Markers are
+// stripped at emit BEFORE any path rewrite or converter runs, so a `.claude/` ->
+// `.windsurf/` regex can never reach inside a marker attribute and corrupt it —
+// the same ordering #2930 established for workflows.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const workflowFragmentsModule = require("./workflow-fragments.cjs");
+const { composeWorkflow: _composeWorkflow } = workflowFragmentsModule;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const installModelOverrideResolver = require("./install-model-override-resolver.cjs");
 // ---------------------------------------------------------------------------
 // Profile definitions
 // ---------------------------------------------------------------------------
@@ -70,13 +98,15 @@ const PROFILES = Object.freeze({
  * Returns string[] — empty array if no requires: field.
  *
  * No external YAML parser dependency — hand-parse the single line
- * since GSD enforces flow-style arrays for requires:.
+ * since GSD enforces flow-style arrays for requires:. The block is the one the
+ * one fence owner (`locateFrontmatterFence`) finds — a `---` pair later in the
+ * body (a thematic break, a YAML example) is never frontmatter.
  */
 function parseRequires(content) {
-    const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/m);
-    if (!fmMatch)
+    const fence = (0, frontmatter_fence_cjs_1.locateFrontmatterFence)(content);
+    if (!fence?.closed)
         return [];
-    const fm = fmMatch[1];
+    const fm = content.slice(fence.openEnd, fence.bodyEnd);
     const line = fm.match(/^requires:\s*(.+)$/m);
     if (!line)
         return [];
@@ -114,9 +144,79 @@ function parseCallsAgents(content) {
  * Also derives calls_agents for each skill by scanning the body text for
  * `gsd-*` agent name references. Agent stems are stored under the special
  * key `_calls_agents_<stem>` so they don't conflict with skill stems.
+ *
+ * #3798: command bodies are thin delegators — the actual `subagent_type=`
+ * spawns live in the workflow files each command references
+ * (`@…/workflows/<name>.md`). The agent derivation therefore ALSO reads every
+ * workflow file the command references (plus the workflow's steps/ fragments
+ * when it is split per the progressive-disclosure pattern) and unions their
+ * `gsd-*` tokens into the same `_calls_agents_<stem>` set. Without this,
+ * tiered profiles omitted agents their own installed skills spawn
+ * (gsd-verifier at execute-phase's verify_phase_goal was the filed repro).
+ * Over-inclusion fails safe: a tiered profile installing one extra agent
+ * costs bytes, never a broken spawn.
  */
 const DEFAULT_COMMANDS_DIR = node_path_1.default.resolve(__dirname, '..', '..', '..', 'commands', 'gsd');
-function loadSkillsManifest(commandsDir = DEFAULT_COMMANDS_DIR) {
+const DEFAULT_WORKFLOWS_DIR = node_path_1.default.resolve(__dirname, '..', '..', 'workflows');
+/**
+ * Collect the `gsd-*` agent tokens from every workflow file a command body
+ * references. References are the `workflows/<name>.md` path suffixes the
+ * delegating commands embed (`@…/gsd-core/workflows/<name>.md`). A
+ * split workflow (workflows/<name>/steps/*.md) contributes its fragments as
+ * well, because the parent dispatches into them and the spawns live there.
+ */
+function workflowAgentRefs(content, workflowsDir) {
+    const refs = content.match(/workflows\/([a-z0-9][a-z0-9-]*)\.md/g) || [];
+    const names = [...new Set(refs.map((r) => r.slice('workflows/'.length)))];
+    const tokens = new Set();
+    for (const name of names) {
+        const direct = node_path_1.default.join(workflowsDir, name);
+        let body = null;
+        try {
+            body = node_fs_1.default.readFileSync(direct, 'utf8');
+        }
+        catch {
+            body = null;
+        }
+        if (body === null)
+            continue;
+        for (const tok of parseCallsAgents(body))
+            tokens.add(tok);
+        // Split workflow: union EVERY fragment under the workflow's directory
+        // (steps/, modes/, templates/…) — the parent dispatches into these per
+        // the progressive-disclosure pattern, and spawns live in all of them
+        // (#3798 review: modes/ carried gsd-advisor-researcher's spawn while the
+        // parent only named it incidentally in prose).
+        const fragDir = node_path_1.default.join(workflowsDir, name.slice(0, -3));
+        const walk = (dir) => {
+            let frags;
+            try {
+                frags = node_fs_1.default.readdirSync(dir, { withFileTypes: true });
+            }
+            catch {
+                return;
+            }
+            for (const frag of frags) {
+                const full = node_path_1.default.join(dir, frag.name);
+                if (frag.isDirectory()) {
+                    walk(full);
+                    continue;
+                }
+                if (!frag.isFile() || !frag.name.endsWith('.md'))
+                    continue;
+                try {
+                    const fragBody = node_fs_1.default.readFileSync(full, 'utf8');
+                    for (const tok of parseCallsAgents(fragBody))
+                        tokens.add(tok);
+                }
+                catch { /* unreadable fragment — skip */ }
+            }
+        };
+        walk(fragDir);
+    }
+    return [...tokens];
+}
+function loadSkillsManifest(commandsDir = DEFAULT_COMMANDS_DIR, workflowsDir = DEFAULT_WORKFLOWS_DIR) {
     const manifest = new Map();
     if (!node_fs_1.default.existsSync(commandsDir))
         return manifest;
@@ -130,9 +230,12 @@ function loadSkillsManifest(commandsDir = DEFAULT_COMMANDS_DIR) {
         try {
             const content = node_fs_1.default.readFileSync(node_path_1.default.join(commandsDir, entry.name), 'utf8');
             manifest.set(stem, parseRequires(content));
-            // Derive agent references from body text
-            const agentRefs = parseCallsAgents(content);
-            manifest.set(`_calls_agents_${stem}`, agentRefs);
+            // Derive agent references from body text + the workflows it delegates to
+            const agentRefs = [
+                ...parseCallsAgents(content),
+                ...workflowAgentRefs(content, workflowsDir),
+            ];
+            manifest.set(`_calls_agents_${stem}`, [...new Set(agentRefs)]);
         }
         catch {
             manifest.set(stem, []);
@@ -199,7 +302,7 @@ function _capabilitySkillsForMode(mode, registry) {
 /**
  * Resolve a profile (or composed profiles) to a typed result object.
  */
-function resolveProfile({ modes, manifest, _profilesOverride, registry } = {}) {
+function resolveProfile({ modes, manifest, _profilesOverride, registry, agentManifest } = {}) {
     const profiles = _profilesOverride || PROFILES;
     const activeModes = (modes && modes.length > 0) ? modes : ['full'];
     const normalizedModes = activeModes
@@ -234,10 +337,13 @@ function resolveProfile({ modes, manifest, _profilesOverride, registry } = {}) {
     }
     // Derive agents: union of all agent names referenced in the body text of
     // every skill in unionSkills. Agent names are stored in the manifest under
-    // _calls_agents_<stem> keys (populated by loadSkillsManifest).
+    // _calls_agents_<stem> keys (populated by loadSkillsManifest). #5503: read from
+    // `agentManifest` when given, so a profile that skips the skill closure still
+    // stages the agents its own skills spawn.
+    const agentMan = agentManifest || man;
     const unionAgents = new Set();
     for (const skillStem of unionSkills) {
-        const agentRefs = man.get(`_calls_agents_${skillStem}`) || [];
+        const agentRefs = agentMan.get(`_calls_agents_${skillStem}`) || [];
         for (const agentStem of agentRefs) {
             unionAgents.add(agentStem);
         }
@@ -254,10 +360,41 @@ function resolveProfile({ modes, manifest, _profilesOverride, registry } = {}) {
 // site to track its own cleanup handle.
 const STAGED_DIRS = new Set();
 let exitHandlerRegistered = false;
+// #2874 leak-fix: `cleanupStagedSkills` runs at process exit — AFTER
+// `withInstallFs` has already restored `current` back to the real adapter
+// (install-fs-adapter.cts's module doc, "SYNCHRONOUS-ONLY / RE-ENTRANCY
+// ASSUMPTION" — extended there to reference this map). A dir staged during a
+// fake-adapter call must be cleaned up with THAT SAME fake adapter, not with
+// whatever is ambiently active later, or an exit handler would perform real
+// filesystem IO on a path that only ever existed in the fake's in-memory
+// store. Capturing the adapter OBJECT `installFs()` returns at registration
+// time (not the ambient `current` variable, which changes) means cleanup
+// always replays the exact adapter that created the path. Dirs added to
+// STAGED_DIRS without going through `registerStagedDir` (the deprecated
+// `stageSkillsForMode`, which creates its stage dir via raw `fs.mkdtempSync`
+// and was never on the injectable seam) have no entry here and fall back to
+// real `fs.rmSync` below — the same real fs it always used to create them.
+const STAGED_DIR_ADAPTERS = new Map();
+/**
+ * Register a dir just staged through the injectable seam (`installFs()`) for
+ * exit-time cleanup, capturing the adapter that staged it alongside the path.
+ * See `STAGED_DIR_ADAPTERS`'s comment for why the capture matters.
+ */
+function registerStagedDir(dir) {
+    STAGED_DIRS.add(dir);
+    STAGED_DIR_ADAPTERS.set(dir, installFs());
+    ensureExitCleanup();
+}
 function cleanupStagedSkills() {
     for (const dir of STAGED_DIRS) {
+        const adapter = STAGED_DIR_ADAPTERS.get(dir);
         try {
-            node_fs_1.default.rmSync(dir, { recursive: true, force: true });
+            if (adapter) {
+                adapter.rmSync(dir, { recursive: true, force: true });
+            }
+            else {
+                node_fs_1.default.rmSync(dir, { recursive: true, force: true });
+            }
         }
         catch {
             // Best-effort: missing dir or permission error shouldn't crash a
@@ -265,6 +402,7 @@ function cleanupStagedSkills() {
         }
     }
     STAGED_DIRS.clear();
+    STAGED_DIR_ADAPTERS.clear();
 }
 // Signals we register a cleanup handler for in addition to the natural
 // 'exit' event. `process.on('exit')` does NOT fire on these — an installer
@@ -293,11 +431,11 @@ function ensureExitCleanup() {
 function stageSkillsForProfile(srcDir, resolvedProfile) {
     if (resolvedProfile.skills === '*')
         return srcDir;
-    if (!node_fs_1.default.existsSync(srcDir))
+    if (!installFs().existsSync(srcDir))
         return srcDir;
-    const stageDir = node_fs_1.default.mkdtempSync(node_path_1.default.join(node_os_1.default.tmpdir(), 'gsd-profile-skills-'));
+    const stageDir = mkInstallTempDir('gsd-profile-skills-');
     try {
-        const entries = node_fs_1.default.readdirSync(srcDir, { withFileTypes: true });
+        const entries = installFs().readdirSync(srcDir, { withFileTypes: true });
         for (const entry of entries) {
             if (!entry.isFile())
                 continue;
@@ -306,18 +444,17 @@ function stageSkillsForProfile(srcDir, resolvedProfile) {
             const stem = entry.name.slice(0, -3);
             if (!(resolvedProfile.skills).has(stem))
                 continue;
-            node_fs_1.default.copyFileSync(node_path_1.default.join(srcDir, entry.name), node_path_1.default.join(stageDir, entry.name));
+            installFs().copyFileSync(node_path_1.default.join(srcDir, entry.name), node_path_1.default.join(stageDir, entry.name));
         }
     }
     catch (err) {
         try {
-            node_fs_1.default.rmSync(stageDir, { recursive: true, force: true });
+            installFs().rmSync(stageDir, { recursive: true, force: true });
         }
         catch { /* best-effort */ }
         throw err;
     }
-    STAGED_DIRS.add(stageDir);
-    ensureExitCleanup();
+    registerStagedDir(stageDir);
     return stageDir;
 }
 /**
@@ -326,16 +463,29 @@ function stageSkillsForProfile(srcDir, resolvedProfile) {
  * For tiered profiles, copies only agents whose full stem (e.g. 'gsd-planner')
  * is in resolvedProfile.agents — which is populated by resolveProfile() from
  * the _calls_agents_* entries in the manifest.
+ *
+ * ⚠️ RAW STAGER — ITS OUTPUT IS NOT EMISSION-READY (#2995). This stager performs a
+ * plain `fs.copyFileSync` and — under the default `full` profile — short-circuits
+ * and returns the real source directory unstaged. It does NOT strip `gsd:section`
+ * markers. It is still called, by `bin/install.js`'s `_stageAgents`, whose output
+ * feeds the inline agent loop and `installCodexConfig`; both of those compose the
+ * content themselves before writing, so the raw output never reaches disk. What
+ * changed in #2995 is that `agentsKind` and `kimiAgentsKind` no longer use it —
+ * they route through `stageAgentsForRuntimeWithConverter`, which composes.
+ *
+ * The invariant to preserve: anything that takes this function's output and WRITES
+ * it as a runtime artifact must call `composeWorkflow` on each file first, or it
+ * ships markers verbatim.
  */
 function stageAgentsForProfile(srcAgentsDir, resolvedProfile) {
     if (resolvedProfile.skills === '*')
         return srcAgentsDir;
-    if (!node_fs_1.default.existsSync(srcAgentsDir))
+    if (!installFs().existsSync(srcAgentsDir))
         return srcAgentsDir;
-    const stageDir = node_fs_1.default.mkdtempSync(node_path_1.default.join(node_os_1.default.tmpdir(), 'gsd-profile-agents-'));
+    const stageDir = mkInstallTempDir('gsd-profile-agents-');
     try {
         if (resolvedProfile.agents instanceof Set && resolvedProfile.agents.size > 0) {
-            const entries = node_fs_1.default.readdirSync(srcAgentsDir, { withFileTypes: true });
+            const entries = installFs().readdirSync(srcAgentsDir, { withFileTypes: true });
             for (const entry of entries) {
                 if (!entry.isFile())
                     continue;
@@ -345,20 +495,19 @@ function stageAgentsForProfile(srcAgentsDir, resolvedProfile) {
                 const stem = entry.name.slice(0, -3);
                 if (!resolvedProfile.agents.has(stem))
                     continue;
-                node_fs_1.default.copyFileSync(node_path_1.default.join(srcAgentsDir, entry.name), node_path_1.default.join(stageDir, entry.name));
+                installFs().copyFileSync(node_path_1.default.join(srcAgentsDir, entry.name), node_path_1.default.join(stageDir, entry.name));
             }
         }
         // If agents is empty Set, we produce an empty stageDir (no agents for this profile)
     }
     catch (err) {
         try {
-            node_fs_1.default.rmSync(stageDir, { recursive: true, force: true });
+            installFs().rmSync(stageDir, { recursive: true, force: true });
         }
         catch { /* best-effort */ }
         throw err;
     }
-    STAGED_DIRS.add(stageDir);
-    ensureExitCleanup();
+    registerStagedDir(stageDir);
     return stageDir;
 }
 /**
@@ -372,10 +521,10 @@ function buildNamespaceBundleMap(srcCommandsDir) {
     const routerStems = new Set();
     const routerChildren = new Map();
     const childToRouters = new Map();
-    if (!node_fs_1.default.existsSync(srcCommandsDir)) {
+    if (!installFs().existsSync(srcCommandsDir)) {
         return { routerStems, routerChildren, childToRouters };
     }
-    for (const entry of node_fs_1.default.readdirSync(srcCommandsDir, { withFileTypes: true })) {
+    for (const entry of installFs().readdirSync(srcCommandsDir, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.endsWith('.md'))
             continue;
         if (!entry.name.startsWith('ns-'))
@@ -383,7 +532,7 @@ function buildNamespaceBundleMap(srcCommandsDir) {
         const stem = entry.name.slice(0, -3);
         let children = [];
         try {
-            children = parseRequires(node_fs_1.default.readFileSync(node_path_1.default.join(srcCommandsDir, entry.name), 'utf8'));
+            children = parseRequires(installFs().readFileSync(node_path_1.default.join(srcCommandsDir, entry.name), 'utf8'));
         }
         catch {
             children = [];
@@ -438,8 +587,188 @@ function transformRouterBodyToNested(converted) {
     });
     return out.join('\n');
 }
-function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converter, prefix, nested = false) {
-    if (!node_fs_1.default.existsSync(srcCommandsDir))
+/**
+ * #2322 SECURITY: a third-party `capability.json`'s `skills[]` entries are only
+ * validated for being STRINGS and not one of the 3 reserved prototype-pollution
+ * names (capability-validator.cjs validateFeatureBody, ~line 503) — NOT for
+ * non-emptiness and NOT for a safe path-segment shape. `isSafeCapabilitySkillStem`
+ * is therefore the SOLE defense against an empty-string, `..`-escaping,
+ * separator-carrying, absolute, or NUL-carrying stem reaching a filesystem path
+ * as a literal component — not a second defense-in-depth layer on top of any
+ * validator-enforced non-emptiness (there is none). Once unioned into
+ * resolveSurface's `resolved.skills` (#2045), such a stem must never reach
+ * fs.readFileSync/writeFileSync as a literal path component, or it can escape
+ * the capabilities root on read (or stageDir on write). Reject anything but a
+ * single, ordinary path segment.
+ */
+function isSafeCapabilitySkillStem(stem) {
+    if (typeof stem !== 'string' || stem.length === 0)
+        return false;
+    if (stem.includes('\0'))
+        return false;
+    if (stem === '.' || stem === '..')
+        return false;
+    if (stem.includes('/') || stem.includes('\\'))
+        return false;
+    if (node_path_1.default.isAbsolute(stem))
+        return false;
+    return true;
+}
+/**
+ * Resolve which capability id DECLARES ownership of `stem`, per the registry's
+ * `capabilityClusters` view (capId -> [owned skill stems]) — the SAME
+ * authoritative binding `_capabilitySkillsForMode` (above) and `resolveSurface`
+ * (surface.cts) already trust to decide which stems a capability contributes.
+ * `capabilityClusters` is derived (gen-capability-registry.cjs
+ * deriveCapabilityClusters) straight from each ACCEPTED capability's OWN
+ * declared, non-empty `skills[]` array — an UNDECLARED directory a capability
+ * happens to ship on disk (an unlisted `skills/<stem>/` bundled by mistake, or
+ * by a malicious author trying to hijack another capability's stem) never
+ * appears here, so it can never resolve as an owner. Two capabilities can never
+ * both own the same stem: the registry loader (capability-loader.cts) rejects a
+ * candidate whose declared skill collides with an already-registered owner
+ * BEFORE it is ever composed into the registry — so this lookup is unambiguous
+ * by construction. Returns null for an unowned/unregistered stem or a
+ * malformed registry (never throws).
+ */
+function _owningCapabilityId(stem, clusters) {
+    const BANNED = ['__proto__', 'constructor', 'prototype'];
+    for (const capId of Object.keys(clusters)) {
+        if (BANNED.includes(capId))
+            continue;
+        const owned = clusters[capId];
+        if (!Array.isArray(owned))
+            continue;
+        if (owned.includes(stem))
+            return capId;
+    }
+    return null;
+}
+/**
+ * Union every stem ANY accepted capability declares across the WHOLE registry
+ * (unfiltered by mode/tier) — used only for the `'*'` (full profile) staging
+ * fill-in below, mirroring the SAME unconditional union `resolveSurface`
+ * (surface.cts) already performs when ITS OWN base profile resolves to `'*'`.
+ * Guards against a malformed/prototype-polluted registry; never throws.
+ */
+function capabilityClusterStems(registry) {
+    const result = new Set();
+    const clusters = registry?.capabilityClusters;
+    if (!clusters || typeof clusters !== 'object')
+        return result;
+    const BANNED = ['__proto__', 'constructor', 'prototype'];
+    for (const capId of Object.keys(clusters)) {
+        if (BANNED.includes(capId))
+            continue;
+        const stems = clusters[capId];
+        if (!Array.isArray(stems))
+            continue;
+        for (const s of stems) {
+            if (typeof s === 'string' && s.length > 0)
+                result.add(s);
+        }
+    }
+    return result;
+}
+/**
+ * #2322 HIGH-3: filesystem marker written into every staged THIRD-PARTY
+ * capability skill directory (alongside SKILL.md) so a later prune pass
+ * (surface.cts pruneSkillDirs) can identify the directory as GSD-capability-
+ * owned even after the owning capability has been uninstalled/unsurfaced and
+ * no longer appears in ANY registry view. Without a persisted marker, an
+ * orphaned capability skill directory has no first-party manifest entry (the
+ * skill manifest only ever knows gsd-core's own bundled stems) and
+ * pruneSkillDirs' conservative unknown-directory branch would preserve it
+ * FOREVER — uninstalling a malicious capability would never actually remove
+ * its already-staged instructions from the agent's context. A directory
+ * WITHOUT this marker is presumed genuinely user-created (data-loss
+ * protection is unchanged for that case).
+ */
+const CAPABILITY_SKILL_MARKER = '.gsd-capability-skill';
+/**
+ * Look up an installed third-party capability's already-authored SKILL.md for
+ * `stem`, bound to its DECLARING capability via the registry's
+ * `capabilityClusters` view (capId -> owned stems) — NEVER by scanning every
+ * installed capability directory and taking the first (sorted) match.
+ *
+ * #2322 BLOCKER 1: the prior implementation scanned every directory under the
+ * capabilities root for a `skills/<stem>/SKILL.md` file and returned the FIRST
+ * SORTED match, regardless of whether that capability actually DECLARED the
+ * stem in its `capability.json` `skills[]` and regardless of whether it was
+ * the (sole) REGISTERED owner. An attacker-controlled capability could ship an
+ * UNDECLARED `skills/<victim-stem>/SKILL.md` directory that sorted ahead of
+ * the legitimate, declaring capability and hijack its stem — the agent would
+ * load the attacker's instructions believing they came from the legitimate
+ * capability. Resolving `stem -> capId` via `capabilityClusters` FIRST (the
+ * same authoritative binding `resolveSurface`/`_capabilitySkillsForMode`
+ * trust) then reading ONLY that capability's own directory makes an
+ * undeclared/unregistered sibling directory unreachable by construction.
+ *
+ * The install-root path convention (`<capabilitiesRoot>/<capId>/skills/<stem>/
+ * SKILL.md` under `GSD_HOME || homedir()`) mirrors capability-loader.cts
+ * (global overlay root) and capability-source.cts's `stageValidated` finalDir.
+ *
+ * Total/non-throwing (#2322 requirement 5): no registry, an unowned stem, a
+ * missing capabilities root, an unreadable capability dir, or a missing/
+ * corrupt SKILL.md all degrade to `null` (skip that stem) rather than
+ * throwing — a partial/corrupt third-party install must never break
+ * first-party staging. No registry at all means NOTHING third-party is
+ * staged (fail closed — never a fallback scan).
+ *
+ * NOTE: the content returned here is staged AS-IS (no per-file `converter`
+ * runs on it — unlike gsd-core's flat command `.md`, an installed capability
+ * skill is already a complete SKILL.md), but it is NOT immune from the LATER
+ * runtime-targeted body rewrite pass `applySurface` runs over the ENTIRE
+ * staged directory (`rewriteStagedSkillBodies`, surface.cts): a `~/.claude/`
+ * (etc.) path reference in a third-party skill body IS rewritten exactly like
+ * a first-party one. "As-is" here refers only to this copy step, not to the
+ * final on-disk content after a full `applySurface` run.
+ */
+function readInstalledCapabilitySkill(stem, registry) {
+    if (!isSafeCapabilitySkillStem(stem))
+        return null;
+    if (!registry || !registry.capabilityClusters || typeof registry.capabilityClusters !== 'object')
+        return null;
+    const capId = _owningCapabilityId(stem, registry.capabilityClusters);
+    if (capId === null)
+        return null;
+    // Defense-in-depth: capId is a real accepted-capability directory name (a
+    // trusted fs.readdirSync entry at capability-loader.cts accept time), but
+    // re-validate its path-segment shape before using it as a literal path
+    // component in case a future registry composer ever stops guaranteeing that.
+    if (!isSafeCapabilitySkillStem(capId))
+        return null;
+    const home = process.env['GSD_HOME'] || node_os_1.default.homedir();
+    const capDir = node_path_1.default.join(home, '.gsd', 'capabilities', capId);
+    const relSkillPath = node_path_1.default.join('skills', stem, 'SKILL.md');
+    // Defense-in-depth: isSafeCapabilitySkillStem already rejects separators/
+    // '..'/absolute stems, but re-confirm the resolved read path stays under
+    // this capability's own directory before ever touching the filesystem.
+    if (!(0, external_descriptor_trust_cjs_1.isPathConfined)(relSkillPath, capDir))
+        return null;
+    const skillPath = node_path_1.default.join(capDir, relSkillPath);
+    try {
+        // statSync follows symlinks; isPathConfined is lexical and cannot see one.
+        // Refuse to read through a link so an outside file's content cannot be
+        // installed as a capability skill (epic #4636).
+        if (node_fs_1.default.lstatSync(skillPath).isSymbolicLink())
+            return null;
+        // #5121: the bounded regular-file read — a FIFO/device/oversized SKILL.md is skipped like a missing one.
+        const content = capabilityLedger.readSkillFile(skillPath);
+        return content === null ? null : { capId, content };
+    }
+    catch {
+        return null; // missing / unreadable / corrupt entry -> skip
+    }
+}
+/**
+ * @param registry optional capability registry (capabilityClusters view) —
+ *   when present, third-party capability skills are unioned into the staged
+ *   output (bound to their declaring capId; see readInstalledCapabilitySkill).
+ *   When absent, NOTHING third-party is staged (fail closed).
+ */
+function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converter, prefix, nested = false, registry) {
+    if (!installFs().existsSync(srcCommandsDir))
         return srcCommandsDir;
     // Nesting applies to the `full` install AND to any surface whose skill set
     // still contains every namespace router (a full/reset surface). It must NOT
@@ -458,9 +787,13 @@ function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converte
             doNest = [...bundles.routerStems].every((r) => present.has(r));
         }
     }
-    const stageDir = node_fs_1.default.mkdtempSync(node_path_1.default.join(node_os_1.default.tmpdir(), 'gsd-profile-runtime-skills-'));
+    // #2322: stems actually staged from gsd-core's OWN bundled commands/gsd dir
+    // this call, so the third-party fill-in pass below can enforce "first-party
+    // ALWAYS wins on collision" without re-deriving membership.
+    const firstPartyStems = new Set();
+    const stageDir = mkInstallTempDir('gsd-profile-runtime-skills-');
     try {
-        const entries = node_fs_1.default.readdirSync(srcCommandsDir, { withFileTypes: true });
+        const entries = installFs().readdirSync(srcCommandsDir, { withFileTypes: true });
         for (const entry of entries) {
             if (!entry.isFile())
                 continue;
@@ -469,15 +802,16 @@ function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converte
             const stem = entry.name.slice(0, -3);
             if (resolvedProfile.skills !== '*' && !(resolvedProfile.skills).has(stem))
                 continue;
-            const content = node_fs_1.default.readFileSync(node_path_1.default.join(srcCommandsDir, entry.name), 'utf8');
+            firstPartyStems.add(stem);
+            const content = installFs().readFileSync(node_path_1.default.join(srcCommandsDir, entry.name), 'utf8');
             const skillName = `${prefix}${stem}`;
             const converted = converter(content, skillName);
             if (doNest && bundles.routerStems.has(stem)) {
                 // Router skill: rewrite its routing table to the nested Read pattern and
                 // emit it as the single top-level bundle entry.
                 const destDir = node_path_1.default.join(stageDir, skillName);
-                node_fs_1.default.mkdirSync(destDir, { recursive: true });
-                node_fs_1.default.writeFileSync(node_path_1.default.join(destDir, 'SKILL.md'), transformRouterBodyToNested(converted));
+                installFs().mkdirSync(destDir, { recursive: true });
+                installFs().writeFileSync(node_path_1.default.join(destDir, 'SKILL.md'), transformRouterBodyToNested(converted));
                 continue;
             }
             if (doNest && bundles.childToRouters.has(stem)) {
@@ -486,27 +820,84 @@ function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converte
                 // top-level eager listing while staying readable by file path (#69).
                 for (const routerStem of bundles.childToRouters.get(stem)) {
                     const destDir = node_path_1.default.join(stageDir, `${prefix}${routerStem}`, 'skills', stem);
-                    node_fs_1.default.mkdirSync(destDir, { recursive: true });
-                    node_fs_1.default.writeFileSync(node_path_1.default.join(destDir, 'SKILL.md'), converted);
+                    installFs().mkdirSync(destDir, { recursive: true });
+                    installFs().writeFileSync(node_path_1.default.join(destDir, 'SKILL.md'), converted);
                 }
                 continue;
             }
             // Flat top-level skill (default behaviour; also the unrouted fallback when
             // nesting is active).
             const destDir = node_path_1.default.join(stageDir, skillName);
-            node_fs_1.default.mkdirSync(destDir, { recursive: true });
-            node_fs_1.default.writeFileSync(node_path_1.default.join(destDir, 'SKILL.md'), converted);
+            installFs().mkdirSync(destDir, { recursive: true });
+            installFs().writeFileSync(node_path_1.default.join(destDir, 'SKILL.md'), converted);
+        }
+        // #2322: materialize installed THIRD-PARTY capability skills, bound to
+        // their DECLARING capability via the registry's capabilityClusters view
+        // (see readInstalledCapabilitySkill — NEVER scan-and-first-match). The
+        // registry union (#2045) already puts every accepted-capability stem into
+        // a concrete resolvedProfile.skills Set, but srcCommandsDir only ever
+        // holds gsd-core's own bundled commands — so any stem with no first-party
+        // file here was silently dropped (registry says surfaced:true, nothing on
+        // disk) unless we fill it in from the capability's own install dir.
+        //
+        // BLOCKER 2 (#2322): `resolveProfile` short-circuits the `full` profile
+        // straight to the `'*'` sentinel BEFORE ever consulting a registry — the
+        // sentinel therefore carries no per-stem list of its own, and a bare
+        // `resolvedProfile.skills !== '*'` gate here skipped this ENTIRE fill-in
+        // pass for a `full` install regardless of what the registry declared
+        // (the issue's default-profile repro: `mode=full` staged zero third-party
+        // skills even when `mode=standard` on the SAME registry staged them
+        // correctly). When `resolvedProfile.skills === '*'`, the candidate stems
+        // are instead every stem the registry's `capabilityClusters` declares —
+        // mirroring the SAME unconditional union `resolveSurface` (surface.cts,
+        // "Issue #2045" block) already performs for its own `'*'` case. When
+        // `resolvedProfile.skills` is a concrete Set, the candidate stems are the
+        // ones `_capabilitySkillsForMode` already unioned into it (unchanged).
+        //
+        // No registry in scope at all -> stage NOTHING third-party (fail closed —
+        // never fall back to scanning). Nesting (#69) never applies to a
+        // capability skill — it was never a child of any ns-* router's
+        // `requires:` list — so it always lands flat at the top level, exactly
+        // like an unrouted first-party skill.
+        if (registry) {
+            const candidateStems = resolvedProfile.skills === '*' ? capabilityClusterStems(registry) : resolvedProfile.skills;
+            for (const stem of candidateStems) {
+                if (firstPartyStems.has(stem))
+                    continue; // first-party always wins
+                const found = readInstalledCapabilitySkill(stem, registry);
+                if (found === null)
+                    continue; // absent/malformed/unowned -> skip gracefully
+                const skillName = `${prefix}${stem}`;
+                if (!(0, external_descriptor_trust_cjs_1.isPathConfined)(skillName, stageDir))
+                    continue; // defense-in-depth
+                const destDir = node_path_1.default.join(stageDir, skillName);
+                // isPathConfined is lexical and cannot see a symlink. mkdirSync({recursive:true})
+                // does NOT throw when destDir already exists as a symlink to a directory, so a
+                // pre-planted link would redirect the SKILL.md write outside `stageDir`. Refuse
+                // to write through a link (epic #4636; mirrors retired-artifact-cleanup.cts:77).
+                try {
+                    if (installFs().lstatSync(destDir).isSymbolicLink())
+                        continue;
+                }
+                catch { /* ENOENT: not created yet — the normal case */ }
+                installFs().mkdirSync(destDir, { recursive: true });
+                installFs().writeFileSync(node_path_1.default.join(destDir, 'SKILL.md'), found.content);
+                // #2322 HIGH-3: persist the capability-owned marker so a later prune
+                // pass (surface.cts pruneSkillDirs) can identify — and remove — this
+                // directory even once the owning capability is uninstalled/unsurfaced
+                // and no longer appears in any registry view.
+                installFs().writeFileSync(node_path_1.default.join(destDir, CAPABILITY_SKILL_MARKER), found.capId + '\n', 'utf8');
+            }
         }
     }
     catch (err) {
         try {
-            node_fs_1.default.rmSync(stageDir, { recursive: true, force: true });
+            installFs().rmSync(stageDir, { recursive: true, force: true });
         }
         catch { /* best-effort */ }
         throw err;
     }
-    STAGED_DIRS.add(stageDir);
-    ensureExitCleanup();
+    registerStagedDir(stageDir);
     return stageDir;
 }
 /**
@@ -529,33 +920,66 @@ function stageSkillsForRuntimeAsSkills(srcCommandsDir, resolvedProfile, converte
  * agent loop in bin/install.js exactly:
  *   1. applyAgentPathRewrites   (4 base ~/.claude/ regexes; skipped for copilot/antigravity)
  *   2. processAttribution       (Co-Authored-By policy)
- *   3. converter                (runtime-specific frontmatter/body transform)
- *   4. normalizeAgentBodyForRuntime (colon→hyphen refs; no-op for trivial group)
- * When `agentCtx` is absent, only the converter is applied (backward-compat for
- * the feat-1173 synthetic-descriptor tests and the copilot/antigravity paths
- * that handle cross-cutting inside their converters).
+ *   3. appendAgentTools         (#4032: validated agent_tools grants, before host conversion)
+ *   4. converter                (runtime-specific frontmatter/body transform)
+ *   5. applyAgentFrontmatterExtensions (#2875 Part 2: effort/disallowedTools,
+ *      gated by hostBehaviors.agentFrontmatterExtensions — no-op for a runtime
+ *      that declares nothing, e.g. every non-Claude runtime today)
+ *   6. normalizeAgentBodyForRuntime (colon→hyphen refs; no-op for trivial group)
+ * When `agentCtx` is absent, only global `agent_tools` augmentation and the
+ * converter run; other cross-cutting remains absent for backward compatibility.
  *
  * @param srcAgentsDir    source agents directory (e.g. agents/)
  * @param resolvedProfile profile filter from resolveProfile()
- * @param converter       (content: string, isGlobal?: boolean) → string per-file
- *                        converter; scope-aware converters (copilot/antigravity)
- *                        read isGlobal, single-arg converters ignore it (#1173)
+ * @param converter       (content: string, isGlobal?: boolean, meta?: {agentName: string}) → string
+ *                        per-file converter; scope-aware converters (copilot/antigravity)
+ *                        read isGlobal, single-arg converters ignore both extra args (#1173).
+ *                        `meta.agentName` (#2875 Part 2) is passed ONLY when `agentCtx` is
+ *                        present, letting a converter close over per-agent config
+ *                        (e.g. kilo/opencode model-override resolution in
+ *                        runtime-artifact-layout.cts's convertedAgentsKind) without widening
+ *                        every OTHER converter's contract — converters that don't declare a
+ *                        3rd parameter simply never read it.
  * @param isGlobal        install scope passed through to the converter
- * @param agentCtx        optional cross-cutting context (ADR-1235 §1); when absent,
- *                        only the converter is applied (backward compat)
+ * @param agentCtx        optional cross-cutting context (ADR-1235 §1)
  */
-function stageAgentsForRuntimeWithConverter(srcAgentsDir, resolvedProfile, converter, isGlobal = false, agentCtx) {
-    if (!node_fs_1.default.existsSync(srcAgentsDir))
+function stageAgentsForRuntimeWithConverter(srcAgentsDir, resolvedProfile, converter, isGlobal = false, agentCtx, excludeSuffixes) {
+    if (!installFs().existsSync(srcAgentsDir))
         return srcAgentsDir;
-    const stageDir = node_fs_1.default.mkdtempSync(node_path_1.default.join(node_os_1.default.tmpdir(), 'gsd-profile-runtime-agents-'));
+    const stageDir = mkInstallTempDir('gsd-profile-runtime-agents-');
+    let entries;
     try {
-        const entries = node_fs_1.default.readdirSync(srcAgentsDir, { withFileTypes: true });
+        // #2284/#2875: readdirSync-ing the shipped agents/ source is isolated in
+        // its own try/catch so an unreadable source directory (permissions, a
+        // corrupted install, or — as the #2284 test suite demonstrates — the
+        // fail-closed injection harness) produces the SAME "refusing to install"
+        // fail-closed wording every other agents-dir-unreadable path in this
+        // codebase uses (bin/install.js's `_resolveAvailableGsdRoles` /
+        // `_assertRoleResolvable`), instead of an unrelated raw fs error message
+        // escaping uncaught. Hermes's role-dispatch validation depends on the
+        // SAME shipped agents/ directory being readable; before this runtime also
+        // declared an `agents` kind, this function was never reached on a Hermes
+        // install, so an unreadable source here silently surfaced as a raw error
+        // rather than the deliberate fail-closed contract #2284 established.
+        entries = installFs().readdirSync(srcAgentsDir, { withFileTypes: true });
+    }
+    catch (err) {
+        try {
+            installFs().rmSync(stageDir, { recursive: true, force: true });
+        }
+        catch { /* best-effort */ }
+        throw new Error(`stageAgentsForRuntimeWithConverter: could not resolve the shipped agents/ directory "${srcAgentsDir}" to stage — refusing to install (fail-closed, #2284/#2875): ${err.message}`);
+    }
+    try {
         // Resolve cmdNames once per staging call (not per file) for performance.
         const cmdNames = agentCtx ? _readGsdCommandNames() : [];
+        const agentTools = installModelOverrideResolver.readGsdEffectiveAgentTools(agentCtx?.projectDir ?? agentCtx?.targetDir ?? null);
         for (const entry of entries) {
             if (!entry.isFile())
                 continue;
             if (!entry.name.endsWith('.md'))
+                continue;
+            if (excludeSuffixes && excludeSuffixes.some((s) => entry.name.endsWith(s)))
                 continue;
             // For tiered profiles, gate by agent stem (full filename without extension).
             if (resolvedProfile.skills !== '*') {
@@ -564,34 +988,53 @@ function stageAgentsForRuntimeWithConverter(srcAgentsDir, resolvedProfile, conve
                     continue;
                 }
             }
-            let content = node_fs_1.default.readFileSync(node_path_1.default.join(srcAgentsDir, entry.name), 'utf8');
+            const agentSourcePath = node_path_1.default.join(srcAgentsDir, entry.name);
+            let content = installFs().readFileSync(agentSourcePath, 'utf8');
+            // #2995: strip gsd:section markers FIRST — before path rewrites, attribution,
+            // and the per-runtime converter. Byte-identical (no-op) for an unmarked agent;
+            // throws loudly naming the file for a malformed marker, never emitting a
+            // half-composed agent.
+            content = _composeWorkflow(content, { sourcePath: agentSourcePath });
+            const agentName = _deriveAgentName(entry.name);
+            const grants = [
+                ...(agentTools?.['*'] || []),
+                ...(agentTools?.[agentName] || []),
+            ];
             if (agentCtx) {
+                // #2875 Part 2 / row I3: derived exactly as the inline loop does —
+                // single-sourced via deriveAgentName (runtime-artifact-conversion.cts).
                 // ADR-1235 §1: pre-converter cross-cutting (matches inline loop order exactly)
                 // Step 1: path rewrites (4 base ~/.claude/ regexes; skipped for copilot/antigravity)
                 content = _applyAgentPathRewrites(content, agentCtx.runtime, agentCtx.pathPrefix);
                 // Step 2: attribution
                 content = _processAttribution(content, agentCtx.attribution);
-                // Step 3: converter (runtime-specific frontmatter/body transform)
-                content = converter(content, isGlobal);
-                // Step 4: normalize colon→hyphen refs (no-op for trivial group)
+                // Step 3: validated canonical grants, before host conversion.
+                content = _appendAgentTools(content, grants);
+                // Step 4: converter (runtime-specific frontmatter/body transform)
+                // #5715: the converter runs after the prefix pass above; shield the emitted prefix
+                // from it, except where the runtime declares no path rewrite (nothing was emitted).
+                content = _shieldAgentConverterPrefix(content, agentCtx.runtime, agentCtx.pathPrefix, (shielded) => converter(shielded, isGlobal, { agentName, pathPrefix: agentCtx.pathPrefix }));
+                // Step 5: frontmatter extensions (effort/disallowedTools; no-op unless
+                // the runtime declares hostBehaviors.agentFrontmatterExtensions)
+                content = _applyAgentFrontmatterExtensions(content, { runtime: agentCtx.runtime, agentName, targetDir: agentCtx.targetDir });
+                // Step 6: normalize colon→hyphen refs (no-op for trivial group)
                 content = _normalizeAgentBodyForRuntime(content, agentCtx.runtime, cmdNames);
             }
             else {
-                // Backward-compat: only apply the converter (no cross-cutting)
+                content = _appendAgentTools(content, grants);
                 content = converter(content, isGlobal);
             }
-            node_fs_1.default.writeFileSync(node_path_1.default.join(stageDir, entry.name), content, 'utf8');
+            installFs().writeFileSync(node_path_1.default.join(stageDir, entry.name), content, 'utf8');
         }
     }
     catch (err) {
         try {
-            node_fs_1.default.rmSync(stageDir, { recursive: true, force: true });
+            installFs().rmSync(stageDir, { recursive: true, force: true });
         }
         catch { /* best-effort */ }
         throw err;
     }
-    STAGED_DIRS.add(stageDir);
-    ensureExitCleanup();
+    registerStagedDir(stageDir);
     return stageDir;
 }
 /**
@@ -618,11 +1061,11 @@ function stageAgentsForRuntimeWithConverter(srcAgentsDir, resolvedProfile, conve
  * @param prefix          command name prefix (for converter arg), e.g. 'gsd-'
  */
 function stageCommandsForRuntimeFlat(srcCommandsDir, resolvedProfile, converter, prefix) {
-    if (!node_fs_1.default.existsSync(srcCommandsDir))
+    if (!installFs().existsSync(srcCommandsDir))
         return srcCommandsDir;
-    const stageDir = node_fs_1.default.mkdtempSync(node_path_1.default.join(node_os_1.default.tmpdir(), 'gsd-profile-runtime-commands-'));
+    const stageDir = mkInstallTempDir('gsd-profile-runtime-commands-');
     try {
-        const entries = node_fs_1.default.readdirSync(srcCommandsDir, { withFileTypes: true });
+        const entries = installFs().readdirSync(srcCommandsDir, { withFileTypes: true });
         for (const entry of entries) {
             if (!entry.isFile())
                 continue;
@@ -631,24 +1074,23 @@ function stageCommandsForRuntimeFlat(srcCommandsDir, resolvedProfile, converter,
             const stem = entry.name.slice(0, -3);
             if (resolvedProfile.skills !== '*' && !(resolvedProfile.skills).has(stem))
                 continue;
-            const content = node_fs_1.default.readFileSync(node_path_1.default.join(srcCommandsDir, entry.name), 'utf8');
+            const content = installFs().readFileSync(node_path_1.default.join(srcCommandsDir, entry.name), 'utf8');
             // Pass the full command name (with prefix) to the converter so it can
             // reference the installed command name in the body (e.g. for descriptions).
             // The staged file itself is named without the prefix; _copyStaged adds it.
             const commandName = `${prefix}${stem}`;
             const converted = converter(content, commandName);
-            node_fs_1.default.writeFileSync(node_path_1.default.join(stageDir, `${stem}.md`), converted);
+            installFs().writeFileSync(node_path_1.default.join(stageDir, `${stem}.md`), converted);
         }
     }
     catch (err) {
         try {
-            node_fs_1.default.rmSync(stageDir, { recursive: true, force: true });
+            installFs().rmSync(stageDir, { recursive: true, force: true });
         }
         catch { /* best-effort */ }
         throw err;
     }
-    STAGED_DIRS.add(stageDir);
-    ensureExitCleanup();
+    registerStagedDir(stageDir);
     return stageDir;
 }
 // ---------------------------------------------------------------------------
@@ -821,7 +1263,14 @@ module.exports = {
     // Shared internals
     parseRequires,
     parseCallsAgents,
+    workflowAgentRefs,
     cleanupStagedSkills,
+    // #2322: capability-skill security seams — exported for direct unit-testing
+    // and for surface.cts's prune pass (CAPABILITY_SKILL_MARKER parity).
+    isSafeCapabilitySkillStem,
+    readInstalledCapabilitySkill,
+    capabilityClusterStems,
+    CAPABILITY_SKILL_MARKER,
     // Back-compat / deprecated
     MINIMAL_SKILL_ALLOWLIST,
     isMinimalMode,

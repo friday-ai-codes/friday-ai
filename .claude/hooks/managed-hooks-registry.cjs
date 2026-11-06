@@ -16,6 +16,7 @@
  * stale warnings for users who haven't cleaned up manually (#1750).
  */
 const MANAGED_HOOKS = [
+  'gsd-agent-isolation-guard.js',
   'gsd-check-update-worker.js',
   'gsd-check-update.js',
   'gsd-config-reload.js',
@@ -28,10 +29,15 @@ const MANAGED_HOOKS = [
   'gsd-cursor-subagent-stop.js',
   'gsd-ensure-canonical-path.js',
   'gsd-graphify-update.sh',
+  'gsd-path-export.js',
+  // #3662: portable node resolver (helper staged in hooks/; managed JS hook
+  // commands route through it under --portable-hooks).
+  'gsd-node-runner.sh',
   'gsd-phase-boundary.sh',
   'gsd-prompt-guard.js',
   'gsd-read-guard.js',
   'gsd-read-injection-scanner.js',
+  'gsd-secret-read-guard.js',
   'gsd-session-state.sh',
   'gsd-statusline.js',
   'gsd-update-banner.js',
@@ -40,6 +46,7 @@ const MANAGED_HOOKS = [
   'gsd-windsurf-pre-write.js',
   'gsd-workflow-guard.js',
   'gsd-worktree-path-guard.js',
+  'gsd-write-guard.js',
 ];
 
 module.exports = { MANAGED_HOOKS };

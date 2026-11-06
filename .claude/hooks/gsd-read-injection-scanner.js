@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// gsd-hook-version: 1.7.0
+// gsd-hook-version: 1.20.1
 // GSD Read Injection Scanner — PostToolUse hook (#2201)
 // Pattern-based pre-filter / blocklist: scans content returned by Read, WebFetch,
 // and WebSearch for known prompt-injection patterns (regex + heuristic rules).
@@ -23,6 +23,13 @@
 
 const path = require('path');
 const fs = require('fs');
+const { HOOK_ON_CRASH, allow, crash } = require('./lib/hook-exit.js');
+
+// This is a PostToolUse advisory scanner over content the tool call already
+// returned; a crash while scanning must not retroactively block that Read/
+// WebFetch/WebSearch result from reaching the agent — losing the injection
+// check is safer than failing the tool call it is only observing (#3911).
+const ON_CRASH = HOOK_ON_CRASH.ALLOW;
 
 // Summarisation-specific patterns (novel — not in gsd-prompt-guard.js).
 // These target instructions specifically designed to survive context compression.
@@ -72,25 +79,28 @@ const MARKDOWN_LINK_PATTERNS = [
   },
 ];
 
-// Standard injection patterns — mirrors gsd-prompt-guard.js, inlined for hook independence.
-const INJECTION_PATTERNS = [
-  /ignore\s+(all\s+)?previous\s+instructions/i,
-  /ignore\s+(all\s+)?above\s+instructions/i,
-  /disregard\s+(all\s+)?previous/i,
-  /forget\s+(all\s+)?(your\s+)?instructions/i,
-  /override\s+(system|previous)\s+(prompt|instructions)/i,
-  /you\s+are\s+now\s+(?:a|an|the)\s+/i,
-  /act\s+as\s+(?:a|an|the)\s+(?!plan|phase|wave)/i,
-  /pretend\s+(?:you(?:'re| are)\s+|to\s+be\s+)/i,
-  /from\s+now\s+on,?\s+you\s+(?:are|will|should|must)/i,
-  /(?:print|output|reveal|show|display|repeat)\s+(?:your\s+)?(?:system\s+)?(?:prompt|instructions)/i,
-  /<\/?(?:system|assistant|human)>/i,
-  /\[SYSTEM\]/i,
-  /\[INST\]/i,
-  /<<\s*SYS\s*>>/i,
-];
+// Standard injection patterns — shared with gsd-prompt-guard.js via
+// hooks/lib/injection-patterns.js so the two surfaces cannot drift (#3504).
+// Staging of the lib helper is allowlisted in GSD_HOOK_LIB_FILES (bin/install.js).
+const { INJECTION_PATTERNS, describePattern } = require('./lib/injection-patterns.js');
 
 const ALL_PATTERNS = [...INJECTION_PATTERNS, ...SUMMARISATION_PATTERNS];
+
+// #3023: the staged bundle's directory name is runtime-descriptor-driven, so a
+// literal `/<config>/hooks/` fragment cannot reliably identify GSD's own hook
+// scripts. This module lives inside the bundle, so __dirname identifies it by
+// construction. Normalized to forward slashes to match `p` below.
+const OWN_BUNDLE_PREFIX = __dirname.replace(/\\/g, '/').replace(/\/+$/, '') + '/';
+
+// Synthetic rule ids for the finding classes that have no entry in
+// MARKDOWN_LINK_PATTERNS. Frozen and referenced from BOTH the push sites and
+// renderFinding so the two can never drift — a bare literal repeated at each
+// site is how a rename silently falls through to the generic render branch.
+const RULE_IDS = Object.freeze({
+  INJECTION_PATTERN: 'INJECTION-PATTERN',
+  INVISIBLE_UNICODE: 'INVISIBLE-UNICODE',
+  UNICODE_TAG_BLOCK: 'UNICODE-TAG-BLOCK',
+});
 
 function isExcludedPath(filePath) {
   const p = filePath.replace(/\\/g, '/');
@@ -101,31 +111,139 @@ function isExcludedPath(filePath) {
     /CHECKPOINT/i.test(path.basename(p)) ||
     /[/\\](?:security|techsec|injection)[/\\.]/i.test(p) ||
     /security\.cjs$/.test(p) ||
+    p.startsWith(OWN_BUNDLE_PREFIX) ||
     p.includes('/.claude/hooks/')
   );
 }
 
+// Kimi CLI delivers the tool vocabulary the matcher was registered with —
+// the scanner's Kimi matcher is 'ReadFile' (runtime-hooks-surface.cts), so
+// tool_name arrives as 'ReadFile' (possibly module-qualified) and tool_input
+// carries `path` (kimi-cli src/kimi_cli/tools/file/read.py Params), not
+// `file_path`. Without normalization the SCANNED_TOOLS check below never
+// matches on Kimi and the scanner is silently dormant (#2304).
+//
+// SCOPE ON KIMI (#2547): normalization makes this scanner's CHECKS run on
+// Kimi. It does NOT make its block effective there. This is a PostToolUse
+// hook, and kimi-cli's dispatch never inspects PostToolUse hook results —
+// src/kimi_cli/soul/toolset.py fires them via asyncio.create_task() and
+// returns the ToolResult without awaiting, whereas PreToolUse results are
+// awaited and honoured. So `security.injection_blocking` cannot take effect
+// on Kimi regardless of the shape emitted below; reshaping the output would
+// not change that. Blocking prompt injection on Kimi needs a PreToolUse
+// mechanism, or an upstream kimi-cli change. Do not describe this hook as
+// "engaged" or "blocking" on Kimi. This block is
+// kept byte-identical with the copies in gsd-prompt-guard.js,
+// gsd-read-guard.js, and gsd-worktree-path-guard.js — a parity test binds
+// them (tests/kimi-guard-normalization-parity.test.cjs). Inlined per guard
+// (not hooks/lib/): hook scripts are staged as standalone files, and a
+// sibling require is a staging dependency that can fail silently.
+// A Map, not an object literal: bare bracket lookup resolves prototype keys
+// ('constructor', '__proto__', 'toString') to truthy functions/objects, so the
+// !mapped fall-through never fires for them; Map.get returns undefined (same
+// shape as canonicalizeRuntimeName in src/runtime-name-policy.cts).
+const KIMI_TOOL_NAMES = new Map([['WriteFile', 'Write'], ['StrReplaceFile', 'Edit'], ['ReadFile', 'Read'], ['Shell', 'Bash']]);
+function normalizeKimiPayload(data) {
+  // #2595 (review nit): `JSON.parse('null')` is null, and null/primitive
+  // payloads reached the `data.tool_name` read below and threw — falsifying
+  // this function's own "total over the inputs JSON can express" claim, which
+  // property (e) now tests directly. Harmless in practice (a null payload has
+  // nothing to guard, and the throw landed in the same fail-open catch as the
+  // exit-0 it now takes deliberately) but the claim should be true as stated.
+  if (data === null || typeof data !== 'object') return data;
+  const raw = data.tool_name;
+  if (typeof raw !== 'string') return data;
+  const mapped = KIMI_TOOL_NAMES.get(raw.slice(raw.lastIndexOf(':') + 1));
+  if (!mapped) return data;
+  data.tool_name = mapped;
+  if (data.tool_response === undefined && data.tool_output !== undefined) {
+    data.tool_response = data.tool_output;
+  }
+  const input = data.tool_input;
+  if (input && typeof input === 'object') {
+    // #2547 (review): Kimi's `path` is AUTHORITATIVE — it must win outright,
+    // not merely fill in when `file_path` happens to be absent. kimi-cli's file
+    // tools carry no `file_path` field at all (src/kimi_cli/tools/file/write.py,
+    // replace.py, @ 4a550ef — the SHA #2547 pins), and soul/toolset.py hands the
+    // model's raw json-parsed
+    // arguments to PreToolUse verbatim, doing typed validation only later inside
+    // tool.call() — after the hook has already decided. So a `file_path` in a
+    // Kimi payload is ALWAYS model-supplied, and under the old `=== undefined`
+    // condition it SHADOWED the field kimi-cli actually executes on. A payload
+    // pairing a cross-root `path` with a spurious `file_path: ""` left every
+    // guard reading an empty string and exiting 0, while the identical write
+    // without the extra key blocked — a bypass needing no crash at all. The same
+    // shadowing also preserved a NON-STRING `file_path` (`[]`), which threw
+    // inside gsd-worktree-path-guard's path.isAbsolute() and reached its outer
+    // `catch { process.exit(0) }`: the same crash-to-allow this fix closes
+    // elsewhere, reached through the guard's own read rather than through
+    // normalization. Overwriting can only ever narrow what a guard inspects to
+    // the path that will actually be written, so it cannot under-block.
+    if (typeof input.path === 'string') {
+      input.file_path = input.path;
+    }
+    const edits = Array.isArray(input.edit) ? input.edit
+      : (input.edit && typeof input.edit === 'object') ? [input.edit] : [];
+    if (edits.length) {
+      // #2547: `e?.old`, not `e.old` — `??` guards the value, not the
+      // dereference, so a NULLISH entry (`edit: [null]`) threw a TypeError
+      // here. normalizeKimiPayload runs before any tool dispatch, so that throw
+      // reached each guard's outer `catch { process.exit(0) }` and silently
+      // downgraded a should-BLOCK call into an allow. (A string/number entry
+      // never threw — `('x').old` is a legal read yielding undefined.)
+      //
+      // The String() coercion is guarded for the same reason: `{"toString":
+      // null}` is valid JSON that throws "Cannot convert object to primitive
+      // value", which is the identical crash-to-allow with a different
+      // trigger. Degrading only the non-coercible entry to '' keeps
+      // stringification intact for every value that CAN coerce (numbers,
+      // arrays, plain objects), so nothing downstream — including
+      // gsd-prompt-guard's scan of new_string — loses content it saw before.
+      const editText = (v) => { try { return String(v ?? ''); } catch { return ''; } };
+      // #2595 (review Major 2): reconstruct UNCONDITIONALLY, mirroring the
+      // `path` decision above rather than merely filling in when the field
+      // happens to be absent. kimi-cli's StrReplaceFile schema is `path` +
+      // `edit` only (src/kimi_cli/tools/file/replace.py @ 4a550ef) — it carries
+      // no `old_string`/`new_string` at all, so either field appearing in a
+      // Kimi payload is ALWAYS model-supplied, exactly like `file_path`. Under
+      // the old `=== undefined` condition a model-supplied `new_string: ""`
+      // SHADOWED the reconstruction, leaving gsd-prompt-guard's injection scan
+      // reading '' and exiting at its `if (!content)` before it ever saw the
+      // real `edit[].new` — a one-key bypass of the very scan this fix's
+      // guarded coercion exists to keep fed. A `typeof` test would NOT close
+      // it: a benign non-empty string shadows just as effectively as ''.
+      input.old_string = edits.map((e) => editText(e?.old)).join('\n');
+      input.new_string = edits.map((e) => editText(e?.new)).join('\n');
+    }
+  }
+  return data;
+}
+
 let inputBuf = '';
-const stdinTimeout = setTimeout(() => process.exit(0), 5000);
+const stdinTimeout = setTimeout(() => allow(undefined), 5000);
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', chunk => { inputBuf += chunk; });
 process.stdin.on('end', () => {
   clearTimeout(stdinTimeout);
   try {
-    const data = JSON.parse(inputBuf);
+    const data = normalizeKimiPayload(JSON.parse(inputBuf));
 
     const toolName = data.tool_name;
     const SCANNED_TOOLS = new Set(['Read', 'WebFetch', 'WebSearch']);
     if (!SCANNED_TOOLS.has(toolName)) {
-      process.exit(0);
+      allow(undefined);
     }
 
     // Source label + path-exclusion (path-exclusion applies to file reads only)
     let source;
     if (toolName === 'Read') {
-      source = data.tool_input?.file_path || '';
-      if (!source) process.exit(0);
-      if (isExcludedPath(source)) process.exit(0);
+      // #2595 (review Major 3, sibling sweep): typed read — a non-string
+      // threw inside isExcludedPath()'s .replace() into the outer catch.
+      source = typeof data.tool_input?.file_path === 'string'
+        ? data.tool_input.file_path
+        : '';
+      if (!source) allow(undefined);
+      if (isExcludedPath(source)) allow(undefined);
     } else if (toolName === 'WebFetch') {
       source = data.tool_input?.url || 'web';
     } else { // WebSearch
@@ -150,15 +268,22 @@ process.stdin.on('end', () => {
     }
 
     if (!content || content.length < 20) {
-      process.exit(0);
+      allow(undefined);
     }
 
+    // Typed findings IR — single source of truth for both the machine-readable
+    // `findings` array and the rendered advisory prose. Never build these as two
+    // parallel arrays: that invites the generative-fix-divergence defect class
+    // where the rendered text and the structured data silently drift apart.
     const findings = [];
 
     for (const pattern of ALL_PATTERNS) {
       if (pattern.test(content)) {
-        // Trim pattern source for readable output
-        findings.push(pattern.source.replace(/\\s\+/g, '-').replace(/[()\\]/g, '').substring(0, 50));
+        // Trim pattern source for readable output (shared with gsd-prompt-guard.js)
+        findings.push({
+          ruleId: RULE_IDS.INJECTION_PATTERN,
+          match: describePattern(pattern),
+        });
       }
     }
 
@@ -170,26 +295,36 @@ process.stdin.on('end', () => {
         const m = line.match(entry.pattern);
         if (!m) continue;
         if (entry.safePredicate && entry.safePredicate(line)) continue;
-        findings.push(`${entry.ruleId}:${m[0].substring(0, 40)}`);
+        findings.push({ ruleId: entry.ruleId, match: m[0].substring(0, 40) });
       }
     }
 
     // Invisible Unicode (zero-width, RTL override, soft hyphen, BOM)
     if (/[\u200B-\u200F\u2028-\u202F\uFEFF\u00AD\u2060-\u2069]/.test(content)) {
-      findings.push('invisible-unicode');
+      findings.push({ ruleId: RULE_IDS.INVISIBLE_UNICODE, match: null });
     }
 
     // Unicode tag block U+E0000–E007F (invisible instruction injection vector)
     try {
       if (/[\u{E0000}-\u{E007F}]/u.test(content)) {
-        findings.push('unicode-tag-block');
+        findings.push({ ruleId: RULE_IDS.UNICODE_TAG_BLOCK, match: null });
       }
     } catch {
       // Engine does not support Unicode property escapes — skip this check
     }
 
     if (findings.length === 0) {
-      process.exit(0);
+      allow(undefined);
+    }
+
+    // Renders one finding back into the exact prose fragment the advisory has
+    // always embedded. Kept as the ONLY place that maps IR -> text, so the
+    // `additionalContext` string and the `findings` array can never diverge.
+    function renderFinding(f) {
+      if (f.ruleId === RULE_IDS.INVISIBLE_UNICODE) return 'invisible-unicode';
+      if (f.ruleId === RULE_IDS.UNICODE_TAG_BLOCK) return 'unicode-tag-block';
+      if (f.ruleId === RULE_IDS.INJECTION_PATTERN) return f.match;
+      return `${f.ruleId}:${f.match}`;
     }
 
     const severity = findings.length >= 3 ? 'HIGH' : 'LOW';
@@ -199,7 +334,7 @@ process.stdin.on('end', () => {
       : 'Single pattern match may be a false positive (e.g., documentation). Proceed with awareness.';
     const advisory =
       `\u26a0\ufe0f INJECTION SCAN [${severity}] (${toolName}): "${label}" triggered ` +
-      `${findings.length} pattern(s): ${findings.join(', ')}. ` +
+      `${findings.length} pattern(s): ${findings.map(renderFinding).join(', ')}. ` +
       `This content is now in your conversation context. ${detail} Source: ${source}`;
 
     // Opt-in blocking: only when configured AND high-confidence
@@ -216,12 +351,14 @@ process.stdin.on('end', () => {
     const output = blocking
       ? { decision: 'block',
           reason: `Prompt-injection blocked (${toolName}). ${advisory}`,
-          hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: advisory } }
-      : { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: advisory } };
+          hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: advisory, findings, severity, source } }
+      : { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: advisory, findings, severity, source } };
 
     process.stdout.write(JSON.stringify(output));
   } catch {
-    // Silent fail — never block tool execution
-    process.exit(0);
+    // Silent fail — never block tool execution.
+    // ON_CRASH is declared ALLOW at module top: this preserves today's
+    // exit(0) fail-open behavior exactly (#3911).
+    crash(ON_CRASH, undefined);
   }
 });

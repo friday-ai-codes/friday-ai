@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// gsd-hook-version: 1.7.0
+// gsd-hook-version: 1.20.1
 // gsd-cursor-session-start.js — Cursor sessionStart hook (issue #777)
 //
 // Cursor invokes this script at the start of each agent session.
@@ -23,17 +23,22 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
+const { allow } = require('./lib/hook-exit.js');
 
 const MSG_PRESENT =
   'gsd- .planning/STATE.md is present — review the current phase and any blockers before acting.';
 const MSG_ABSENT =
   'gsd- no .planning/ workflow found — run /gsd-new-project to start a tracked workflow.';
 
+// Workspace resolution is shared across the Cursor hooks (#2587) — see
+// hooks/lib/cursor-workspace.js. Staged next to these scripts by
+// writeCursorHooksJson so the require always resolves post-install.
+const { resolveStatePath } = require('./lib/cursor-workspace.js');
+
 let raw = '';
 const stdinTimeout = setTimeout(() => {
   // Timeout guard: exit silently rather than hanging.
-  process.exit(0);
+  allow(undefined);
 }, 10000);
 
 process.stdin.setEncoding('utf8');
@@ -41,7 +46,7 @@ process.stdin.on('data', (chunk) => { raw += chunk; });
 process.stdin.on('end', () => {
   clearTimeout(stdinTimeout);
   try {
-    const statePath = path.join(process.cwd(), '.planning', 'STATE.md');
+    const statePath = resolveStatePath(raw);
     const statePresent = fs.existsSync(statePath);
     const msg = statePresent ? MSG_PRESENT : MSG_ABSENT;
     process.stdout.write(JSON.stringify({ additional_context: msg }));

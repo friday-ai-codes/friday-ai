@@ -58,14 +58,9 @@ exports.eslintHasFatalError = eslintHasFatalError;
 exports.eslintJsonHasRule = eslintJsonHasRule;
 exports.defaultProveFailFirst = defaultProveFailFirst;
 exports.runProhibitionEnforcement = runProhibitionEnforcement;
-exports.routeProhibitionEnforcement = routeProhibitionEnforcement;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_child_process_1 = require("node:child_process");
-// Import the leaf I/O module directly (core.cjs re-export spine retired in epic #1267).
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const io = require("./io.cjs");
-const { output, error, ERROR_REASON } = io;
 const probe_core_cjs_1 = require("./probe-core.cjs");
 /**
  * READ-BACK ADAPTER (#1278, plan 01-03): reconstruct a `CheckDescriptor` from the flat scalar keys
@@ -362,6 +357,93 @@ function childEnv() {
 const NODE_TEST_TIMEOUT_MS = 30_000;
 const ESLINT_TIMEOUT_MS = 60_000;
 const CHECK_MAX_BUFFER = 16 * 1024 * 1024;
+/** Windows `taskkill` resolved by ABSOLUTE path — never a bare PATH-resolved name. A project
+ * directory used as the child's `cwd` could otherwise contain a planted `taskkill.exe`/`.bat`
+ * that Windows executable resolution picks up ahead of the real one (#3660 review, minor-9).
+ * Returns null (never a hardcoded fallback, per tests/hardcoded-paths.test.cjs) when neither env
+ * var is set -- not expected on a real Windows host (both are set by the OS itself), but a
+ * hostile/stripped env should degrade to "skip the reap" rather than guess a system path. */
+function taskkillPath() {
+    const root = process.env.SystemRoot || process.env.windir;
+    return root ? node_path_1.default.join(root, 'System32', 'taskkill.exe') : null;
+}
+/**
+ * Reap the process TREE rooted at `pid` after THIS call's own bound killed it (#3660: `node --test`
+ * forks a per-file WORKER by default since Node 22 — `execFileSync`'s `timeout` signals only the
+ * direct child/runner, never the worker, which is reparented to PID 1 and can busy-loop forever).
+ *
+ * POSIX: the child was spawned `detached` (its own process group, pgid === pid), so `-pid` addresses
+ * the whole group. ESRCH (group already gone) is swallowed — the subject may have exited on its own
+ * between the timeout firing and this call.
+ *
+ * Windows has no process-group equivalent; `taskkill /PID <pid> /T /F` walks the live process tree by
+ * parent-PID instead, which does not require the parent PID to still be alive. A non-zero exit means
+ * "nothing left to kill" (already gone, or never had descendants) — not a failure, so it is never
+ * escalated; there is no portable stronger primitive to escalate TO.
+ *
+ * Never throws — this runs from a `catch`/`finally` path and must not itself become the error.
+ */
+function reapDescendants(pid) {
+    if (typeof pid !== 'number' || pid <= 0)
+        return; // defensive: never signal pid 0 (self) or negative
+    if (process.platform === 'win32') {
+        const exe = taskkillPath();
+        if (!exe)
+            return; // no safe absolute path available -- best-effort, skip rather than guess
+        try {
+            // 5s bound (DEFECT.UNBOUNDED-SUBPROCESS): a local OS command, not a network call -- if
+            // taskkill itself hangs, this function's own "never throws" contract already treats that
+            // identically to any other failure (swallowed below), so a bounded timeout costs nothing
+            // and just prevents a stuck taskkill from blocking the caller forever.
+            (0, node_child_process_1.spawnSync)(exe, ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true, timeout: 5_000 });
+        }
+        catch {
+            // best-effort: a missing taskkill.exe (or a timeout) is not this call's problem to escalate
+        }
+        return;
+    }
+    try {
+        process.kill(-pid, 'SIGKILL');
+    }
+    catch {
+        // Swallows ESRCH (group already gone -- nothing to reap) and any other errno (e.g. EPERM) --
+        // this helper never throws regardless of cause; see the function's own doc comment above.
+    }
+}
+/**
+ * `execFileSync`, with descendant reaping layered on top. Same contract (same return value, throws
+ * the identical error) EXCEPT that when — and ONLY when — this call's OWN timeout killed the child,
+ * any descendants the child forked are also reaped.
+ *
+ * Gated on `error.code === 'ETIMEDOUT'`, NOT `error.signal`. `signal` is the field Node's own docs
+ * describe for this purpose, but it is not reliably populated across platforms/Node versions: on one
+ * real Linux CI run (Node 24) a genuine timeout-kill threw `{ signal: null, code: 'ETIMEDOUT',
+ * status: 7 }` — `signal` was simply absent, `code` was the only reliable marker (confirmed empirically
+ * before landing this; a macOS/Node run separately showed `signal: 'SIGTERM'` for the identical
+ * scenario, so neither field alone is safe to rely on everywhere — `code` was the one constant).
+ * Gating strictly on the timeout code (rather than reaping on every throw) matters: an ordinary
+ * non-zero exit (a real test/lint failure) has no `ETIMEDOUT` code — the child exited on its own, so a
+ * reap there would fire on every red run for no reason and, on POSIX, risks signalling a process group
+ * whose pgid was *already* recycled by something unrelated in the time since (the #3660 review's
+ * Blocker-3 defect in the prior attempt at this fix, PR #3681). Only the timeout-kill path is targeted.
+ *
+ * Spawns `detached` on POSIX so the reap above can address the whole process group; omitted on
+ * Windows (no such flag there — `@types/node`'s `ExecFileSyncOptions` doesn't declare `detached`
+ * either, hence the cast below, though libuv honors it identically to `spawnSync`).
+ */
+function execFileSyncReaping(file, args, options) {
+    const spawnOptions = process.platform === 'win32' ? options : { ...options, detached: true };
+    try {
+        return (0, node_child_process_1.execFileSync)(file, args, spawnOptions);
+    }
+    catch (e) {
+        const err = e;
+        if (typeof err.pid === 'number' && err.code === 'ETIMEDOUT') {
+            reapDescendants(err.pid);
+        }
+        throw e;
+    }
+}
 /** Resolve the effective timeout: only a POSITIVE override is honored — `0` (which Node treats as
  * "no timeout") or a negative value falls back to the bounded default, so the subprocess is ALWAYS
  * bounded (a `timeoutMs: 0` injection can never disable the bound). */
@@ -378,7 +460,7 @@ function posTimeout(timeoutMs, def) {
  */
 function runNodeTestWithSubject(check, cwd, subject, timeoutMs) {
     try {
-        return (0, node_child_process_1.execFileSync)(process.execPath, buildNodeTestArgs(check), {
+        return execFileSyncReaping(process.execPath, buildNodeTestArgs(check), {
             cwd,
             encoding: 'utf-8',
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -398,7 +480,7 @@ function defaultRunCheck(check, cwd, timeoutMs) {
         if (check.kind === 'node-test') {
             let out = '';
             try {
-                out = (0, node_child_process_1.execFileSync)(process.execPath, buildNodeTestArgs(check), {
+                out = execFileSyncReaping(process.execPath, buildNodeTestArgs(check), {
                     cwd,
                     encoding: 'utf-8',
                     stdio: ['ignore', 'pipe', 'pipe'],
@@ -422,7 +504,7 @@ function defaultRunCheck(check, cwd, timeoutMs) {
                 return { passed: false }; // eslint not installed -> fail closed, never throw
             let json = '';
             try {
-                json = (0, node_child_process_1.execFileSync)(process.execPath, [eslintCli, ...buildLintArgs(check)], {
+                json = execFileSyncReaping(process.execPath, [eslintCli, ...buildLintArgs(check)], {
                     cwd,
                     encoding: 'utf-8',
                     stdio: ['ignore', 'pipe', 'pipe'],
@@ -482,7 +564,7 @@ function defaultProveFailFirst(check, cwd, timeoutMs) {
                 return { provenFailFirst: false }; // eslint not installed -> fail closed, never throw
             let json = '';
             try {
-                json = (0, node_child_process_1.execFileSync)(process.execPath, [eslintCli, ...buildLintArgs({ ...check, target: fixture })], {
+                json = execFileSyncReaping(process.execPath, [eslintCli, ...buildLintArgs({ ...check, target: fixture })], {
                     cwd,
                     encoding: 'utf-8',
                     stdio: ['ignore', 'pipe', 'pipe'],
@@ -642,54 +724,4 @@ function runProhibitionEnforcement(prohibition, check, options = {}) {
         evidence,
         ...(mode ? { mode } : {}),
     };
-}
-/**
- * Parse a `{ prohibition, check, mode }` request from a JSON file path or inline `--json` string.
- * Returns null on any parse failure (the caller surfaces a structured error, never a throw).
- */
-function parseRequest(args) {
-    // args[0] = 'check', args[1] = 'prohibition-enforcement', args[2] = <json-file-path | --json>
-    const jsonFlagIdx = args.indexOf('--json');
-    let payload = '';
-    if (jsonFlagIdx !== -1 && typeof args[jsonFlagIdx + 1] === 'string') {
-        payload = args[jsonFlagIdx + 1];
-    }
-    else if (typeof args[2] === 'string' && args[2]) {
-        try {
-            payload = node_fs_1.default.readFileSync(args[2], 'utf-8');
-        }
-        catch {
-            return null;
-        }
-    }
-    else {
-        return null;
-    }
-    try {
-        const parsed = JSON.parse(payload);
-        const checkRaw = parsed['check'];
-        const check = (checkRaw && typeof checkRaw === 'object')
-            ? checkRaw
-            : null;
-        const modeRaw = parsed['mode'];
-        const mode = typeof modeRaw === 'string' ? modeRaw : undefined;
-        return { prohibition: parsed['prohibition'] ?? null, check, ...(mode ? { mode } : {}) };
-    }
-    catch {
-        return null;
-    }
-}
-/**
- * CLI surface: `gsd_run check prohibition-enforcement <request.json>` (or `--json '<inline>'`).
- * Parses the request, runs the producer, and emits the result as JSON. Honors the no-throw
- * contract: malformed input -> structured `error(...)`, never an uncaught throw.
- */
-function routeProhibitionEnforcement(args, raw) {
-    const req = parseRequest(args);
-    if (!req) {
-        error('prohibition-enforcement requires a JSON request: check prohibition-enforcement <request.json> | --json \'{"prohibition":{...},"check":{...}}\'', ERROR_REASON.SDK_MISSING_ARG);
-        return;
-    }
-    const result = runProhibitionEnforcement(req.prohibition, req.check, req.mode ? { mode: req.mode } : {});
-    output(result, raw, undefined);
 }

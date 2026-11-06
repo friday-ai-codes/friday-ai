@@ -40,8 +40,9 @@ const VALID_SANDBOX_TIERS = new Set(['none', 'codex-agent-sandbox']);
  * (Marketplace/VSIX-distributed, never dispatched through
  * install()/finishInstall()), so it is not a "config-adapter runtime" by
  * definition. This keeps this set in lockstep with bin/install.js's
- * `allRuntimes` (see tests/issue-57-runtime-install-no-drift.test.cjs) without
- * needing a separate hand-kept exclusion list.
+ * `allRuntimes` (see the folded:issue-57-runtime-install-no-drift describe
+ * block in tests/runtime-config-adapter-registry.test.cjs) without needing a
+ * separate hand-kept exclusion list.
  */
 const ALLOWED_CONFIG_RUNTIMES = new Set(Object.entries(runtimes)
     .filter(([, cap]) => cap && cap.runtime && typeof cap.runtime['installSurface'] === 'string' && cap.runtime['installSurface'] !== 'none')

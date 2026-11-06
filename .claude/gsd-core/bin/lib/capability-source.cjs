@@ -32,6 +32,8 @@ const node_os_1 = __importDefault(require("node:os"));
 const node_https_1 = __importDefault(require("node:https"));
 const node_crypto_1 = __importDefault(require("node:crypto"));
 // eslint-disable-next-line @typescript-eslint/no-require-imports
+const { resolveGsdHome } = require('./runtime-homes.cjs');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const shellSeam = require('./shell-command-projection.cjs');
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const capValidator = require('./capability-validator.cjs');
@@ -96,8 +98,100 @@ function _setHttpsGetImpl(fn) {
 // ---------------------------------------------------------------------------
 // Injectable HTTP transport (test seam)
 // ---------------------------------------------------------------------------
+/**
+ * #3514 (epic #1900 F21): pre-transport fetch gate. Runs BEFORE any bytes leave and before the
+ * (possibly injected) transport is invoked:
+ *
+ *  - Non-`https` URLs are refused with a NAMED, actionable reason. parseSpec still CLASSIFIES an
+ *    `http://` tarball URL as tarball (no parse-time hard reject — internal-mirror classification
+ *    flows stay intact, the adopted split decision on the epic); the https-only transport then
+ *    fails clearly instead of with a raw ERR_INVALID_PROTOCOL.
+ *  - Loopback / link-local / metadata / unspecified hosts and `localhost`-form names are denied
+ *    unconditionally — no legitimate capability install fetches them. RFC1918 private ranges are
+ *    deliberately ALLOWED (internal mirrors are the legitimate use this leaves room for); the
+ *    denylist is not an allowlist.
+ *
+ * Known limit (disclosed): the check is on the URL's HOST LITERAL. A public hostname that
+ * RESOLVES via DNS to a denied range (rebinding) is out of scope — `https.get` resolves
+ * internally and this gate does not double-resolve.
+ */
+function assertFetchableUrl(rawUrl) {
+    let u;
+    try {
+        u = new URL(rawUrl);
+    }
+    catch {
+        throw new Error(`invalid capability source URL: "${rawUrl}"`);
+    }
+    if (u.protocol !== 'https:') {
+        throw new Error(`capability source fetch requires https — refusing "${u.protocol}" URL (host "${u.hostname}"). ` +
+            'The transport never fetches plaintext http; for an internal mirror use an https URL or a local path source.');
+    }
+    // Node's URL.hostname KEEPS the brackets on IPv6 literals ('[::1]') — strip them so the
+    // v6 checks below see the bare address. A single trailing dot is FQDN syntax ('localhost.'
+    // is the same name as 'localhost'; some resolvers synthesize loopback for it) — strip it.
+    const host = u.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+    const deniedHost = () => new Error(`refusing to fetch capability source from internal host "${host}" (loopback/link-local/metadata denylist)`);
+    if (host === 'localhost' || host.endsWith('.localhost')) {
+        throw deniedHost();
+    }
+    // IPv4 literal: 127/8 loopback, 0/8 unspecified, 169.254/16 link-local (contains the cloud
+    // metadata IPs). Malformed literals that match no range simply fall through to a failed
+    // resolution downstream — denying is not needed for safety there.
+    const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (v4) {
+        const a = Number(v4[1]);
+        const b = Number(v4[2]);
+        if (a === 127 || a === 0 || (a === 169 && b === 254))
+            throw deniedHost();
+        return;
+    }
+    // IPv6-literal checks. A registered domain NEVER contains ':' after bracket-strip, while every
+    // IPv6 literal does — that colon is the guard. Without it, the fe80::/10 prefix test below
+    // would deny legitimate domains like 'feather.internal' or 'february.example.com' (isolated
+    // review finding — a domain-shaped host must never reach the v6 branch).
+    if (!host.includes(':')) {
+        return;
+    }
+    // An IPv4-mapped address re-checks as IPv4 — in EITHER spelling, because the URL parser may
+    // preserve the dotted form ('::ffff:127.0.0.1') or normalize to hex hextets ('::ffff:7f00:1').
+    // Otherwise deny ::1 (loopback), :: (unspecified), and fe80::/10 (link-local, hex prefix range
+    // fe80–febf).
+    if (host.startsWith('::ffff:')) {
+        const suffix = host.slice('::ffff:'.length);
+        let v4str = null;
+        if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(suffix)) {
+            v4str = suffix;
+        }
+        else {
+            const hextets = suffix.split(':');
+            if (hextets.length === 2 && /^[\da-f]{1,4}$/.test(hextets[0]) && /^[\da-f]{1,4}$/.test(hextets[1])) {
+                const hi = parseInt(hextets[0], 16);
+                const lo = parseInt(hextets[1], 16);
+                v4str = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+            }
+        }
+        if (v4str) {
+            assertFetchableUrl(`https://${v4str}/`);
+            return;
+        }
+    }
+    // fe80::/10 = hex prefix fe80..febf, i.e. /^fe[89ab]/ (third nibble 8-b has top two bits set).
+    if (host === '::1' || host === '::' || /^fe[89ab]/.test(host)) {
+        throw deniedHost();
+    }
+}
 function realHttpsGet(url) {
     return new Promise((resolve, reject) => {
+        // #3514: gate BEFORE the transport — scheme + host denylist refuse with named errors and
+        // never invoke the (possibly injected) transport. A throw inside the executor rejects.
+        try {
+            assertFetchableUrl(url);
+        }
+        catch (err) {
+            reject(err instanceof Error ? err : new Error(String(err)));
+            return;
+        }
         const req = _httpsGetImpl(url, { headers: { 'User-Agent': 'gsd-core-capability-source/1.0' } }, (res) => {
             // DOS-1: reject early if the server ADVERTISES a body over the cap — no bytes buffered.
             const contentLength = Number(res.headers?.['content-length']);
@@ -585,8 +679,25 @@ function stageValidated(opts) {
             throw new Error(`Hook fragment validation failed: ${fragErrs.join('; ')}`);
         }
         // Cross-capability validations (contract, consumes, cross-capability).
-        const capMap = new Map([[id, cap]]);
-        const centralKeys = new Set();
+        //
+        // #3929: seed the validation set the way the loader builds its accepted
+        // map — frozen first-party registry, then each committed overlay of the
+        // TARGET (global) install scope accepted incrementally (structural +
+        // engines + full-suite-clean), then the candidate LAST (mirroring
+        // `acceptedMap.set(id, cap)`). The singleton seed
+        // `new Map([[id, cap]])` this replaced made every non-empty `requires`
+        // unsatisfiable (membership is checked against the map) and left cycles,
+        // tier-monotone and central config-key exclusivity vacuous at install.
+        // The seed builder lives in capability-loader so the overlay semantics
+        // have one owner and are clean by construction — pre-existing junk in the
+        // install scope is skipped, never attributed to the candidate. No swallow:
+        // if the loader cannot build the seed the install fails loudly — silently
+        // degrading to the singleton map would re-hide #3929.
+        /* eslint-disable @typescript-eslint/no-require-imports */
+        const seedLoader = require('./capability-loader.cjs');
+        /* eslint-enable @typescript-eslint/no-require-imports */
+        const { capMap, centralKeys } = seedLoader.crossValidationSeed(process.cwd(), gsdHome, hostVersion, capValidator, semverMod);
+        capMap.set(id, cap);
         const crossErrs = [
             ...capValidator.validateAgainstContract(cap, id),
             ...capValidator.validateConsumesGlobal(capMap),
@@ -875,7 +986,7 @@ async function resolveTarball(parsed, opts, gsdHome, hostVersion) {
 async function resolveCapabilitySource(spec, opts = {}) {
     const parsed = parseSpec(spec);
     const hostVersion = opts.hostVersion ?? readHostVersion();
-    const gsdHome = opts.gsdHome ?? process.env['GSD_HOME'] ?? node_os_1.default.homedir();
+    const gsdHome = opts.gsdHome || resolveGsdHome();
     switch (parsed.kind) {
         case 'local':
             return resolveLocal(parsed, opts, gsdHome, hostVersion);

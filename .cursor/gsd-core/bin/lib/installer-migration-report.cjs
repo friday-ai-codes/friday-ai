@@ -32,20 +32,39 @@ const VALID_CHOICES = ['keep', 'remove'];
 // on-disk `hooks/` directory in both directions: whitelist-but-missing
 // AND shipped-but-not-whitelisted both fail CI.
 exports.BUNDLED_GSD_HOOK_FILES = Object.freeze(new Set([
+    'hooks/gsd-agent-isolation-guard.js',
     'hooks/gsd-check-update-worker.js',
     'hooks/gsd-check-update.js',
+    'hooks/gsd-config-reload.js',
     'hooks/gsd-context-monitor.js',
+    'hooks/gsd-cursor-post-tool.js',
+    'hooks/gsd-cursor-pre-tool.js',
+    'hooks/gsd-cursor-session-start.js',
+    'hooks/gsd-cursor-stop.js',
+    'hooks/gsd-cursor-subagent-start.js',
+    'hooks/gsd-cursor-subagent-stop.js',
+    // Windsurf/Cascade blocking hooks — registered by writeWindsurfHooksJson (#2100).
+    'hooks/gsd-windsurf-pre-write.js',
+    'hooks/gsd-windsurf-pre-command.js',
+    'hooks/gsd-ensure-canonical-path.js',
     'hooks/gsd-graphify-update.sh',
+    // #3662: portable node resolver staged into hooks/ (not itself a lifecycle
+    // hook — managed JS hook commands route through it under --portable-hooks).
+    'hooks/gsd-node-runner.sh',
+    // #5465: SessionStart PATH persistence through $CLAUDE_ENV_FILE.
+    'hooks/gsd-path-export.js',
     'hooks/gsd-phase-boundary.sh',
     'hooks/gsd-prompt-guard.js',
     'hooks/gsd-read-guard.js',
     'hooks/gsd-read-injection-scanner.js',
+    'hooks/gsd-secret-read-guard.js',
     'hooks/gsd-session-state.sh',
     'hooks/gsd-statusline.js',
     'hooks/gsd-update-banner.js',
     'hooks/gsd-validate-commit.sh',
     'hooks/gsd-workflow-guard.js',
     'hooks/gsd-worktree-path-guard.js',
+    'hooks/gsd-write-guard.js',
 ]));
 // ── Internal helpers ──────────────────────────────────────────────────────────
 function installerMigrationActionLabel(action) {
@@ -63,6 +82,8 @@ function installerMigrationActionLabel(action) {
         return 'preserved';
     if (action.type === 'preserve-user')
         return 'preserved';
+    if (action.type === 'remove-empty-dir')
+        return 'removed';
     if (action.type === 'prompt-user')
         return 'blocked';
     return 'skipped';

@@ -1,6 +1,8 @@
+@.cursor/gsd-core/references/response-language-directive.md
+
 <purpose>
 
-Drive milestone phases autonomously — all remaining phases, a range via `--from N`/`--to N`, or a single phase via `--only N`. For each incomplete phase: discuss → plan → execute using Skill() flat invocations. Pauses only for explicit user decisions (grey area acceptance, blockers, validation requests). Re-reads ROADMAP.md after each phase to catch dynamically inserted phases.
+Drive milestone phases autonomously — all remaining phases, a range via `--from N`/`--to N`, or a single phase via `--only N`. For each incomplete phase: discuss → plan → execute using Skill() flat invocations. When `--converge` or `--cross-ai` is set, route the planning step through plan-review convergence before execution. Pauses only for explicit user decisions (grey area acceptance, blockers, validation requests). Re-reads ROADMAP.md after each phase to catch dynamically inserted phases.
 
 </purpose>
 
@@ -16,42 +18,108 @@ Read all files referenced by the invoking prompt's execution_context before star
 
 ## 1. Initialize
 
-Parse `{{GSD_ARGS}}` for `--from N`, `--to N`, `--only N`, and `--interactive` flags:
+Parse `{{GSD_ARGS}}` for `--from N`, `--to N`, `--only N`, `--interactive`, `--converge`/`--cross-ai`, reviewer selector flags, and `--max-cycles N`:
 
 ```bash
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+# #4748: the phase token is the canonical grammar (src/phase-id.cts) — digits,
+# an optional uppercase letter, any number of dotted segments — so `12A` and
+# `23.1.2` extract whole instead of truncating to `12` / `23.1`.
 FROM_PHASE=""
-if echo "{{GSD_ARGS}}" | grep -qE '\-\-from\s+[0-9]'; then
-  FROM_PHASE=$(echo "{{GSD_ARGS}}" | grep -oE '\-\-from\s+[0-9]+\.?[0-9]*' | awk '{print $2}')
+if echo "$GSD_ARGS" | grep -qE '\-\-from\s+[0-9]'; then
+  FROM_PHASE=$(echo "$GSD_ARGS" | grep -oE '\-\-from\s+[0-9]+[A-Z]?(\.[0-9]+)*' | awk '{print $2}')
 fi
 
 TO_PHASE=""
-if echo "{{GSD_ARGS}}" | grep -qE '\-\-to\s+[0-9]'; then
-  TO_PHASE=$(echo "{{GSD_ARGS}}" | grep -oE '\-\-to\s+[0-9]+\.?[0-9]*' | awk '{print $2}')
+if echo "$GSD_ARGS" | grep -qE '\-\-to\s+[0-9]'; then
+  TO_PHASE=$(echo "$GSD_ARGS" | grep -oE '\-\-to\s+[0-9]+[A-Z]?(\.[0-9]+)*' | awk '{print $2}')
 fi
 
 ONLY_PHASE=""
-if echo "{{GSD_ARGS}}" | grep -qE '\-\-only\s+[0-9]'; then
-  ONLY_PHASE=$(echo "{{GSD_ARGS}}" | grep -oE '\-\-only\s+[0-9]+\.?[0-9]*' | awk '{print $2}')
+if echo "$GSD_ARGS" | grep -qE '\-\-only\s+[0-9]'; then
+  ONLY_PHASE=$(echo "$GSD_ARGS" | grep -oE '\-\-only\s+[0-9]+[A-Z]?(\.[0-9]+)*' | awk '{print $2}')
   FROM_PHASE="$ONLY_PHASE"
 fi
 
 INTERACTIVE=""
-if echo "{{GSD_ARGS}}" | grep -q '\-\-interactive'; then
+if echo "$GSD_ARGS" | grep -q '\-\-interactive'; then
   INTERACTIVE="true"
+fi
+
+PLAN_STRATEGY="local"
+if echo "$GSD_ARGS" | grep -qE '(^|[[:space:]])\-\-(converge|cross-ai)([[:space:]]|$)'; then
+  PLAN_STRATEGY="converge"
+fi
+
+CONVERGE_PARAM=""
+if echo "$GSD_ARGS" | grep -qE '(^|[[:space:]])\-\-converge([[:space:]]|$)'; then
+  CONVERGE_PARAM="--converge"
+fi
+CROSS_AI_PARAM=""
+if echo "$GSD_ARGS" | grep -qE '(^|[[:space:]])\-\-cross-ai([[:space:]]|$)'; then
+  CROSS_AI_PARAM="--cross-ai"
 fi
 ```
 
 When `--only` is set, also set `FROM_PHASE` to the same value so existing filter logic applies.
 
-When `--interactive` is set, discuss runs inline with questions (not auto-answered), while plan and execute are dispatched as background agents. This keeps the main context lean — only discuss conversations accumulate — while preserving user input on all design decisions.
+When `--interactive` is set, discuss stays inline. If `dispatch-should-flatten` returns `false`, dispatch plan and execute as background agents; if it returns `true`, run them inline and keep phases sequential. Preserve user input on all design decisions.
+
+When `PLAN_STRATEGY=converge`, the planning step MUST invoke the plan-review convergence workflow instead of `gsd-plan-phase`. `--cross-ai` is an alias for `--converge`. Forward `CONVERGENCE_ARGS` exactly as parsed so reviewer flags and `--max-cycles N` retain the same meaning as they have on `/gsd-plan-review-convergence`.
 
 Bootstrap via milestone-level init:
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
-INIT=$(gsd_run query init.milestone-op)
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+INIT=$(gsd_run query init.milestone-op ${GSD_WS:+--ws=${GSD_WS##* }})
 if [[ "$INIT" == @file:* ]]; then INIT=$(cat "${INIT#@file:}"); fi
+INIT_AUTONOMOUS=$(gsd_run query init.autonomous ${GSD_WS:+--ws=${GSD_WS##* }} $CONVERGE_PARAM $CROSS_AI_PARAM)
+if [[ "$INIT_AUTONOMOUS" == @file:* ]]; then INIT_AUTONOMOUS=$(cat "${INIT_AUTONOMOUS#@file:}"); fi
 ```
+
+Extract `section_manifest` from `INIT_AUTONOMOUS` (used by the `converge-*` sections below and in step 3).
+
+If `PLAN_STRATEGY` is `converge`, the dispatch below carries `--override-gate` (#4600): the operator's explicit `--converge`/`--cross-ai` overrides the convergence feature gate for this run. Without the flag, `PLAN_STRATEGY` is `local` and this block never appends it.
+
+```bash
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+# Lane flags derived from the declared roster (#2800/#2272); --all and --text are convergence
+# controls, not reviewer lanes, so they stay literal.
+# This block must stay AFTER the launcher preamble (above) because it calls `gsd_run` —
+# do not move it back above the preamble in a future edit.
+CONVERGENCE_ARGS=""
+for REVIEW_FLAG in $(gsd_run review-lane flags) --all --text; do
+  if echo "$GSD_ARGS" | grep -qE "(^|[[:space:]])${REVIEW_FLAG}([[:space:]]|$)"; then
+    CONVERGENCE_ARGS="${CONVERGENCE_ARGS} ${REVIEW_FLAG}"
+  fi
+done
+
+MAX_CYCLES_ARG=""
+if echo "$GSD_ARGS" | grep -qE '\-\-max-cycles\s+[0-9]+'; then
+  MAX_CYCLES_ARG=$(echo "$GSD_ARGS" | grep -oE '\-\-max-cycles\s+[0-9]+' | awk '{print $2}')
+  CONVERGENCE_ARGS="${CONVERGENCE_ARGS} --max-cycles ${MAX_CYCLES_ARG}"
+fi
+
+# #4600: the dispatched convergence workflow re-checks the feature gate in its own §1.5 —
+# an explicit --converge/--cross-ai must override it, so mark this dispatch explicitly.
+# Conditional on PLAN_STRATEGY: a local-strategy run must never carry the override.
+if [ "${PLAN_STRATEGY}" = "converge" ]; then
+  CONVERGENCE_ARGS="${CONVERGENCE_ARGS} --override-gate"
+fi
+```
+
+If `section_manifest` is `null` or `"converge-fail-fast"` is in its `included` list: read and execute `gsd-core/workflows/autonomous/steps/converge-fail-fast.md`. Otherwise skip — do not read the file.
 
 Parse JSON for: `milestone_version`, `milestone_name`, `phase_count`, `completed_phases`, `roadmap_exists`, `state_exists`, `commit_docs`.
 
@@ -61,9 +129,7 @@ Parse JSON for: `milestone_version`, `milestone_name`, `phase_count`, `completed
 Display startup banner:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AUTONOMOUS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► AUTONOMOUS
 
  Milestone: {milestone_version} — {milestone_name}
  Phases: {phase_count} total, {completed_phases} complete
@@ -72,7 +138,10 @@ Display startup banner:
 If `ONLY_PHASE` is set, display: `Single phase mode: Phase ${ONLY_PHASE}`
 Else if `FROM_PHASE` is set, display: `Starting from phase ${FROM_PHASE}`
 If `TO_PHASE` is set, display: `Stopping after phase ${TO_PHASE}`
-If `INTERACTIVE` is set, display: `Mode: Interactive (discuss inline, plan+execute in background)`
+If `INTERACTIVE` is set, display: `Mode: Interactive (discuss inline, plan+execute inline — background on Codex only)`
+If `section_manifest` is `null` or `"converge-banner"` is in its `included` list: read and execute `gsd-core/workflows/autonomous/steps/converge-banner.md`. Otherwise skip — do not read the file.
+
+**Agent skills (delegated agents self-load):** Plan/execute/review run as flat `Skill()` invocations, so this workflow does not resolve `agent_skills`; each consumer agent (`gsd-planner`, `gsd-executor`, `gsd-plan-checker`, `gsd-verifier`, …) self-loads its configured `.planning/config.json` `agent_skills` per `@.cursor/gsd-core/references/agent-skills-bootstrap.md`. See open-gsd/gsd-core#1866.
 
 </step>
 
@@ -83,18 +152,33 @@ If `INTERACTIVE` is set, display: `Mode: Interactive (discuss inline, plan+execu
 Run phase discovery:
 
 ```bash
-ROADMAP=$(gsd_run query roadmap.analyze)
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+INIT_MANAGER=$(gsd_run query init.manager ${GSD_WS:+--ws=${GSD_WS##* }})
+if [[ "$INIT_MANAGER" == @file:* ]]; then INIT_MANAGER=$(cat "${INIT_MANAGER#@file:}"); fi
+_gsd_field() { node -e "const o=JSON.parse(process.argv[1]); const v=o[process.argv[2]]; process.stdout.write(v==null?'':String(v))" "$1" "$2"; }
+STATE_PATH=$(_gsd_field "$INIT_MANAGER" state_path)
+STATE_CONTENT=$(cat "$STATE_PATH" 2>/dev/null || true)
 ```
 
 Parse the JSON `phases` array.
 
-**Filter to incomplete phases:** Keep only phases where `disk_status !== "complete"` OR `roadmap_complete === false`.
+Parse the optional `## Deferred Verification` table from `STATE_CONTENT` into a phase-number map:
+- `verification_deferred_human` -> `/gsd-verify-work <phase>`
+- `verification_deferred_gaps` -> `/gsd-plan-phase <phase> --gaps`
 
-**Apply `--from N` filter:** If `FROM_PHASE` was provided, additionally filter out phases where `number < FROM_PHASE` (use numeric comparison — handles decimal phases like "5.1").
+**Skip deferred phases on autonomous re-entry:** drop any phase whose number appears in the deferred-phase map from this run's queue; resume it only through the recorded command.
 
-**Apply `--to N` filter:** If `TO_PHASE` was provided, additionally filter out phases where `number > TO_PHASE` (use numeric comparison). This limits execution to phases up through the target phase.
+**Filter to incomplete phases:** Keep `phase_complete !== true`, including implemented phases with `verification_status !== "passed"`.
 
-**Apply `--only N` filter:** If `ONLY_PHASE` was provided, additionally filter OUT phases where `number != ONLY_PHASE`. This means the phase list will contain exactly one phase (or zero if already complete).
+**Apply `--from N`:** If set, filter out phases where `number < FROM_PHASE` (numeric compare; handles "5.1").
+
+**Apply `--to N`:** If set, filter out phases where `number > TO_PHASE` (numeric compare).
+
+**Apply `--only N`:** If set, filter out phases where `number != ONLY_PHASE`.
 
 **If `TO_PHASE` is set and no phases remain** (all phases up to N are already completed):
 
@@ -117,9 +201,7 @@ Exit cleanly.
 **If no incomplete phases remain:**
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AUTONOMOUS ▸ COMPLETE 🎉
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► AUTONOMOUS ▸ COMPLETE 🎉
 
  All phases complete! Nothing left to do.
 ```
@@ -139,6 +221,8 @@ Exit cleanly.
 | 8 | Lifecycle Orchestration | Not Started |
 ```
 
+**If any deferred phases were skipped:** display `## Deferred Verification (Skipped on Re-entry)` with the skipped rows and resume commands, then omit them from this run's queue.
+
 **Fetch details for each phase:**
 
 ```bash
@@ -156,21 +240,22 @@ Extract `phase_name`, `goal`, `success_criteria` from each. Store for use in exe
 For the current phase, display the progress banner:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AUTONOMOUS ▸ Phase {N}/{T}: {Name} [████░░░░] {P}%
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► AUTONOMOUS ▸ Phase {N}/{T}: {Name} [████░░░░] {P}%
 ```
 
-Where N = current phase number (from the ROADMAP, e.g., 63), T = total milestone phases (from `phase_count` parsed in initialize step, e.g., 67). **Important:** T must be `phase_count` (the total number of phases in this milestone), NOT the count of remaining/incomplete phases. When phases are numbered 61-67, T=7 and the banner should read `Phase 63/7` (phase 63, 7 total in milestone), not `Phase 63/3` (which would confuse 3 remaining with 3 total). P = percentage of all milestone phases completed so far. Calculate P as: (number of phases with `disk_status` "complete" from the latest `roadmap analyze` / T × 100). Use █ for filled and ░ for empty segments in the progress bar (8 characters wide).
-
-**Alternative display when phase numbers exceed total** (e.g., multi-milestone projects where phases are numbered globally): If N > T (phase number exceeds milestone phase count), use the format `Phase {N} ({position}/{T})` where `position` is the 1-based index of this phase among incomplete phases being processed. This prevents confusing displays like "Phase 63/5".
+Where N is the ROADMAP phase number, T is the milestone `phase_count`, and P = completed milestone phases / T × 100. Use `phase_count`, not remaining phases: phase 63 in a 7-phase milestone is `Phase 63/7`, not `Phase 63/3`. If N > T, render `Phase {N} ({position}/{T})`. Use an 8-character bar with █ and ░.
 
 **3a. Smart Discuss**
 
 Check if CONTEXT.md already exists for this phase:
 
 ```bash
-PHASE_STATE=$(gsd_run query init.phase-op ${PHASE_NUM})
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+PHASE_STATE=$(gsd_run query init.phase-op ${GSD_WS:+--ws=${GSD_WS##* }} ${PHASE_NUM})
 ```
 
 Parse `has_context` from JSON.
@@ -186,7 +271,7 @@ Proceed to 3b.
 **If has_context is false:** Check if discuss is disabled via settings:
 
 ```bash
-SKIP_DISCUSS=$(gsd_run query config-get workflow.skip_discuss 2>/dev/null || echo "false")
+SKIP_DISCUSS=$(gsd_run query config-get workflow.skip_discuss --raw 2>/dev/null || echo "false")
 ```
 
 **If SKIP_DISCUSS is `true`:** Skip discuss entirely — the ROADMAP phase description is the spec. Display:
@@ -201,51 +286,7 @@ Write a minimal CONTEXT.md so downstream plan-phase has valid input. Get phase d
 DETAIL=$(gsd_run query roadmap.get-phase ${PHASE_NUM})
 ```
 
-Extract `goal` and `requirements` from JSON. Write `${phase_dir}/${padded_phase}-CONTEXT.md` with:
-
-```markdown
-# Phase {PHASE_NUM}: {Phase Name} - Context
-
-**Gathered:** {date}
-**Status:** Ready for planning
-**Mode:** Auto-generated (discuss skipped via workflow.skip_discuss)
-
-<domain>
-## Phase Boundary
-
-{goal from ROADMAP phase description}
-
-</domain>
-
-<decisions>
-## Implementation Decisions
-
-### Claude's Discretion
-All implementation choices are at Claude's discretion — discuss phase was skipped per user setting. Use ROADMAP phase goal, success criteria, and codebase conventions to guide decisions.
-
-</decisions>
-
-<code_context>
-## Existing Code Insights
-
-Codebase context will be gathered during plan-phase research.
-
-</code_context>
-
-<specifics>
-## Specific Ideas
-
-No specific requirements — discuss phase skipped. Refer to ROADMAP phase description and success criteria.
-
-</specifics>
-
-<deferred>
-## Deferred Ideas
-
-None — discuss phase skipped.
-
-</deferred>
-```
+Extract `goal` and `requirements` from JSON. Read `gsd-core/workflows/autonomous/templates/minimal-context.md` and write it to `${phase_dir}/${padded_phase}-CONTEXT.md`, filling its placeholders (`{PHASE_NUM}`, `{Phase Name}`, `{date}`, the goal) from the roadmap phase.
 
 Commit the minimal context:
 
@@ -271,72 +312,63 @@ Skill(skill="gsd-discuss-phase", args="${PHASE_NUM}")
 After discuss completes (either mode), verify context was written:
 
 ```bash
-PHASE_STATE=$(gsd_run query init.phase-op ${PHASE_NUM})
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+PHASE_STATE=$(gsd_run query init.phase-op ${GSD_WS:+--ws=${GSD_WS##* }} ${PHASE_NUM})
 ```
 
 Check `has_context`. If false → go to handle_blocker: "Discuss for phase ${PHASE_NUM} did not produce CONTEXT.md."
 
 **3a.5. UI Design Contract (Frontend Phases)**
 
-Check if this phase has frontend indicators and whether a UI-SPEC already exists:
+> Full instructions are in `gsd-core/references/autonomous-ui-design-contract.md`. Read that file now and follow it exactly.
 
-```bash
-PHASE_SECTION=$(gsd_run query roadmap.get-phase ${PHASE_NUM} 2>/dev/null)
-# Shell-free word-boundary gate (#3718): Node.js helper — no locale env-var dependency.
-# Reads via stdin to avoid OS ARG_MAX limits on large phase text.
-# Resolve the helper against the GSD install dir via RUNTIME_DIR (#448) — NOT the consuming
-# project's git root — falling back to git toplevel / $HOME/.claude. Exit codes mirror grep (0=UI,1=none).
-_GSD_RT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-UI_GATE_JS=$(for _c in "$_GSD_RT/gsd-core/bin/lib/ui-safety-gate.cjs" "$_GSD_RT/bin/lib/ui-safety-gate.cjs" "$_GSD_RT/.claude/bin/lib/ui-safety-gate.cjs" "./.cursor/gsd-core/bin/lib/ui-safety-gate.cjs" "./.cursor/bin/lib/ui-safety-gate.cjs"; do [ -f "$_c" ] && { echo "$_c"; break; }; done)
-if [ -n "$UI_GATE_JS" ]; then printf '%s' "$PHASE_SECTION" | node "$UI_GATE_JS" >/dev/null 2>&1; HAS_UI=$?; else echo "WARN: ui-safety-gate.cjs not found via RUNTIME_DIR/\$HOME (#448) — assuming UI present" >&2; HAS_UI=0; fi
-UI_SPEC_FILE=$(ls "${PHASE_DIR}"/*-UI-SPEC.md 2>/dev/null | head -1)
-```
+**Inputs:** `PHASE_NUM`, `PHASE_DIR` from execute_phase. Resolves whether the phase needs a UI-SPEC.md generated before planning via active `plan:pre` step hooks. Always non-blocking — proceeds to 3b regardless of outcome.
 
-Check if UI phase workflow is enabled:
-
-```bash
-UI_PHASE_CFG=$(gsd_run query config-get workflow.ui_phase 2>/dev/null || echo "true")
-```
-
-**If `HAS_UI` is 0 (frontend indicators found) AND `UI_SPEC_FILE` is empty (no UI-SPEC exists) AND `UI_PHASE_CFG` is not `false`:**
-
-Display:
-
-```
-Phase ${PHASE_NUM}: Frontend phase detected — generating UI design contract...
-```
-
-```
-Skill(skill="gsd-ui-phase", args="${PHASE_NUM}")
-```
-
-Verify UI-SPEC was created:
-
-```bash
-UI_SPEC_FILE=$(ls "${PHASE_DIR}"/*-UI-SPEC.md 2>/dev/null | head -1)
-```
-
-**If `UI_SPEC_FILE` is still empty after ui-phase:** Display warning `Phase ${PHASE_NUM}: UI-SPEC generation did not produce output — continuing without design contract.` and proceed to 3b.
-
-**If `HAS_UI` is 1 (no frontend indicators) OR `UI_SPEC_FILE` is not empty (UI-SPEC already exists) OR `UI_PHASE_CFG` is `false`:** Skip silently to 3b.
+Read and execute: `.cursor/gsd-core/references/autonomous-ui-design-contract.md`
 
 **3b. Plan**
 
-**If `INTERACTIVE` is set:** Dispatch plan as a background agent to keep the main context lean. While plan runs, the workflow can immediately start discussing the next phase (see step 4).
+**If `INTERACTIVE` is set:** Background dispatch is only safe on a runtime where a backgrounded agent can still nest the pipeline's subagents (plan-checker / worktree executors / verifier). This is determined from the documentation-sourced dispatch capability in the registry (#1708); Cursor's backgrounded agents have no `Agent`/`Task` tool, and every other runtime either prohibits nested subagents or disables them by default. So run **inline** everywhere except where `dispatch-should-flatten` returns `false`. Resolve first:
 
-Print: `◆ Spawning background planner for phase ${PHASE_NUM}... (runs in a subagent — no output until it returns, ~1–5 min; expected, not a freeze)`
-
-```
-Agent(
-  description="Plan phase ${PHASE_NUM}: ${PHASE_NAME}",
-  run_in_background=true,
-  prompt="Run plan-phase for phase ${PHASE_NUM}: Skill(skill=\"gsd-plan-phase\", args=\"${PHASE_NUM}\")"
-)
+```bash
+FLATTEN=$(gsd_run query dispatch-should-flatten --raw 2>/dev/null || echo "true")
 ```
 
-Store the agent task_id. After discuss for the next phase completes (or if no next phase), wait for the plan agent to finish before proceeding to execute.
+- **If `FLATTEN` is `false`:** Dispatch plan as a background agent to keep the main context lean. While plan runs, the workflow can immediately start discussing the next phase (see step 4).
 
-**If `INTERACTIVE` is NOT set (default):** Run plan inline as before.
+  If `section_manifest` is `null` or `"converge-dispatch-bg"` is in its `included` list: read and execute `gsd-core/workflows/autonomous/steps/converge-dispatch-bg.md`. Otherwise skip — do not read the file.
+
+  - Otherwise, print: `◆ Spawning background planner for phase ${PHASE_NUM}... (runs in a subagent — no output until it returns, ~1–5 min; expected, not a freeze)`
+
+  ```
+  Agent(
+    description="Plan phase ${PHASE_NUM}: ${PHASE_NAME}",
+    run_in_background=true,
+    prompt="Run plan-phase for phase ${PHASE_NUM}: Skill(skill=\"gsd-plan-phase\", args=\"${PHASE_NUM}\")"
+  )
+  ```
+
+  Store the agent task_id. After discuss for the next phase completes (or if no next phase), wait for the plan agent to finish before proceeding to execute.
+
+- **Otherwise (`FLATTEN` is `true` — run inline):** Run plan **inline** (do NOT background) so the plan-checker runs. The next phase's discuss does not overlap planning here — correctness over overlap.
+
+  If `section_manifest` is `null` or `"converge-dispatch-inline"` is in its `included` list: read and execute `gsd-core/workflows/autonomous/steps/converge-dispatch-inline.md`. Otherwise skip — do not read the file.
+
+  - Otherwise (local planning):
+
+  ```
+  Skill(skill="gsd-plan-phase", args="${PHASE_NUM}")
+  ```
+
+**If `INTERACTIVE` is NOT set (default):** Run plan inline.
+
+If `section_manifest` is `null` or `"converge-loop"` is in its `included` list: read and execute `gsd-core/workflows/autonomous/steps/converge-loop.md`. Otherwise skip — do not read the file.
+
+If `PLAN_STRATEGY=local`, run the regular planner:
 
 ```
 Skill(skill="gsd-plan-phase", args="${PHASE_NUM}")
@@ -346,7 +378,13 @@ Verify plan produced output — re-run `init phase-op` and check `has_plans`. If
 
 **3c. Execute**
 
-**If `INTERACTIVE` is set:** Wait for the plan agent to complete (if not already), verify plans exist, then dispatch execute as a background agent:
+**If `INTERACTIVE` is set:** Wait for the plan agent to complete (if not already) and verify plans exist. Same rule as the plan dispatch above (#1708): run **inline** unless `dispatch-should-flatten` returns `false`. Resolve first:
+
+```bash
+FLATTEN=$(gsd_run query dispatch-should-flatten --raw 2>/dev/null || echo "true")
+```
+
+- **If `FLATTEN` is `false`:** Dispatch execute as a background agent:
 
 ```
 Agent(
@@ -356,7 +394,13 @@ Agent(
 )
 ```
 
-Store the agent task_id. The workflow can now start discussing the next phase while this phase executes in the background. Before starting post-execution routing for this phase, wait for the execute agent to complete.
+  Store the agent task_id. The workflow can now start discussing the next phase while this phase executes in the background. Before starting post-execution routing for this phase, wait for the execute agent to complete.
+
+- **Otherwise (`FLATTEN` is `true` — run inline):** Run execute **inline** (do NOT background) so worktree isolation and verification run:
+
+```
+Skill(skill="gsd-execute-phase", args="${PHASE_NUM} --no-transition")
+```
 
 **If `INTERACTIVE` is NOT set (default):** Run execute inline as before.
 
@@ -368,17 +412,22 @@ Skill(skill="gsd-execute-phase", args="${PHASE_NUM} --no-transition")
 
 Auto-invoke code review and fix chain. Autonomous mode chains both review and fix (unlike execute-phase/quick which only suggest fix).
 
-**Config gate:**
+**Capability dispatch:**
 ```bash
-CODE_REVIEW_ENABLED=$(gsd_run query config-get workflow.code_review 2>/dev/null || echo "true")
-```
-If `"false"`: display "Code review skipped (workflow.code_review=false)" and proceed to 3d.
-
-```
-Skill(skill="gsd-code-review", args="${PHASE_NUM}")
+EXECUTE_POST_HOOKS_JSON=$(gsd_run loop render-hooks execute:post --raw)
 ```
 
-Parse status from REVIEW.md frontmatter. If "clean" or "skipped": proceed to 3d. If findings found: auto-invoke:
+Resolve active step hooks from `EXECUTE_POST_HOOKS_JSON` where `kind == "step"` and `ref.skill == "code-review"`.
+
+If no active code-review step hook exists: display "Code review skipped (code-review capability inactive)" and proceed to 3d. This covers `workflow.code_review=false` through the Capability Registry; do not query the code-review toggle directly here.
+
+For each active code-review step hook, dispatch the skill using the registry-provided stem:
+
+```
+Skill(skill="gsd-${ref.skill}", args="${PHASE_NUM}")
+```
+
+Parse status from REVIEW.md frontmatter. If "clean" or "skipped": proceed to 3d. If findings found after the capability-dispatched review, auto-invoke the consolidated fix entry point:
 ```
 Skill(skill="gsd-code-review", args="${PHASE_NUM} --fix --auto")
 ```
@@ -387,74 +436,60 @@ Skill(skill="gsd-code-review", args="${PHASE_NUM} --fix --auto")
 
 **3d. Post-Execution Routing**
 
-**If `INTERACTIVE` is set:** Wait for the execute agent to complete before reading verification results.
-
-After execute-phase returns (or the execute agent completes), read the verification result:
+After execute, read canonical verification:
 
 ```bash
-VERIFY_STATUS=$(grep "^status:" "${PHASE_DIR}"/*-VERIFICATION.md 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' ')
+VERIFY_ERROR=""  # reset every loop iteration — a prior phase's refusal must not leak into this one
+VERIFY_STATUS=$(gsd_run query verification.status "${PHASE_DIR}" --pick status) || VERIFY_ERROR=1
 ```
 
-Where `PHASE_DIR` comes from the `init phase-op` call already made in step 3a. If the variable is not in scope, re-fetch:
+If `PHASE_DIR` is absent, re-fetch `init.phase-op ${PHASE_NUM}` and parse `phase_dir`.
 
-```bash
-PHASE_STATE=$(gsd_run query init.phase-op ${PHASE_NUM})
-```
-
-Parse `phase_dir` from the JSON.
-
-**If VERIFY_STATUS is empty** (no VERIFICATION.md or no status field):
-
-Go to handle_blocker: "Execute phase ${PHASE_NUM} did not produce verification results."
+If `VERIFY_ERROR` is set, handle_blocker with the error printed above — the report's `status` is outside the closed set (#5118); never read it as "no results".
 
 **If `passed`:**
 
-Display:
-```
-Phase ${PHASE_NUM} ✅ ${PHASE_NAME} — Verification passed
-```
+Display `Phase ${PHASE_NUM} ✅ ${PHASE_NAME} — Verification passed`, run `@.cursor/gsd-core/workflows/transition.md`, then Proceed to iterate step.
 
-Proceed to iterate step.
+**Any status other than `passed`/`human_needed`/`gaps_found`:** execute-phase already ran, so a non-passed route after it is a real blocker — read `gsd_run query verification.status "${PHASE_DIR}" --pick next_action` and handle_blocker with it (#5118: branch on the owner's answer, never on a status word).
 
 **If `human_needed`:**
 
-Read the human_verification section from VERIFICATION.md to get the count and items requiring manual testing.
+Read `human_verification` items. In text mode (`--text` or init `text_mode=true`), replace conversational prompting with a plain-text numbered list. Otherwise ask whether to validate now or continue without validation. If validating now, present items, then ask `Validation result?` with `All good — continue` / `Found issues`.
 
-
-**Text mode (`workflow.text_mode: true` in config or `--text` flag):** Set `TEXT_MODE=true` if `--text` is present in `{{GSD_ARGS}}` OR `text_mode` from init JSON is `true`. When TEXT_MODE is active, replace every `conversational prompting` call with a plain-text numbered list and ask the user to type their choice number. This is required for non-Claude runtimes (OpenAI Codex, Gemini CLI, etc.) where `conversational prompting` is not available.
-Display the items, then ask user via conversational prompting:
-- **question:** "Phase ${PHASE_NUM} has items needing manual verification. Validate now or continue to next phase?"
-- **options:** "Validate now" / "Continue without validation"
-
-On **"Validate now"**: Present the specific items from VERIFICATION.md's human_verification section. After user reviews, ask:
-- **question:** "Validation result?"
-- **options:** "All good — continue" / "Found issues"
-
-On "All good — continue": Display `Phase ${PHASE_NUM} ✅ Human validation passed` and proceed to iterate step.
+On "All good — continue": set VERIFICATION frontmatter `status: passed`, display `Phase ${PHASE_NUM} ✅ Human validation passed`, run `@.cursor/gsd-core/workflows/transition.md`, then iterate.
 
 On "Found issues": Go to handle_blocker with the user's reported issues as the description.
 
-On **"Continue without validation"**: Display `Phase ${PHASE_NUM} ⏭ Human validation deferred` and proceed to iterate step.
+On **"Continue without validation"**: record an explicit deferred state and stop autonomous mode:
+
+```markdown
+## Deferred Verification
+
+| Phase | State | Resume |
+|-------|-------|--------|
+| ${PHASE_NUM} | verification_deferred_human | /gsd-verify-work ${PHASE_NUM} |
+```
+
+Append/update this STATE.md section, display `Phase ${PHASE_NUM} ⏭ verification_deferred_human — resume with /gsd-verify-work ${PHASE_NUM}`, then handle_blocker: "Human verification deferred for phase ${PHASE_NUM}."
 
 **If `gaps_found`:**
 
-Read gap summary from VERIFICATION.md (score and missing items). Display:
+Read gap score/items from VERIFICATION.md. Display:
 ```
 ⚠ Phase ${PHASE_NUM}: ${PHASE_NAME} — Gaps Found
 Score: {N}/{M} must-haves verified
 ```
 
-Ask user via conversational prompting:
-- **question:** "Gaps found in phase ${PHASE_NUM}. How to proceed?"
-- **options:** "Run gap closure" / "Continue without fixing" / "Stop autonomous mode"
+Ask how to proceed: `Run gap closure` / `Continue without fixing` / `Stop autonomous mode`.
 
-On **"Run gap closure"**: Execute gap closure cycle (limit: 1 attempt):
+On **"Run gap closure"**: one gap-closure attempt:
 
 ```
 Skill(skill="gsd-plan-phase", args="${PHASE_NUM} --gaps")
 ```
 
-Verify gap plans were created — re-run `init phase-op ${PHASE_NUM}` and check `has_plans`. If no new gap plans → go to handle_blocker: "Gap closure planning for phase ${PHASE_NUM} did not produce plans."
+Re-run `init phase-op ${PHASE_NUM}`; if `has_plans` is false, handle_blocker: "Gap closure planning for phase ${PHASE_NUM} did not produce plans."
 
 Re-execute:
 ```
@@ -463,55 +498,62 @@ Skill(skill="gsd-execute-phase", args="${PHASE_NUM} --no-transition")
 
 Re-read verification status:
 ```bash
-VERIFY_STATUS=$(grep "^status:" "${PHASE_DIR}"/*-VERIFICATION.md 2>/dev/null | head -1 | cut -d: -f2 | tr -d ' ')
+VERIFY_ERROR=""  # reset every loop iteration — a prior phase's refusal must not leak into this one
+VERIFY_STATUS=$(gsd_run query verification.status "${PHASE_DIR}" --pick status) || VERIFY_ERROR=1
 ```
 
-If `passed` or `human_needed`: Route normally (continue or ask user as above).
+If `VERIFY_ERROR` is set: handle_blocker with the error printed above (#5118).
 
-If still `gaps_found` after this retry: Display "Gaps persist after closure attempt." and ask via conversational prompting:
-- **question:** "Gap closure did not fully resolve issues. How to proceed?"
-- **options:** "Continue anyway" / "Stop autonomous mode"
+If `passed` or `human_needed`: route normally.
 
-On "Continue anyway": Proceed to iterate step.
+Any status other than `passed`/`human_needed`/`gaps_found`: handle_blocker with the owner's `next_action` (`--pick next_action`).
+
+If still `gaps_found` after this retry, display `Gaps persist after closure attempt.` and ask `Continue anyway` / `Stop autonomous mode`.
+
+On "Continue anyway": record `verification_deferred_gaps` using the table below, display `Phase ${PHASE_NUM} ⏭ verification_deferred_gaps — resume with /gsd-plan-phase ${PHASE_NUM} --gaps`, then handle_blocker: "Verification gaps deferred for phase ${PHASE_NUM}."
 On "Stop autonomous mode": Go to handle_blocker.
 
-This limits gap closure to 1 automatic retry to prevent infinite loops.
+This limits gap closure to 1 retry.
 
-On **"Continue without fixing"**: Display `Phase ${PHASE_NUM} ⏭ Gaps deferred` and proceed to iterate step.
+On **"Continue without fixing"**: record an explicit deferred state and stop autonomous mode:
+
+```markdown
+## Deferred Verification
+
+| Phase | State | Resume |
+|-------|-------|--------|
+| ${PHASE_NUM} | verification_deferred_gaps | /gsd-plan-phase ${PHASE_NUM} --gaps |
+```
+
+Append/update this STATE.md section, display `Phase ${PHASE_NUM} ⏭ verification_deferred_gaps — resume with /gsd-plan-phase ${PHASE_NUM} --gaps`, then handle_blocker: "Verification gaps deferred for phase ${PHASE_NUM}."
 
 On **"Stop autonomous mode"**: Go to handle_blocker with "User stopped — gaps remain in phase ${PHASE_NUM}".
 
 **3d.5. UI Review (Frontend Phases)**
 
-> Run after any successful execution routing (passed, human_needed accepted, or gaps deferred/accepted) — before proceeding to the iterate step.
+> Run only after `passed` or human verification was updated to `passed`.
 
-Check if this phase had a UI-SPEC (created in step 3a.5 or pre-existing):
+Resolve the active post-verification hooks and the UI-SPEC gate:
 
 ```bash
 UI_SPEC_FILE=$(ls "${PHASE_DIR}"/*-UI-SPEC.md 2>/dev/null | head -1)
+HOOKS_JSON=$(gsd_run loop render-hooks verify:post --after-fingerprint "${PHASE_DIR}" --raw)
 ```
 
-Check if UI review is enabled:
+Read the `activeHooks` array directly from the `HOOKS_JSON` value already in context (do not invoke a shell `jq` pipeline — parse as the JSON object it is). **If `activeHooks` is empty or absent:** skip silently to the iterate step. `--after-fingerprint "${PHASE_DIR}"` (#5105) moves a step whose declared artifact already exists in `PHASE_DIR` into `skippedHooks` instead of `activeHooks` — execute-phase already ran it, so it is not re-dispatched here.
 
-```bash
-UI_REVIEW_CFG=$(gsd_run query config-get workflow.ui_review 2>/dev/null || echo "true")
-```
+For each entry in `activeHooks` in array order where `kind == "step"` and `ref.skill` is set:
 
-**If `UI_SPEC_FILE` is not empty AND `UI_REVIEW_CFG` is not `false`:**
-
-Display:
+- **Honor `consumes`:** if the hook's `consumes` array includes `"UI-SPEC.md"` and `UI_SPEC_FILE` is empty (no `*-UI-SPEC.md` exists in `PHASE_DIR`) → skip that hook (`onError: skip`). Hooks that do not declare `"UI-SPEC.md"` in their `consumes` proceed normally regardless of `UI_SPEC_FILE`.
+- Invoke:
 
 ```
-Phase ${PHASE_NUM}: Frontend phase with UI-SPEC — running UI review audit...
+Skill(skill="gsd-${ref.skill}", args="${PHASE_NUM}")
 ```
 
-```
-Skill(skill="gsd-ui-review", args="${PHASE_NUM}")
-```
+(i.e. prepend `gsd-` to `ref.skill` — so `ui-review` → `gsd-ui-review`.)
 
-Display the review result summary (score from UI-REVIEW.md if produced). Continue to iterate step regardless of score — UI review is advisory, not blocking.
-
-**If `UI_SPEC_FILE` is empty OR `UI_REVIEW_CFG` is `false`:** Skip silently to iterate step.
+Display the review result summary and score from UI-REVIEW.md if produced. Continue to iterate step regardless of result — hooks at this point are advisory, not blocking.
 
 </step>
 
@@ -525,7 +567,7 @@ Smart discuss is an autonomous-optimized variant of `gsd-discuss-phase`. It prop
 
 **Inputs:** `PHASE_NUM` from execute_phase.
 
-Read and execute: `./.cursor/gsd-core/references/autonomous-smart-discuss.md`
+Read and execute: `.cursor/gsd-core/references/autonomous-smart-discuss.md`
 
 </step>
 
@@ -538,9 +580,7 @@ Read and execute: `./.cursor/gsd-core/references/autonomous-smart-discuss.md`
 **If `TO_PHASE` is set and current phase number >= `TO_PHASE`:** The target phase has been reached. Do not iterate further. Display:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AUTONOMOUS ▸ --to ${TO_PHASE} REACHED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► AUTONOMOUS ▸ --to ${TO_PHASE} REACHED
 
  Completed through phase ${TO_PHASE} as requested.
  Remaining phases were not executed.
@@ -548,36 +588,38 @@ Read and execute: `./.cursor/gsd-core/references/autonomous-smart-discuss.md`
  Resume with: /gsd-autonomous --from ${next_incomplete_phase}
 ```
 
-Proceed directly to lifecycle step (which handles partial completion — skips audit/complete/cleanup since not all phases are done). Exit cleanly.
+Proceed to lifecycle step (partial completion skips audit/complete/cleanup). Exit cleanly.
 
-**Otherwise:** After each phase completes, re-read ROADMAP.md to catch phases inserted mid-execution (decimal phases like 5.1):
-
-```bash
-ROADMAP=$(gsd_run query roadmap.analyze)
-```
-
-Re-filter incomplete phases using the same logic as discover_phases:
-- Keep phases where `disk_status !== "complete"` OR `roadmap_complete === false`
-- Apply `--from N` filter if originally provided
-- Apply `--to N` filter if originally provided
-- Sort by number ascending
-
-Read STATE.md fresh:
+**Otherwise:** After each phase, re-read manager projection, then read STATE.md fresh (same fence — a single `gsd_run query init.manager` fetch backs both the JSON re-filter below and the raw re-read, no double-fetch):
 
 ```bash
-cat .planning/STATE.md
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+INIT_MANAGER=$(gsd_run query init.manager ${GSD_WS:+--ws=${GSD_WS##* }})
+if [[ "$INIT_MANAGER" == @file:* ]]; then INIT_MANAGER=$(cat "${INIT_MANAGER#@file:}"); fi
+_gsd_field() { node -e "const o=JSON.parse(process.argv[1]); const v=o[process.argv[2]]; process.stdout.write(v==null?'':String(v))" "$1" "$2"; }
+STATE_PATH=$(_gsd_field "$INIT_MANAGER" state_path)
+STATE_CONTENT=$(cat "$STATE_PATH" 2>/dev/null || true)
+cat "$STATE_PATH"
 ```
+
+Re-filter incomplete phases using discover_phases logic: keep phases where `phase_complete !== true` or `verification_status !== "passed"`, drop deferred phases from the autonomous queue, re-apply `--from` / `--to`, then sort by number ascending.
 
 Check for blockers in the Blockers/Concerns section. If blockers are found, go to handle_blocker with the blocker description.
 
 If incomplete phases remain: proceed to next phase, loop back to execute_phase.
 
-**Interactive mode overlap:** When `INTERACTIVE` is set, the iterate step enables pipeline parallelism:
+If no runnable phases remain but deferred phases were skipped, display `Autonomous run stopped with deferred verification phases still pending. Resume them with the commands listed in Deferred Verification.` Proceed to lifecycle only if every non-deferred phase is complete; otherwise go to handle_blocker.
+
+**Interactive mode overlap:** When `INTERACTIVE` is set, Codex can overlap discuss for Phase N+1 with background plan+execute for Phase N. Other runtimes keep plan/execute inline, so phases stay sequential:
 1. After discuss completes for Phase N, dispatch plan+execute as background agents
 2. Immediately start discuss for Phase N+1 (the next incomplete phase) while Phase N builds
 3. Before starting plan for Phase N+1, wait for Phase N's execute agent to complete and handle its post-execution routing (verification, gap closure, etc.)
 
-This means the user is always answering discuss questions (lightweight, interactive) while the heavy work (planning, code generation) runs in the background. The main context only accumulates discuss conversations — plan and execute contexts are isolated in their agents.
+The main context only accumulates discuss conversations; background plan/execute work stays isolated in its agents.
 
 If all phases complete, proceed to lifecycle step.
 
@@ -590,9 +632,7 @@ If all phases complete, proceed to lifecycle step.
 **If `ONLY_PHASE` is set:** Skip lifecycle. A single phase does not trigger audit/complete/cleanup. Display:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AUTONOMOUS ▸ PHASE ${ONLY_PHASE} COMPLETE ✓
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► AUTONOMOUS ▸ PHASE ${ONLY_PHASE} COMPLETE ✓
 
  Phase ${ONLY_PHASE}: ${PHASE_NAME} — Done
  Mode: Single phase (--only)
@@ -608,9 +648,7 @@ Exit cleanly.
 Display lifecycle transition banner:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AUTONOMOUS ▸ LIFECYCLE
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► AUTONOMOUS ▸ LIFECYCLE
 
  All phases complete → Starting lifecycle: audit → complete → cleanup
  Milestone: {milestone_version} — {milestone_name}
@@ -681,7 +719,16 @@ Skill(skill="gsd-complete-milestone", args="${milestone_version}")
 After complete-milestone returns, verify it produced output:
 
 ```bash
-ls .planning/milestones/v${milestone_version}-ROADMAP.md 2>/dev/null || true
+IFS= read -rd '' GSD_ARGS <<'GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c' || true
+{{GSD_ARGS}}
+GSD_ARGS_END_dff01177ff92d66de26f3b9780acf59c
+GSD_ARGS=${GSD_ARGS%$'\n'}
+GSD_WS=$(echo " $GSD_ARGS" | sed -nE 's/.* --ws +([A-Za-z0-9][A-Za-z0-9._-]*).*/--ws \1/p' | head -n 1)
+INIT_MANAGER=$(gsd_run query init.manager ${GSD_WS:+--ws=${GSD_WS##* }})
+if [[ "$INIT_MANAGER" == @file:* ]]; then INIT_MANAGER=$(cat "${INIT_MANAGER#@file:}"); fi
+_gsd_field() { node -e "const o=JSON.parse(process.argv[1]); const v=o[process.argv[2]]; process.stdout.write(v==null?'':String(v))" "$1" "$2"; }
+ARCHIVE_DIR=$(_gsd_field "$INIT_MANAGER" archive_dir)
+ls "${ARCHIVE_DIR}/v${milestone_version}-ROADMAP.md" 2>/dev/null || true
 ```
 
 If the archive file does not exist, go to handle_blocker: "Complete milestone did not produce expected archive files."
@@ -699,9 +746,7 @@ Cleanup shows its own dry-run and asks user for approval internally — this is 
 Display final completion banner:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AUTONOMOUS ▸ COMPLETE 🎉
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► AUTONOMOUS ▸ COMPLETE 🎉
 
  Milestone: {milestone_version} — {milestone_name}
  Status: Complete ✅
@@ -725,16 +770,14 @@ When any phase operation fails or a blocker is detected, present 3 options via c
 2. **"Skip this phase"** — Mark phase as skipped, continue to the next incomplete phase
 3. **"Stop autonomous mode"** — Display summary of progress so far and exit cleanly
 
-**On "Fix and retry":** Loop back to the failed step within execute_phase. If the same step fails again after retry, re-present these options.
+**On "Fix and retry":** Loop back to the failed step within execute_phase. Track the retry count per phase + step (`RETRY_COUNT`, kept in memory for the run). If the same step fails again after retry, re-present these options. **Retry ceiling (#3210):** once the same phase step has failed 3 "Fix and retry" attempts, do NOT re-present the options — escalate to a terminal `needs_human` halt: display `Phase {N} ⛔ {Name} — needs_human`, list the unmet items (the blocker description from each attempt), append/update a `## Needs Human` section in STATE.md (`| ${PHASE_NUM} | needs_human | resolve blocker, then /gsd-autonomous --from ${PHASE_NUM} |`), and stop autonomous mode with the standard stopped-summary banner. A blocker that survives 3 fix attempts is an operator gate, not an executable gap.
 
 **On "Skip this phase":** Log `Phase {N} ⏭ {Name} — Skipped by user` and proceed to iterate.
 
 **On "Stop autonomous mode":** Display progress summary:
 
 ```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► AUTONOMOUS ▸ STOPPED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► AUTONOMOUS ▸ STOPPED
 
  Completed: {list of completed phases}
  Skipped: {list of skipped phases}
@@ -789,9 +832,14 @@ When any phase operation fails or a blocker is detected, present 3 options via c
 - [ ] `--to N` handle_blocker resume message preserves --to flag
 - [ ] `--to N` skips lifecycle when not all milestone phases complete
 - [ ] `--interactive` runs discuss inline via gsd-discuss-phase (asks questions, waits for user)
-- [ ] `--interactive` dispatches plan and execute as background agents (context isolation)
-- [ ] `--interactive` enables pipeline parallelism: discuss Phase N+1 while Phase N builds
-- [ ] `--interactive` main context only accumulates discuss conversations (lean)
+- [ ] `--interactive` dispatches plan and execute as background agents on Codex (the only runtime where a backgrounded agent can nest subagents); runs them inline on all other runtimes
+- [ ] `--interactive` enables pipeline parallelism (discuss Phase N+1 while Phase N builds) on Codex; phases run sequentially on all other runtimes
+- [ ] `--interactive` main context only accumulates discuss conversations on Codex (on all other runtimes, inline plan/execute also accumulate)
 - [ ] `--interactive` waits for background agents before post-execution routing
 - [ ] `--interactive` compatible with `--only`, `--from`, and `--to` flags
+- [ ] `--converge` routes planning through `gsd-plan-review-convergence`
+- [ ] `--cross-ai` is accepted as an alias for `--converge`
+- [ ] `--converge` overrides `workflow.plan_review_convergence=false` for the run — the dispatch carries `--override-gate`, which the convergence workflow's §1.5 gate honors (#4600)
+- [ ] `--converge` forwards reviewer selector flags and `--max-cycles N`
+- [ ] Default autonomous planning remains `gsd-plan-phase` when convergence is not requested
 </success_criteria>

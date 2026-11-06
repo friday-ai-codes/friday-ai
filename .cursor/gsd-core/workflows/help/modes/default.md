@@ -1,3 +1,5 @@
+Apply response_language to all user-facing prose — narration between tool calls, status updates, progress notes, and findings included; preserve code, paths, and identifiers.
+
 <purpose>
 One-page newcomer-oriented tour of GSD Core. Output ONLY the `<reference>` content below. No additions.
 </purpose>
@@ -11,11 +13,12 @@ Plan-driven development for solo agentic work with Cursor. GSD Core turns a vagu
 
 ```text
 /gsd-new-project        # Greenfield: questioning → research → requirements → roadmap
+/gsd-onboard            # Existing codebase: map → ingest docs → initialize planning
 /gsd-plan-phase 1       # Create a detailed plan for phase 1
 /gsd-execute-phase 1    # Execute all plans in the phase
 ```
 
-Existing codebase? Run `/gsd-map-codebase` first to ground GSD in your code.
+Existing codebase? Run `/gsd-onboard` to map the repo, ingest existing docs, and initialize planning safely.
 
 ## Common commands
 

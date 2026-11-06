@@ -47,7 +47,7 @@ function routeValidateCommand({ verify, args, cwd, raw, output: outputFn, error 
             // context: CJS-only — complex inline logic using classifyContextUtilization
             // with custom output formatting that has no direct SDK counterpart.
             context: () => {
-                const opts = (0, command_arg_projection_cjs_1.parseNamedArgs)(args, ['tokens-used', 'context-window']);
+                const opts = (0, command_arg_projection_cjs_1.parseNamedArgsOrExit)(args, { valueFlags: ['tokens-used', 'context-window'], booleanFlags: ['json'], positionals: 2 }, error);
                 if (opts['tokens-used'] === null) {
                     error('--tokens-used <integer> is required for `validate context`');
                     return;
@@ -73,7 +73,7 @@ function routeValidateCommand({ verify, args, cwd, raw, output: outputFn, error 
                     return;
                 }
                 const result = { ...classified, recommendation: RECOMMENDATIONS[classified.state] };
-                if (args.includes('--json')) {
+                if (opts['json'] === true) {
                     outputFn(result, raw);
                 }
                 else {

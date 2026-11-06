@@ -29,8 +29,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.formatGsdSlash = formatGsdSlash;
+exports.readInstallRuntimeMarker = readInstallRuntimeMarker;
+exports._setInstallRuntimeMarkerForTests = _setInstallRuntimeMarkerForTests;
+exports._resetInstallRuntimeMarkerCacheForTests = _resetInstallRuntimeMarkerCacheForTests;
+exports.resolveExplicitRuntime = resolveExplicitRuntime;
 exports.resolveRuntime = resolveRuntime;
+exports.resolveActiveRuntime = resolveActiveRuntime;
 exports.formatGsdSlashFor = formatGsdSlashFor;
+exports.runtimeCommand = runtimeCommand;
 const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const runtime_name_policy_cjs_1 = require("./runtime-name-policy.cjs");
@@ -61,54 +67,159 @@ function formatGsdSlash(commandName, runtime) {
     const tail = wsMatch && wsMatch[2] ? wsMatch[2] : '';
     const runtimeText = (typeof runtime === 'string' && runtime ? runtime : 'claude').toLowerCase();
     const rt = (0, runtime_name_policy_cjs_1.canonicalizeRuntimeName)(runtimeText) || runtimeText;
-    if (rt === 'codex') {
-        // Codex skills are invoked as $gsd-<cmd> (shell-var syntax). The command
+    // Descriptor-driven: look up commandStyle from the capability registry.
+    // Mirrors the lazy-require pattern from runtime-homes.cts §getGlobalConfigDir.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { runtimes } = require('./capability-registry.cjs');
+    const style = runtimes[rt]?.runtime?.commandStyle;
+    if (style === 'shell-var') {
+        // shell-var runtimes (currently: codex) use $gsd-<cmd> syntax. The command
         // token is lowercased because shell-var identifiers are conventionally
         // lowercase; matches the convertCodexSlash() projection in bin/install.js.
         return `$gsd-${token.toLowerCase()}${tail}`;
     }
     return `/gsd-${token}${tail}`;
 }
+// ─── #3897 rung 2: the per-install `.gsd-runtime` marker, promoted from ──────
+// model-resolver.cts (#2297) to this module — the canonical owner of runtime
+// identity (resolveRuntime, formatGsdSlash). `bin/install.js` writes
+// `<install>/gsd-core/.gsd-runtime` beside VERSION for every runtime install
+// (#2297). This module compiles to `gsd-core/bin/lib/runtime-slash.cjs`
+// (ADR-457) — the SAME directory `model-resolver.cjs` compiles to — so the
+// `__dirname`-relative path below is unchanged from the promoted original.
+//
+// Cache + test-seam shape, byte-for-behaviour preserved from
+// model-resolver.cts:65-77 (N5): module-level `let`, `try/catch -> null`,
+// `_setInstallRuntimeMarkerForTests` / `_resetInstallRuntimeMarkerCacheForTests`.
+// `model-resolver.cts` now imports this implementation instead of holding its
+// own copy; the two `hooks/*.js` marker readers delegate here too (through
+// `ensureRuntimeBuild()`, per `scripts/lint-hooks-runtime-build-seam.cjs`).
+let _installMarkerCache;
+/**
+ * Read the per-install runtime marker, cached for the process lifetime.
+ * Never throws (N4) — an absent/unreadable marker (dev/source tree, an
+ * install predating #2297, EACCES, hostile content, ...) is "no signal",
+ * never a resolution failure; a throw here would break a session in
+ * `gsd-agent-isolation-guard.js`, which is worse than resolving the wrong
+ * runtime.
+ *
+ * The raw marker string is returned as-is (trimmed) — callers MUST route it
+ * through `resolveRuntimeNameFromCandidates` before trusting it (N1); this
+ * function itself does not normalize so its cached value matches exactly
+ * what #2297's tests already assert about the underlying file read.
+ */
+function readInstallRuntimeMarker() {
+    if (_installMarkerCache !== undefined)
+        return _installMarkerCache;
+    try {
+        const markerPath = node_path_1.default.join(__dirname, '..', '..', '.gsd-runtime');
+        const raw = node_fs_1.default.readFileSync(markerPath, 'utf8').trim();
+        _installMarkerCache = raw || null;
+    }
+    catch {
+        // No marker: dev/source tree, or an install predating #2297. Fall through
+        // to the 'claude' default (keeps tier aliases — never worse than the bug).
+        _installMarkerCache = null;
+    }
+    return _installMarkerCache;
+}
+// Test seams for the install-marker rung (the dev/source tree has no marker,
+// so the file read always bottoms out at 'claude' — these let tests exercise
+// the third precedence rung and reset the module-level cache between cases).
+function _setInstallRuntimeMarkerForTests(value) {
+    _installMarkerCache = value;
+}
+function _resetInstallRuntimeMarkerCacheForTests() {
+    _installMarkerCache = undefined;
+}
+/**
+ * Resolve the explicit runtime for a project directory, from the two
+ * explicit sources only — no default is applied.
+ *
+ *   env.GSD_RUNTIME  >  config.runtime  >  null
+ *
+ * Returns null when neither explicit source is set, so a caller can
+ * distinguish "config said claude" from "nothing was set" (needed by
+ * #3245's host-detection rung, which must only run when this returns null).
+ *
+ * @param projectDir - path to the project directory, or null/undefined
+ * @param env - environment variables to read GSD_RUNTIME from; defaults to process.env
+ * @returns the resolved runtime name, or null if neither source is set
+ */
+function resolveExplicitRuntime(projectDir, env = process.env) {
+    const envRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(env['GSD_RUNTIME']);
+    if (envRuntime)
+        return envRuntime;
+    const config = readProjectConfig(projectDir);
+    const configRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(config ? config['runtime'] : undefined);
+    if (configRuntime)
+        return configRuntime;
+    return null;
+}
+/**
+ * Read `<projectDir>/.planning/config.json` as a plain object, or `null` when
+ * there is no project, no file, or it is unreadable or not an object.
+ *
+ * Read directly (not via loadConfig). loadConfig has a side effect of
+ * normalizing and re-writing legacy keys back to disk, which would mutate the
+ * project file just to read the runtime name. A plain JSON read is sufficient
+ * and side-effect-free. A missing or broken config must not crash runtime
+ * output formatting, so every failure degrades to `null`.
+ */
+function readProjectConfig(projectDir) {
+    if (!projectDir)
+        return null;
+    try {
+        const configPath = node_path_1.default.join(projectDir, '.planning', 'config.json');
+        if (!node_fs_1.default.existsSync(configPath))
+            return null;
+        const parsed = JSON.parse(node_fs_1.default.readFileSync(configPath, 'utf-8'));
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    }
+    catch {
+        return null;
+    }
+}
 /**
  * Resolve the effective runtime for a project directory.
  *
- *   process.env.GSD_RUNTIME  >  config.runtime  >  'claude'
+ *   process.env.GSD_RUNTIME  >  config.runtime  >  install marker  >  'claude'
  *
  * Mirrors the precedence already used by profile-output.cjs and the rest of
  * the runtime resolution chain. Returns a lowercased string so downstream
  * comparisons can be case-blind.
  *
+ * #3897 rung 2: the per-install `.gsd-runtime` marker is the THIRD rung,
+ * between the two explicit sources and the 'claude' default — matching
+ * model-resolver.cts's own description of it as "the third precedence rung"
+ * before this reader was promoted here. The marker's raw contents are never
+ * trusted verbatim (N1): they are routed through the SAME
+ * `resolveRuntimeNameFromCandidates` normalization the env rung uses, so an
+ * unknown or hostile marker value degrades exactly like an unknown
+ * GSD_RUNTIME value would.
+ *
  * @param projectDir - path to the project directory, or null/undefined
  * @returns the resolved runtime name
  */
 function resolveRuntime(projectDir) {
-    const envRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(process.env['GSD_RUNTIME']);
-    if (envRuntime)
-        return envRuntime;
-    if (projectDir) {
-        try {
-            // Read config.json directly (not via loadConfig). loadConfig has a side
-            // effect of normalizing and re-writing legacy keys back to disk, which
-            // would mutate the project file just to read the runtime name. We only
-            // need the literal `runtime:` value, so a plain JSON read is sufficient
-            // and side-effect-free.
-            const configPath = node_path_1.default.join(projectDir, '.planning', 'config.json');
-            if (node_fs_1.default.existsSync(configPath)) {
-                const raw = node_fs_1.default.readFileSync(configPath, 'utf-8');
-                const parsed = JSON.parse(raw);
-                if (parsed && typeof parsed === 'object' && 'runtime' in parsed) {
-                    const configRuntime = (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(parsed['runtime']);
-                    if (configRuntime)
-                        return configRuntime;
-                }
-            }
-        }
-        catch {
-            // Fall through to default — a missing/broken config must not crash
-            // runtime output formatting.
-        }
-    }
-    return 'claude';
+    // The same chain `resolveActiveRuntime` owns, fed by a project directory:
+    // one implementation, so the two entry points cannot drift (#5169).
+    return resolveActiveRuntime(readProjectConfig(projectDir));
+}
+/**
+ * Resolve the effective runtime from an ALREADY-LOADED config object — the one
+ * chain every consumer of "which runtime is this install" shares (#5169,
+ * ADR-5057 §5, #4690):
+ *
+ *   env.GSD_RUNTIME  >  config.runtime  >  install marker  >  'claude'
+ *
+ * Canonicalized, so an alias or case variant (`claude-code`, `Claude`) cannot
+ * defeat a downstream comparison. `resolveRuntime` above is the same chain for
+ * callers that hold a project directory rather than a parsed config; the marker
+ * is read through `readInstallRuntimeMarker` in both.
+ */
+function resolveActiveRuntime(config, env = process.env) {
+    return (0, runtime_name_policy_cjs_1.resolveRuntimeNameFromCandidates)(env['GSD_RUNTIME'], config ? config['runtime'] : undefined, readInstallRuntimeMarker()) || 'claude';
 }
 /**
  * Convenience: format using the runtime resolved from a project directory.
@@ -116,4 +227,16 @@ function resolveRuntime(projectDir) {
  */
 function formatGsdSlashFor(projectDir, commandName) {
     return formatGsdSlash(commandName, resolveRuntime(projectDir));
+}
+/**
+ * #4859: the command as the project's runtime registers it, typed as a string —
+ * for runtime code that builds user-facing guidance. String literals in compiled
+ * runtime code are printed verbatim (the install-time conversion only rewrites
+ * markdown artifact bodies), so a hard-coded `/gsd-<cmd>` names a command no
+ * install route registers. Route every such reference through here:
+ * `runtimeCommand(cwd, 'plan-phase 3 --research')` → `/gsd-plan-phase 3 --research`
+ * (`$gsd-plan-phase …` on Codex). `commandName` is the bare name plus any argument tail.
+ */
+function runtimeCommand(projectDir, commandName) {
+    return String(formatGsdSlashFor(projectDir, commandName));
 }

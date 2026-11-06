@@ -6,6 +6,10 @@ tags: [searchable tech]
 provides:
   - [bullet list of what was built/delivered]
 affects: [list of phase names or keywords]
+actuals:
+  tokens: [chars/4 over files actually changed]
+  tasks: [tasks completed]
+  commits: [commits made]
 tech-stack:
   added: [libraries/tools]
   patterns: [architectural/code patterns]
@@ -14,9 +18,16 @@ key-files:
   modified: [important files modified]
 key-decisions:
   - "Decision 1"
+# coverage: (#1602) optional per-deliverable UAT-routing block — see templates/summary.md <coverage_guidance>.
+#   Add live `coverage:` entries (id/description/verification[]/human_judgment[/rationale]) to enable
+#   deterministic UAT routing in verify-work; OMIT for legacy prose-only SUMMARYs. When coverage is
+#   uncertain, default human_judgment: true with a rationale — never auto-skip the human.
 duration: Xmin
 completed: YYYY-MM-DD
+status: complete
 ---
+
+**Status (#2830):** `status: complete` is the default — the plan finished. Use `status: halted` instead when the plan reached a designed stop (a gate failure, a spike concluding without expanding into the full build, or any other intentional non-completion) and intentionally left tasks unfinished.
 
 # Phase [X]: [Name] Summary
 

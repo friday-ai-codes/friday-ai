@@ -50,6 +50,9 @@ function migrateToWorkstreams(cwd, workstreamName) {
     catch {
         throw new Error('Invalid workstream name for migration');
     }
+    if ((0, workstream_name_policy_cjs_1.isReservedWorkstreamName)(workstreamName)) {
+        throw new Error((0, workstream_name_policy_cjs_1.reservedWorkstreamNameMessage)(workstreamName));
+    }
     const baseDir = planningRoot(cwd);
     const wsDir = node_path_1.default.join(baseDir, 'workstreams', workstreamName);
     if (node_fs_1.default.existsSync(node_path_1.default.join(baseDir, 'workstreams'))) {
@@ -101,6 +104,9 @@ function cmdWorkstreamCreate(cwd, name, options, raw) {
     if (!slug) {
         error('Invalid workstream name — must contain at least one alphanumeric character');
     }
+    if ((0, workstream_name_policy_cjs_1.isReservedWorkstreamName)(slug)) {
+        error((0, workstream_name_policy_cjs_1.reservedWorkstreamNameMessage)(slug));
+    }
     const baseDir = planningRoot(cwd);
     if (!node_fs_1.default.existsSync(baseDir)) {
         error(`.planning/ directory not found — run ${(0, runtime_slash_cjs_1.formatGsdSlash)('new-project', (0, runtime_slash_cjs_1.resolveRuntime)(cwd))} first`);
@@ -134,8 +140,8 @@ function cmdWorkstreamCreate(cwd, name, options, raw) {
             }
             else {
                 try {
-                    const milestone = getMilestoneInfo(cwd);
-                    existingWsName = generateSlugInternal(milestone.name) || 'default';
+                    const milestone = getMilestoneInfo(cwd).value;
+                    existingWsName = generateSlugInternal(milestone?.name ?? null) || 'default';
                 }
                 catch {
                     existingWsName = 'default';
@@ -207,6 +213,10 @@ function cmdWorkstreamList(cwd, raw) {
         has_roadmap: ws.files.roadmap,
         has_state: ws.files.state,
         status: ws.status,
+        // #2562: a refused shipped marker must reach the surface. Projecting
+        // `status` without it renders the refusal invisible at the CLI, which is
+        // the silent-collapse defect this issue is about.
+        milestone_shipped_unverified: ws.milestone_shipped_unverified,
         current_phase: ws.current_phase,
         phase_count: ws.phase_count,
         completed_phases: ws.completed_phases,
@@ -241,6 +251,7 @@ function cmdWorkstreamStatus(cwd, name, raw) {
         phase_count: inv.phase_count,
         completed_phases: inv.completed_phases,
         status: inv.status,
+        milestone_shipped_unverified: inv.milestone_shipped_unverified,
         current_phase: inv.current_phase,
         last_activity: inv.last_activity,
     }, raw, undefined);
@@ -326,8 +337,11 @@ function cmdWorkstreamSet(cwd, name, raw) {
         output({ active: null, cleared: true, previous: previous || null }, raw, undefined);
         return;
     }
-    if (!(0, workstream_name_policy_cjs_1.isValidActiveWorkstreamName)(name)) {
-        output({ active: null, error: 'invalid_name', message: 'Workstream name must be alphanumeric, hyphens, underscores, or dots' }, raw, undefined);
+    if (!(0, workstream_name_policy_cjs_1.isValidActiveWorkstreamName)(name) || (0, workstream_name_policy_cjs_1.isReservedWorkstreamName)(name)) {
+        const message = (0, workstream_name_policy_cjs_1.isReservedWorkstreamName)(name)
+            ? (0, workstream_name_policy_cjs_1.reservedWorkstreamNameMessage)(name)
+            : 'Workstream name must be alphanumeric, hyphens, underscores, or dots';
+        output({ active: null, error: 'invalid_name', message }, raw, undefined);
         return;
     }
     const wsDir = node_path_1.default.join(planningRoot(cwd), 'workstreams', name);
@@ -353,6 +367,7 @@ function cmdWorkstreamProgress(cwd, raw) {
         name: ws.name,
         active: ws.active,
         status: ws.status,
+        milestone_shipped_unverified: ws.milestone_shipped_unverified,
         current_phase: ws.current_phase ?? null,
         phases: `${ws.completed_phases}/${ws.roadmap_phase_count}`,
         plans: `${ws.completed_plans}/${ws.total_plans}`,

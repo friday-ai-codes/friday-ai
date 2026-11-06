@@ -8,7 +8,7 @@ Rules that apply to ALL workflows and agents. Individual workflows may have addi
 
 1. **Never** read agent definition files (`agents/*.md`) -- `subagent_type` auto-loads them. Reading agent definitions into the orchestrator wastes context for content automatically injected into subagent sessions.
 2. **Never** inline large files into subagent prompts -- tell agents to read files from disk instead. Agents have their own context windows.
-3. **Read depth scales with context window** -- check `context_window` in `.planning/config.json`. At < 500000: read only frontmatter, status fields, or summaries. At >= 500000 (1M model): full body reads permitted when content is needed for inline decisions. See `references/context-budget.md` for the complete table.
+3. **Read depth scales with context window** -- check `context_window` in `.planning/config.json`. At < 500000: read only frontmatter, status fields, or summaries. At >= 500000 (1M model): full body reads permitted when content is needed for inline decisions. See `gsd-core/references/context-budget.md` for the complete table.
 4. **Delegate** heavy work to subagents -- the orchestrator routes, it does not build, analyze, research, investigate, or verify.
 5. **Proactive pause warning**: If you have already consumed significant context (large file reads, multiple subagent results), warn the user: "Context budget is getting heavy. Consider checkpointing progress."
 
@@ -26,7 +26,7 @@ Rules that apply to ALL workflows and agents. Individual workflows may have addi
 
 ## Questioning Anti-Patterns
 
-Reference: `references/questioning.md` for the full anti-pattern list.
+Reference: `gsd-core/references/questioning.md` for the full anti-pattern list.
 
 12. **Do not** walk through checklists -- checklist walking (asking items one by one from a list) is the #1 anti-pattern. Instead, use progressive depth: start broad, dig where interesting.
 13. **Do not** use corporate speak -- avoid jargon like "stakeholder alignment", "synergize", "deliverables". Use plain language.
@@ -34,7 +34,7 @@ Reference: `references/questioning.md` for the full anti-pattern list.
 
 ## State Management Anti-Patterns
 
-15. **No direct Write/Edit to STATE.md or ROADMAP.md for mutations.** Always use `gsd-tools query` for registered state/roadmap handlers (e.g. `state.update`, `state.advance-plan`, `roadmap.update-plan-progress`), or legacy `node …/gsd-tools.cjs` for CLI-only commands. Direct Write tool usage bypasses safe update logic and is unsafe in multi-session environments. Exception: first-time creation of STATE.md from template is allowed.
+15. **No direct Write/Edit to STATE.md or ROADMAP.md for mutations.** Always use `gsd_run query` for registered state/roadmap handlers (e.g. `state.update`, `state.advance-plan`, `roadmap.update-plan-progress`), or legacy `node …/gsd-tools.cjs` for CLI-only commands. Direct Write tool usage bypasses safe update logic and is unsafe in multi-session environments. Exception: first-time creation of STATE.md from template is allowed.
 
 ## Behavioral Rules
 
@@ -53,11 +53,11 @@ Reference: `references/questioning.md` for the full anti-pattern list.
 ## GSD-Specific Rules
 
 24. **Do not** check for `mode === 'auto'` or `mode === 'autonomous'` -- GSD uses `yolo` config flag. Check `yolo: true` for autonomous mode, absence or `false` for interactive mode.
-25. **Prefer `gsd-tools query`** for orchestration when a handler exists; when shelling out to the legacy CLI, use **`gsd-tools.cjs`** (not `gsd-tools.js` or any other filename) — GSD ships the programmatic API as CommonJS for Node.js CLI compatibility.
+25. **Prefer `gsd_run query`** for orchestration when a handler exists; when shelling out to the legacy CLI, go through the same `gsd_run` launcher rather than naming the shim file. The shim is not on PATH under any name ending in `.cjs`, and an agent that meets the bare filename falls back to searching the filesystem for it — on Git Bash for Windows that is a full-drive `find.exe` traversal (#3809). `gsd_run` resolves the CommonJS shim itself across every runtime home.
 26. **Plan files MUST follow `{padded_phase}-{NN}-PLAN.md` pattern** (e.g., `01-01-PLAN.md`). Never use `PLAN-01.md`, `plan-01.md`, or any other variation -- gsd-tools detection depends on this exact pattern.
 27. **Do not start executing the next plan before writing the SUMMARY.md for the current plan** -- downstream plans may reference it via `@` includes.
 
 ## iOS / Apple Platform Rules
 
-28. **NEVER use `Package.swift` + `.executableTarget` (or `.target`) as the primary build system for iOS apps.** SPM executable targets produce macOS CLI binaries, not iOS `.app` bundles. They cannot be installed on iOS devices or submitted to the App Store. Use XcodeGen (`project.yml` + `xcodegen generate`) to create a proper `.xcodeproj`. See `references/ios-scaffold.md` for the full pattern.
+28. **NEVER use `Package.swift` + `.executableTarget` (or `.target`) as the primary build system for iOS apps.** SPM executable targets produce macOS CLI binaries, not iOS `.app` bundles. They cannot be installed on iOS devices or submitted to the App Store. Use XcodeGen (`project.yml` + `xcodegen generate`) to create a proper `.xcodeproj`. See `gsd-core/references/ios-scaffold.md` for the full pattern.
 29. **Verify SwiftUI API availability before use.** Many SwiftUI APIs require a specific minimum iOS version (e.g., `NavigationSplitView` is iOS 16+, `List(selection:)` with multi-select and `@Observable` require iOS 17). If a plan uses an API that exceeds the declared `IPHONEOS_DEPLOYMENT_TARGET`, raise the deployment target or add `#available` guards.

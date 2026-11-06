@@ -32,7 +32,7 @@ function _getNestedConfigValue(config, dotKey) {
     return { found: true, value: current };
 }
 const _warnedRawConfigPaths = new Set();
-function _readRawConfigKey(filePath, dotKey) {
+function _readRawConfigKey(filePath, dotKey, quiet = false) {
     try {
         const raw = node_fs_1.default.readFileSync(filePath, 'utf8');
         let parsed;
@@ -40,7 +40,7 @@ function _readRawConfigKey(filePath, dotKey) {
             parsed = JSON.parse(raw);
         }
         catch {
-            if (!_warnedRawConfigPaths.has(filePath)) {
+            if (!quiet && !_warnedRawConfigPaths.has(filePath)) {
                 _warnedRawConfigPaths.add(filePath);
                 try {
                     process.stderr.write(`gsd-tools: warning: failed to parse ${filePath} as JSON — skipping for activation resolution\n`);
@@ -67,9 +67,14 @@ function _readRawConfigKey(filePath, dotKey) {
  *   3. Root config.json at planningRoot(cwd)/config.json (only if path differs).
  *   4. registry.configSchema[dotKey].default — schema default.
  *   5. Absent → { found: false, value: undefined }.
+ *
+ * `quiet: true` (default false) suppresses the one-time stderr warning for a config.json that is
+ * not valid JSON: a gate reads its switch quietly (a malformed config is simply "key absent"), it
+ * never writes to stderr (#5139).
  */
 function resolveConfigKey(dotKey, opts) {
     const { config, cwd, registry } = opts;
+    const quiet = opts.quiet === true;
     // Level 1: loadConfig result
     const fromConfig = _getNestedConfigValue(config, dotKey);
     if (fromConfig.found)
@@ -78,11 +83,11 @@ function resolveConfigKey(dotKey, opts) {
     if (cwd) {
         const wsConfigPath = node_path_1.default.join(planningDir(cwd), 'config.json');
         const rootConfigPath = node_path_1.default.join(planningRoot(cwd), 'config.json');
-        const fromWs = _readRawConfigKey(wsConfigPath, dotKey);
+        const fromWs = _readRawConfigKey(wsConfigPath, dotKey, quiet);
         if (fromWs.found)
             return { found: true, value: fromWs.value };
         if (wsConfigPath !== rootConfigPath) {
-            const fromRoot = _readRawConfigKey(rootConfigPath, dotKey);
+            const fromRoot = _readRawConfigKey(rootConfigPath, dotKey, quiet);
             if (fromRoot.found)
                 return { found: true, value: fromRoot.value };
         }
@@ -105,9 +110,36 @@ function _resolveActivationValue(dotKey, config, cwd, registry) {
     const r = resolveConfigKey(dotKey, { config, cwd, registry });
     return r.found ? Boolean(r.value) : false;
 }
+/**
+ * Resolve a step's optional `pointFrom` gate (#3661): a step declaring
+ * `pointFrom: "<dotted enum key>"` is only active for ITS OWN `point` when the
+ * resolved value of that config key equals `point` exactly. This lets a
+ * capability register the same logical step at more than one loop point and
+ * have config select which registration is live — without teaching the
+ * shared `when` grammar an equality operator (`when` stays a plain boolean
+ * gate on a dotted key everywhere else).
+ *
+ * No `pointFrom` → true (unconditional; every existing step is unaffected).
+ * Present but not a non-empty string → false (malformed, mirrors `when`).
+ * Present and resolved → true only on an exact match against `point`.
+ *
+ * Single-owner precedence engine: called from both `loop-resolver.cts`
+ * (`isActive`) and `capability-state.cts` (`processHooks`) so the two
+ * consumers can never diverge on activation (see
+ * `tests/capability-precedence-parity.test.cjs`).
+ */
+function _resolvePointGate(pointFrom, point, config, cwd, registry) {
+    if (pointFrom === undefined || pointFrom === null)
+        return true;
+    if (typeof pointFrom !== 'string' || pointFrom.length === 0)
+        return false;
+    const r = resolveConfigKey(pointFrom, { config, cwd, registry });
+    return r.found && r.value === point;
+}
 module.exports = {
     _getNestedConfigValue,
     _readRawConfigKey,
     _resolveActivationValue,
+    _resolvePointGate,
     resolveConfigKey,
 };

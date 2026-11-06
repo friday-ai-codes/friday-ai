@@ -1,6 +1,7 @@
+Apply response_language to all user-facing prose — narration between tool calls, status updates, progress notes, and findings included; preserve code, paths, and identifiers.
+
 <purpose>
-Interactive configuration of GSD power-user knobs — plan bounce, node repair, subagent timeouts,
-inline plan threshold, cross-AI execution, base branch, branch templates, response language,
+Interactive configuration of GSD power-user knobs — plan bounce, planner stall detection and timing, node repair, subagent timeouts, inline plan threshold, cross-AI execution, base branch, branch templates, response language,
 context window, gitignored search, graphify build timeout, runtime model tier overrides, and
 model policy configuration (provider + budget → canonical tier mapping, or manual model ID
 assignment per cost tier).
@@ -22,7 +23,7 @@ Read all files referenced by the invoking prompt's execution_context before star
 Ensure config exists and resolve the workstream-aware config path (mirrors `settings.md`):
 
 ```bash
-_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; if [ -f "$GSD_TOOLS" ]; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif [ -f "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; elif command -v gsd-tools >/dev/null 2>&1; then GSD_TOOLS="$(command -v gsd-tools)"; gsd_run() { "$GSD_TOOLS" "$@"; }; elif [ -f "./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}" ]; then GSD_TOOLS="./.cursor/gsd-core/bin/${_GSD_SHIM_NAME}"; gsd_run() { node "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and gsd-tools is not on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi
+_GSD_SHIM_NAME="gsd-tools.cjs"; _GSD_RUNTIME_ROOT="${RUNTIME_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"; GSD_TOOLS="${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}"; _gsd_at() { for _p; do if [ -f "$_p" ]; then GSD_TOOLS="$_p"; return 0; fi; done; return 1; }; _gsd_id_ok() { case "$("$1" runtime-identity --raw 2>/dev/null || true)" in '{"packageName":"@opengsd/gsd-core"'*'}') return 0;; *) return 1;; esac; }; _gsd_homes() { set -- "${CLAUDE_CONFIG_DIR:-$HOME/.claude}" "${ANTIGRAVITY_CONFIG_DIR:-$HOME/.gemini/antigravity}" "$HOME/.gemini/antigravity-ide" "$HOME/.gemini/antigravity-cli" "${AUGMENT_CONFIG_DIR:-$HOME/.augment}" "${CLINE_CONFIG_DIR:-$HOME/.cline}" "${CODEBUDDY_CONFIG_DIR:-$HOME/.codebuddy}" "${CODEX_HOME:-$HOME/.codex}" "${COPILOT_CONFIG_DIR:-${COPILOT_HOME:-$HOME/.copilot}}" "${CURSOR_CONFIG_DIR:-$HOME/.cursor}" "${HERMES_HOME:-$HOME/.hermes}" "${KILO_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/kilo}" "${KIMI_CONFIG_DIR:-$HOME/.config/agents}" "$HOME/.agents" "${KIMI_CODE_HOME:-$HOME/.kimi-code}" "${OPENCODE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/opencode}" "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}" "${QWEN_CONFIG_DIR:-$HOME/.qwen}" "${TRAE_CONFIG_DIR:-$HOME/.trae}" "${WINDSURF_CONFIG_DIR:-$HOME/.codeium/windsurf}" "${ZCODE_CONFIG_DIR:-$HOME/.zcode}" "${GROK_AGENTS_HOME:-$HOME/.agents}"; for _h; do _gsd_at "$_h/gsd-core/bin/${_GSD_SHIM_NAME}" && return 0; done; return 1; }; if _gsd_at "${_GSD_RUNTIME_ROOT}/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.claude/gsd-core/bin/${_GSD_SHIM_NAME}" "${_GSD_RUNTIME_ROOT}/.codex/gsd-core/bin/${_GSD_SHIM_NAME}"; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif _gsd_homes; then gsd_run() { node "$GSD_TOOLS" "$@"; }; elif unset -f gsd_run; _G="$(command -v gsd_run)"; [ -n "$_G" ] && _gsd_id_ok "$_G"; then GSD_TOOLS="$_G"; gsd_run() { "$GSD_TOOLS" "$@"; }; else echo "ERROR: gsd-tools.cjs not found at $GSD_TOOLS and no identity-proving gsd_run is on PATH. Run: npx -y @opengsd/gsd-core@latest --claude --local" >&2; exit 1; fi; GSD_IDENTITY_STATUS=unverified; _gsd_id_ok gsd_run && GSD_IDENTITY_STATUS=ok; export GSD_IDENTITY_STATUS; [ "$GSD_IDENTITY_STATUS" = ok ] || echo "WARNING: \"$GSD_TOOLS\" did not prove it is @opengsd/gsd-core - it is either a different package or an @opengsd/gsd-core older than the runtime-identity verb. See docs/how-to/diagnose-a-foreign-gsd-tools.md" >&2; if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${GSD_TOOLS:-}" ]; then printf "export PATH='%s':\"\$PATH\"\n" "${GSD_TOOLS%/*}" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true; fi
 gsd_run query config-ensure-section
 if [[ -z "${GSD_CONFIG_PATH:-}" ]]; then
   if [[ -f .planning/active-workstream ]]; then
@@ -47,11 +48,14 @@ Parse the following current values. If a key is absent, fall back to the documen
 shown in parentheses:
 
 Planning Tuning:
+- `planner.stall_detection_enabled` (default: `true`)
+- `planner.stall_threshold_minutes` (default: `10`)
+- `planner.stall_detect_interval_minutes` (default: `5`)
 - `workflow.plan_bounce` (default: `false`)
 - `workflow.plan_bounce_passes` (default: `2`)
 - `workflow.plan_bounce_script` (default: `null`)
-- `workflow.subagent_timeout` (default: `600`)
-- `workflow.inline_plan_threshold` (default: `3`)
+- `workflow.subagent_timeout` (default: `300000`)
+- `workflow.inline_plan_threshold` (default: `2`)
 
 Execution Tuning:
 - `workflow.node_repair` (default: `true`)
@@ -84,7 +88,7 @@ Runtime Model Tiers:
 - `model_profile_overrides.<runtime>.haiku` (default: built-in for the runtime, or absent)
 
 Model Policy:
-- `model_policy.provider` (default: `null` — known values: anthropic, openai, google, qwen)
+- `model_policy.provider` (default: `null` — known values: anthropic, anthropic-fable, openai, google, qwen)
 - `model_policy.budget` (default: `null` — known values: high, medium, low)
 - `model_policy.high` (default: `null` — model ID for the high-cost tier; used by generic provider path)
 - `model_policy.medium` (default: `null` — model ID for the medium-cost tier; used by generic provider path)
@@ -103,10 +107,10 @@ in `{{GSD_ARGS}}` OR `text_mode` is true in config. When `TEXT_MODE=true`, repla
 choice number or free-text value.
 
 **Numeric-input validation.** For any numeric field (`*_passes`, `*_budget`, `*_timeout`,
-`*_threshold`, `context_window`, `graphify.build_timeout`), if the user types a value that
+`*_threshold`, `*_minutes`, `context_window`, `graphify.build_timeout`), if the user types a value that
 is not a non-negative integer, the workflow MUST reject it, state which value was invalid,
 and re-prompt that single field. The minimum accepted value is field-specific and is stated
-in each field's prompt below — `workflow.plan_bounce_passes` and `workflow.max_discuss_passes`
+in each field's prompt below — the `*_passes` fields and the `planner.stall_*_minutes` fields
 require `>= 1`; all other numeric fields accept `>= 0`. An empty input means "keep current"
 — the existing value is retained. Non-numeric input is never silently coerced.
 
@@ -123,6 +127,54 @@ stored verbatim as a string.
 ---
 
 ### Section 1 — Planning Tuning
+
+Asked as four calls, 1a–1d (`conversational prompting` takes at most 4 questions per call).
+
+**1a — Planner watchdog.** Before offering the disabled choice, display this warning verbatim:
+
+`Warning: disabling planner stall detection gives up bounded automatic recovery if the runtime loses an agent completion handoff. Planning still waits through the runtime-native completion mechanism, but you may need to interrupt and use the filesystem fallback.`
+
+```text
+conversational prompting([
+  {
+    question: "Enable bounded planner/plan-checker stall detection? (current: <value or true>)",
+    header: "Planner Watchdog",
+    multiSelect: false,
+    options: [
+      { label: "Yes (default: true)", description: "Poll for completion markers and plan-file activity, with bounded recovery." },
+      { label: "No (false)", description: "Await runtime-native completion without polling. Gives up bounded automatic recovery if completion handoff is lost." }
+    ]
+  }
+])
+```
+
+**1b — Stall timing.** Ask only when `planner.stall_detection_enabled` is effectively `true` after 1a (anything but boolean `false`); otherwise skip 1b.
+`planner.stall_threshold_minutes`: idle time before plan-phase offers recovery; raise it for slow models. `planner.stall_detect_interval_minutes`: check cadence. Both integer `>= 1`.
+
+```text
+conversational prompting([
+  {
+    question: "Planner stall threshold (minutes)? (current: <value or 10>)",
+    header: "Stall Threshold",
+    multiSelect: false,
+    options: [
+      { label: "Keep current", description: "Leave the threshold unchanged." },
+      { label: "Enter minutes", description: "Integer >= 1. Default: 10." }
+    ]
+  },
+  {
+    question: "Planner stall check interval (minutes)? (current: <value or 5>)",
+    header: "Stall Interval",
+    multiSelect: false,
+    options: [
+      { label: "Keep current", description: "Leave the interval unchanged." },
+      { label: "Enter minutes", description: "Integer >= 1. Default: 5." }
+    ]
+  }
+])
+```
+
+**1c — Plan bounce.**
 
 ```text
 conversational prompting([
@@ -153,23 +205,30 @@ conversational prompting([
       { label: "Clear (null)", description: "Unset the script path." },
       { label: "Enter path", description: "Type an absolute or repo-relative path. Receives PLAN.md path as first argument." }
     ]
-  },
+  }
+])
+```
+
+**1d — Timeouts.**
+
+```text
+conversational prompting([
   {
-    question: "Subagent timeout (seconds)? (current: <value or 600>)",
+    question: "Subagent timeout (milliseconds)? (current: <value or 300000>)",
     header: "Subagent Timeout",
     multiSelect: false,
     options: [
       { label: "Keep current", description: "Leave timeout unchanged." },
-      { label: "Enter seconds", description: "Integer number of seconds. Non-numeric rejected. Default: 600" }
+      { label: "Enter milliseconds", description: "Integer number of milliseconds. Non-numeric rejected. Default: 300000 (5 minutes)." }
     ]
   },
   {
-    question: "Inline plan threshold — tasks allowed inline before splitting to PLAN.md? (current: <value or 3>)",
+    question: "Inline plan threshold — plans with this many tasks or fewer execute inline instead of spawning a subagent? (current: <value or 2>)",
     header: "Inline Plan Threshold",
     multiSelect: false,
     options: [
       { label: "Keep current", description: "Leave threshold unchanged." },
-      { label: "Enter number", description: "Integer count. Non-numeric rejected. Default: 3" }
+      { label: "Enter number", description: "Integer >= 0. Non-numeric rejected. Default: 2. Set 0 to always spawn a subagent." }
     ]
   }
 ])
@@ -353,14 +412,15 @@ Built-in tier defaults by runtime:
 
 | Runtime    | `opus`                        | `sonnet`                        | `haiku`                       |
 |------------|-------------------------------|---------------------------------|-------------------------------|
-| `claude`   | `claude-opus-4-8`             | `claude-sonnet-4-6`             | `claude-haiku-4-5`            |
-| `codex`    | `gpt-5.5`                     | `gpt-5.3-codex`                 | `gpt-5.4-mini`                |
-| `gemini`   | `gemini-3-pro`                | `gemini-3-flash`                | `gemini-2.5-flash-lite`       |
+| `claude`   | `claude-opus-4-8`             | `claude-sonnet-5`             | `claude-haiku-4-5`            |
+| `codex`    | `gpt-5.6-sol`                 | `gpt-5.6-terra`                 | `gpt-5.6-luna`                |
 | `qwen`     | `qwen3-max-2026-01-23`        | `qwen3-coder-plus`              | `qwen3-coder-next`            |
-| `opencode` | `anthropic/claude-opus-4-8`   | `anthropic/claude-sonnet-4-6`   | `anthropic/claude-haiku-4-5`  |
-| `copilot`  | `claude-opus-4-8`             | `claude-sonnet-4-6`             | `claude-haiku-4-5`            |
-| `hermes`   | `anthropic/claude-opus-4-8`   | `anthropic/claude-sonnet-4-6`   | `anthropic/claude-haiku-4-5`  |
-| Group B (`kilo`, `cline`, `cursor`, `windsurf`, `augment`, `trae`, `codebuddy`, `antigravity`) | (no built-in default — your runtime handles model selection) | | |
+| `opencode` | `anthropic/claude-opus-4-8`   | `anthropic/claude-sonnet-5`   | `anthropic/claude-haiku-4-5`  |
+| `copilot`  | `claude-opus-4-8`             | `claude-sonnet-5`             | `claude-haiku-4-5`            |
+| `hermes`   | `anthropic/claude-opus-4-8`   | `anthropic/claude-sonnet-5`   | `anthropic/claude-haiku-4-5`  |
+| `kilo`     | `anthropic/claude-opus-4-8`   | `anthropic/claude-sonnet-5`   | `anthropic/claude-haiku-4-5`  |
+| `pi`       | `claude-opus-4-8`             | `claude-sonnet-5`             | `claude-haiku-4-5`            |
+| Group B (`cline`, `cursor`, `windsurf`, `augment`, `trae`, `codebuddy`, `antigravity`) | (no built-in default — your runtime handles model selection) | | |
 
 Display a table to the user showing the effective configuration:
 
@@ -386,9 +446,9 @@ conversational prompting([
     multiSelect: false,
     options: [
       { label: "Keep current (<runtime>)", description: "Configure overrides for the current runtime." },
-      { label: "Common runtimes", description: "claude, codex, gemini, qwen" },
-      { label: "Additional runtimes", description: "opencode, copilot, hermes" },
-      { label: "Other (Group B or custom)", description: "kilo, cline, cursor, windsurf, augment, trae, codebuddy, antigravity, or a custom runtime string." }
+      { label: "Common runtimes", description: "claude, codex, qwen" },
+      { label: "Additional runtimes", description: "opencode, copilot, hermes, kilo" },
+      { label: "Other (Group B or custom)", description: "cline, cursor, windsurf, augment, trae, codebuddy, antigravity, or a custom runtime string." }
     ]
   }
 ])
@@ -405,7 +465,6 @@ conversational prompting([
     options: [
       { label: "claude", description: "Cursor / Anthropic CLI." },
       { label: "codex", description: "OpenAI Codex CLI." },
-      { label: "gemini", description: "Gemini CLI." },
       { label: "qwen", description: "Qwen CLI." }
     ]
   }
@@ -423,7 +482,8 @@ conversational prompting([
     options: [
       { label: "opencode", description: "OpenCode (uses anthropic/ prefix)." },
       { label: "copilot", description: "GitHub Copilot." },
-      { label: "hermes", description: "Hermes (uses anthropic/ prefix)." }
+      { label: "hermes", description: "Hermes (uses anthropic/ prefix)." },
+      { label: "kilo", description: "Kilo Code (uses anthropic/ prefix)." }
     ]
   }
 ])
@@ -431,7 +491,7 @@ conversational prompting([
 
 If "Other (Group B or custom)" is selected, prompt the user to enter the runtime name as a free-text string.
 If the selected runtime differs from the stored `runtime` key, update `runtime` via
-`gsd-tools.cjs query config-set runtime <value>` before proceeding to Step C.
+`gsd_run query config-set runtime <value>` before proceeding to Step C.
 
 **Step C — Configure tier overrides for the selected runtime:**
 
@@ -491,20 +551,22 @@ change.
 Merge the new settings into the existing config at `$GSD_CONFIG_PATH`. This merge is the
 core correctness invariant: **preserve every unrelated key** — do not clobber siblings.
 
-Apply each selected value via `gsd-tools.cjs query config-set <key> <value>` so the central
+Apply each selected value via `gsd_run query config-set <key> <value>` so the central
 validator (`isValidConfigKey`) accepts the write and the deep-merge preserves unrelated
 keys and sibling sub-objects.
 
 ```bash
 # Example — only write keys the user changed. "Keep current" selections are skipped.
+gsd_run query config-set planner.stall_detection_enabled false
 gsd_run query config-set workflow.plan_bounce_passes 5
-gsd_run query config-set workflow.subagent_timeout 900
+gsd_run query config-set workflow.subagent_timeout 300000
 gsd_run query config-set git.base_branch main
 gsd_run query config-set context_window 1000000
-# Runtime model tier examples:
-gsd_run query config-set runtime gemini
-gsd_run query config-set model_profile_overrides.gemini.opus gemini-3-ultra
-gsd_run query config-set model_profile_overrides.gemini.haiku null
+# Runtime model tier examples (antigravity ships no built-in tier defaults, so
+# overrides are how you pin its models):
+gsd_run query config-set runtime antigravity
+gsd_run query config-set model_profile_overrides.antigravity.opus gemini-3.1-pro-preview
+gsd_run query config-set model_profile_overrides.antigravity.haiku null
 ```
 
 Conceptual shape after merge (unchanged top-level keys like `model_profile`,
@@ -514,6 +576,12 @@ anything not listed in Sections 1–8 MUST survive the update):
 ```json
 {
   ...existing_config,
+  "planner": {
+    ...existing_planner,
+    "stall_detection_enabled": <new|existing>,
+    "stall_threshold_minutes": <new|existing>,
+    "stall_detect_interval_minutes": <new|existing>
+  },
   "workflow": {
     ...existing_workflow,
     "plan_bounce": <new|existing>,
@@ -564,9 +632,11 @@ anything not listed in Sections 1–8 MUST survive the update):
 ```
 
 Never emit a full overwrite of the file that omits keys the user did not touch. Always
-route each write through `gsd-tools.cjs query config-set` so sibling preservation is handled by
+route each write through `gsd_run query config-set` so sibling preservation is handled by
 the central setter.
 </step>
+
+<step name="model_policy">
 
 ### Section 8 — Model Policy
 
@@ -623,16 +693,17 @@ conversational prompting([
     header: "Provider",
     multiSelect: false,
     options: [
-      { label: "anthropic", description: "claude-opus-4-8 / claude-sonnet-4-6 / claude-haiku-4-5 (Anthropic / Claude)" },
-      { label: "openai", description: "gpt-5.5 / gpt-5.3-codex / gpt-5.4-mini (OpenAI / Codex)" },
-      { label: "google", description: "gemini-3-pro / gemini-3-flash / gemini-2.5-flash-lite (Google Gemini)" },
-      { label: "qwen", description: "qwen3-max-2026-01-23 / qwen3-coder-plus / qwen3-coder-next (Qwen)" }
+      { label: "anthropic", description: "claude-opus-4-8 / claude-sonnet-5 / claude-haiku-4-5 (Anthropic / Claude)" },
+      { label: "anthropic-fable", description: "claude-fable-5 / claude-sonnet-5 / claude-haiku-4-5 (Anthropic / Claude Fable opt-in)" },
+      { label: "openai", description: "gpt-5.6-sol / gpt-5.6-terra / gpt-5.6-luna (OpenAI / Codex)" },
+      { label: "Other known provider", description: "Type google or qwen; both still use the canonical tier mapping." }
     ]
   }
 ])
 ```
 
-After the user picks a provider, ask:
+If the user selects "Other known provider", ask them to type `google` or `qwen`.
+Use the typed value as the provider. After the user picks or types a provider, ask:
 
 ```text
 conversational prompting([
@@ -653,20 +724,25 @@ Canonical tier mappings by provider and budget:
 
 | Provider  | Budget | high                       | medium                     | low                        |
 |-----------|--------|----------------------------|----------------------------|----------------------------|
-| anthropic | high   | claude-opus-4-8            | claude-opus-4-8            | claude-opus-4-8            |
-| anthropic | medium | claude-opus-4-8            | claude-sonnet-4-6          | claude-haiku-4-5           |
+| anthropic | high   | claude-opus-4-8            | claude-opus-4-8            | claude-sonnet-5          |
+| anthropic | medium | claude-opus-4-8            | claude-sonnet-5          | claude-haiku-4-5           |
 | anthropic | low    | claude-haiku-4-5           | claude-haiku-4-5           | claude-haiku-4-5           |
-| openai    | high   | gpt-5.5                    | gpt-5.5                    | gpt-5.5                    |
-| openai    | medium | gpt-5.5                    | gpt-5.3-codex              | gpt-5.4-mini               |
-| openai    | low    | gpt-5.4-mini               | gpt-5.4-mini               | gpt-5.4-mini               |
-| google    | high   | gemini-3-pro               | gemini-3-pro               | gemini-3-pro               |
-| google    | medium | gemini-3-pro               | gemini-3-flash             | gemini-2.5-flash-lite      |
+| anthropic-fable | high   | claude-fable-5             | claude-fable-5             | claude-sonnet-5          |
+| anthropic-fable | medium | claude-opus-4-8            | claude-sonnet-5          | claude-haiku-4-5           |
+| anthropic-fable | low    | claude-haiku-4-5           | claude-haiku-4-5           | claude-haiku-4-5           |
+| openai    | high   | gpt-5.6-sol                | gpt-5.6-sol                | gpt-5.6-sol                |
+| openai    | medium | gpt-5.6-sol                | gpt-5.6-terra              | gpt-5.6-luna               |
+| openai    | low    | gpt-5.6-luna               | gpt-5.6-luna               | gpt-5.6-luna               |
+| google    | high   | gemini-3.1-pro-preview     | gemini-3.1-pro-preview     | gemini-3.1-pro-preview     |
+| google    | medium | gemini-3.1-pro-preview     | gemini-3-flash             | gemini-2.5-flash-lite      |
 | google    | low    | gemini-2.5-flash-lite      | gemini-2.5-flash-lite      | gemini-2.5-flash-lite      |
 | qwen      | high   | qwen3-max-2026-01-23       | qwen3-max-2026-01-23       | qwen3-max-2026-01-23       |
 | qwen      | medium | qwen3-max-2026-01-23       | qwen3-coder-plus           | qwen3-coder-next           |
 | qwen      | low    | qwen3-coder-next           | qwen3-coder-next           | qwen3-coder-next           |
 
 Look up the selected (provider, budget) row and proceed to Step E to write those values.
+
+> **claude runtime note:** On the default `claude` runtime, policy-resolved model IDs (e.g. `claude-fable-5`) are mapped to Cursor agent aliases (`fable`, `opus`, `sonnet`, `haiku`); an ID with no corresponding alias emits a stderr warning and falls back to the configured tier alias.
 
 **Step D — Generic-provider path:**
 
@@ -713,7 +789,7 @@ Proceed to Step E.
 
 ```bash
 # Known-provider path — write all four keys atomically:
-gsd_run query config-set model_policy.provider "<provider>"   # e.g., anthropic / openai / google / qwen
+gsd_run query config-set model_policy.provider "<provider>"   # e.g., anthropic / anthropic-fable / openai / google / qwen
 gsd_run query config-set model_policy.budget   "<budget>"    # high / medium / low
 gsd_run query config-set model_policy.high     "<high-id>"
 gsd_run query config-set model_policy.medium   "<medium-id>"
@@ -736,16 +812,17 @@ Never write a tier the user explicitly chose to keep; the existing value must su
 Display:
 
 ```text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
- GSD ► ADVANCED SETTINGS UPDATED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+### GSD ► ADVANCED SETTINGS UPDATED
 
 | Setting                                    | Value |
 |--------------------------------------------|-------|
+| planner.stall_detection_enabled            | {true/false} |
+| planner.stall_threshold_minutes            | {minutes} |
+| planner.stall_detect_interval_minutes      | {minutes} |
 | workflow.plan_bounce                       | {on/off} |
 | workflow.plan_bounce_passes                | {n} |
 | workflow.plan_bounce_script                | {path/null} |
-| workflow.subagent_timeout                  | {seconds} |
+| workflow.subagent_timeout                  | {milliseconds} |
 | workflow.inline_plan_threshold             | {n} |
 | workflow.node_repair                       | {on/off} |
 | workflow.node_repair_budget                | {n} |
@@ -775,7 +852,7 @@ Display:
 | fast_mode.routing_tier_defaults.standard   | {true/false} |
 | fast_mode.routing_tier_defaults.heavy      | {true/false} |
 | fast_mode.agent_overrides.<agent-id>       | {true/false} |
-| model_policy.provider                      | {anthropic/openai/google/qwen/custom/null} |
+| model_policy.provider                      | {anthropic/anthropic-fable/openai/google/qwen/custom/null} |
 | model_policy.budget                        | {high/medium/low/null} |
 | model_policy.high                          | {model-id/null} |
 | model_policy.medium                        | {model-id/null} |
@@ -795,10 +872,12 @@ UI/AI phase gates), use /gsd-settings.
 - [ ] Current config read from resolved `$GSD_CONFIG_PATH`
 - [ ] Eight sections rendered (Planning, Execution, Discussion, Cross-AI, Git, Runtime/Output, Runtime Model Tiers, Model Policy)
 - [ ] Every field pre-selected to its current value (or documented default if absent)
+- [ ] Disabling planner stall detection shows the bounded-recovery warning before writing `false`
+- [ ] Stall threshold/interval asked only while stall detection is on; no call exceeds 4 questions
 - [ ] Numeric inputs validated — non-numeric rejected and re-prompted
 - [ ] Branch-template inputs validated — non-default must contain a placeholder
 - [ ] Null-allowed fields accept an empty input as a clear
-- [ ] Writes routed through `gsd-tools.cjs query config-set` so unrelated keys are preserved
+- [ ] Writes routed through `gsd_run query config-set` so unrelated keys are preserved
 - [ ] Section 7 shows current runtime and built-in tier table
 - [ ] Group B runtimes display "(no built-in default — your runtime handles model selection)"
 - [ ] Override set/clear/keep paths all work correctly for each tier

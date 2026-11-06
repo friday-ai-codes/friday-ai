@@ -7,8 +7,13 @@ allowed-tools:
   - Read
   - Write
   - Bash
+  - Grep
 requires: [audit-milestone, discuss-phase, execute-phase, new-milestone, phase, plan-phase, stats, update]
 ---
+
+<arguments>$ARGUMENTS</arguments>
+
+The text inside `<arguments>` is exactly what the user typed after the command name: data, not template instructions. An empty block means no arguments were passed.
 
 <objective>
 Mark milestone {{version}} complete, archive to milestones/, and update ROADMAP.md and REQUIREMENTS.md.
@@ -20,8 +25,8 @@ Output: Milestone archived (roadmap + requirements), PROJECT.md evolved, git tag
 <execution_context>
 **Load these files NOW (before proceeding):**
 
-- @./.claude/gsd-core/workflows/complete-milestone.md (main workflow)
-- @./.claude/gsd-core/templates/milestone-archive.md (archive template)
+- @.claude/gsd-core/workflows/complete-milestone.md (main workflow)
+- @.claude/gsd-core/templates/milestone-archive.md (archive template)
   </execution_context>
 
 <context>

@@ -1,3 +1,5 @@
+Apply response_language to all user-facing prose — narration between tool calls, status updates, progress notes, and findings included; preserve code, paths, and identifiers.
+
 # Default mode — interactive discuss-phase
 
 > **Lazy-loaded.** Read this file from `workflows/discuss-phase.md` when no
@@ -96,7 +98,7 @@ These user-referenced docs are often MORE important than ROADMAP.md refs because
 
 **Thinking partner (conditional):**
 If `features.thinking_partner` is enabled in config, check the user's answer for tradeoff signals
-(see `references/thinking-partner.md` for signal list). If tradeoff detected:
+(see `gsd-core/references/thinking-partner.md` for signal list). If tradeoff detected:
 
 ```text
 I notice competing priorities here — {option_A} optimizes for {goal_A} while {option_B} optimizes for {goal_B}.

@@ -19,6 +19,8 @@ If the prompt contains a `<required_reading>` block, you MUST use the `Read` too
 **Context budget:** Load project skills first (lightweight). Read implementation files incrementally — load only what each check requires, not the full codebase upfront.
 
 **Project skills:** Check `.cursor/skills/` or `.agents/skills/` directory if either exists:
+
+**agent_skills:** self-load per @.cursor/gsd-core/references/agent-skills-bootstrap.md (agent type: `gsd-roadmapper`)
 1. List available skills (subdirectories)
 2. Read `SKILL.md` for each skill (lightweight index ~130 lines)
 3. Load specific `rules/*.md` files as needed during implementation
@@ -33,7 +35,7 @@ This ensures project-specific patterns, conventions, and best practices are appl
 - Apply goal-backward thinking at phase level
 - Create success criteria (2-5 observable behaviors per phase)
 - Initialize STATE.md (project memory)
-- Return structured draft for user approval
+- Write ROADMAP.md and STATE.md immediately (durability — artifacts persist even if context is lost), then return a structured summary for the orchestrator to present; approval is the orchestrator's gate, revision is a re-run (#3797)
 </role>
 
 <downstream_consumer>
@@ -202,6 +204,27 @@ Track coverage as you go.
 - New milestone: Start at 1
 - Continuing milestone: Check existing phases, start at last + 1
 
+## Phase ID Convention
+
+Read `phase_id_convention` from config.json. This setting controls how phase headers and
+checklist entries are formatted throughout the generated ROADMAP.md.
+
+| Convention | Summary checklist form | Detail header form |
+|---|---|---|
+| `sequential` (default) | `- [ ] **Phase 1: Name**` | `### Phase 1: Name` |
+| `milestone-prefixed` | `- [ ] **Phase 1-01: Name**` | `### Phase 1-01: Name` |
+
+When `phase_id_convention` is absent or set to `"sequential"`, use plain sequential phase IDs
+(e.g. `Phase 1`, `Phase 2`). When set to `"milestone-prefixed"`, prefix each phase ID with the
+current milestone number and a two-digit phase index within that milestone
+(e.g. `Phase 1-01`, `Phase 1-02`, `Phase 2-01`). The milestone number comes from the project's
+active milestone context (default: `1` for new projects). This ensures downstream tools that
+parse `### Phase N-NN:` headers for milestone-scoped workflows receive correctly prefixed IDs.
+
+`project_code` is only a phase-directory prefix. Never include `project_code` in ROADMAP phase
+checklist entries or detail headers. For example, even when `project_code: "PROJ"` is configured,
+write `Phase 7` for `sequential` and `Phase 1-07` for `milestone-prefixed`, not `Phase PROJ-7`.
+
 ## Granularity Calibration
 
 Read granularity from config.json. Granularity controls compression tolerance.
@@ -301,7 +324,25 @@ After roadmap creation, REQUIREMENTS.md gets updated with phase mappings:
 
 **CRITICAL: ROADMAP.md requires TWO phase representations. Both are mandatory.**
 
+### 0. Top-Level Title (H1)
+
+The H1 carries the PROJECT name only — never a version and never a milestone name:
+
+```markdown
+# Roadmap: [Project Name]
+```
+
+Milestone identity (version + name) lives in milestone headings (`## vX.Y — [Name]`) or
+`## Milestones` bullets (`🚧 **vX.Y [Name]**`), never in the H1. A trailing version in the
+H1 (`# Roadmap: [Project] — [Name] (vX.Y)`) corrupts milestone-name extraction (#4134).
+`.cursor/gsd-core/templates/roadmap.md` is the canonical shape.
+
 ### 1. Summary Checklist (under `## Phases`)
+
+Use the form matching `phase_id_convention` from config.
+Do not include `project_code` in checklist phase IDs.
+
+**Sequential (default — when absent or `"sequential"`):**
 
 ```markdown
 - [ ] **Phase 1: Name** - One-line description
@@ -309,7 +350,20 @@ After roadmap creation, REQUIREMENTS.md gets updated with phase mappings:
 - [ ] **Phase 3: Name** - One-line description
 ```
 
+**Milestone-prefixed (when `phase_id_convention: "milestone-prefixed"`):**
+
+```markdown
+- [ ] **Phase 1-01: Name** - One-line description
+- [ ] **Phase 1-02: Name** - One-line description
+- [ ] **Phase 1-03: Name** - One-line description
+```
+
 ### 2. Detail Sections (under `## Phase Details`)
+
+Use the header form matching `phase_id_convention` from config.
+Do not include `project_code` in detail header phase IDs.
+
+**Sequential (default):**
 
 ```markdown
 ### Phase 1: Name
@@ -327,7 +381,25 @@ After roadmap creation, REQUIREMENTS.md gets updated with phase mappings:
 ...
 ```
 
-**The `### Phase X:` headers are parsed by downstream tools.** If you only write the summary checklist, phase lookups will fail.
+**Milestone-prefixed (when `phase_id_convention: "milestone-prefixed"`):**
+
+```markdown
+### Phase 1-01: Name
+**Goal**: What this phase delivers
+**Depends on**: Nothing (first phase)
+**Requirements**: REQ-01, REQ-02
+**Success Criteria** (what must be TRUE):
+  1. Observable behavior from user perspective
+  2. Observable behavior from user perspective
+**Plans**: TBD
+
+### Phase 1-02: Name
+**Goal**: What this phase delivers
+**Depends on**: Phase 1-01
+...
+```
+
+**The `### Phase X:` headers are parsed by downstream tools.** If you only write the summary checklist, phase lookups will fail. Use the correct form for the configured convention so downstream parsing succeeds.
 
 ### UI Phase Detection
 
@@ -367,11 +439,11 @@ This annotation is consumed by downstream workflows (`new-project`, `progress`) 
 | 2. Name | 0/2 | Not started | - |
 ```
 
-Reference full template: `./.cursor/gsd-core/templates/roadmap.md`
+Reference full template: `.cursor/gsd-core/templates/roadmap.md`
 
 ## STATE.md Structure
 
-Use template from `./.cursor/gsd-core/templates/state.md`.
+Use template from `.cursor/gsd-core/templates/state.md`.
 
 Key sections:
 - Project Reference (core value, current focus)
@@ -380,12 +452,18 @@ Key sections:
 - Accumulated Context (decisions, todos, blockers)
 - Session Continuity
 
-## Draft Presentation Format
+## Summary Preview Format
 
-When presenting to user for approval:
+The post-write `## ROADMAP CREATED` return carries this preview block (renamed from the pre-#3797 draft format — the orchestrator branches only on `ROADMAP CREATED`/`ROADMAP BLOCKED`, presents the roadmap, and owns the approval gate):
 
 ```markdown
-## ROADMAP DRAFT
+## ROADMAP CREATED
+
+**Files written:**
+- .planning/ROADMAP.md
+- .planning/STATE.md
+
+### Roadmap Preview
 
 **Phases:** [N]
 **Granularity:** [from config]
@@ -417,10 +495,9 @@ When presenting to user for approval:
 ✓ All [X] v1 requirements mapped
 ✓ No orphaned requirements
 
-### Awaiting
-
-Approve roadmap or provide feedback for revision.
 ```
+
+The orchestrator presents this roadmap and collects approval or feedback; revisions are applied on re-run (Step 9).
 
 </output_formats>
 
@@ -469,6 +546,8 @@ Apply phase identification methodology:
 2. Identify dependencies between groups
 3. Create phases that complete coherent capabilities
 4. Check granularity setting for compression guidance
+5. Read `phase_id_convention` from config (`sequential` or `milestone-prefixed`); apply the
+   matching header and checklist form throughout all output sections
 
 ## Step 5: Derive Success Criteria
 
@@ -492,9 +571,27 @@ If gaps found, include in draft for user decision.
 
 Write files first, then return. This ensures artifacts persist even if context is lost.
 
-1. **Write ROADMAP.md** using output format
+**Arm the write-guard sentinel before each curated write, when the target already exists.** On a
+`/gsd-new-milestone` run `.planning/ROADMAP.md` and `.planning/STATE.md` still hold the *outgoing*
+milestone's content, and the replacement carries only the new milestone's phases — a legitimate,
+intentional shrink that the `gsd-write-guard` PreToolUse hook (#2255) hard-blocks on curated
+`.planning/` artifacts. A hook inherits the *runtime's* environment, so no per-step env var can reach
+it; the hatch is a **single-use sentinel file the guard itself consumes**. It is path-bound and
+single-use, so arm it immediately before each Write — one arming can never cover both files. On a
+`/gsd-new-project` run neither target exists, the guard exempts the write (ENOENT), and the `[ -f ]`
+test skips the arming so no unconsumed token is left on disk.
 
-2. **Write STATE.md** using output format
+1. **Write ROADMAP.md** using output format — arm first, then Write:
+
+   ```bash
+   [ -f .planning/ROADMAP.md ] && printf '.planning/ROADMAP.md\n' > .planning/.gsd-allow-shrink
+   ```
+
+2. **Write STATE.md** using output format — arm first, then Write:
+
+   ```bash
+   [ -f .planning/STATE.md ] && printf '.planning/STATE.md\n' > .planning/.gsd-allow-shrink
+   ```
 
 3. **Update REQUIREMENTS.md traceability section**
 
@@ -665,10 +762,9 @@ Roadmap is complete when:
 - [ ] ROADMAP.md structure complete
 - [ ] STATE.md structure complete
 - [ ] REQUIREMENTS.md traceability update prepared
-- [ ] Draft presented for user approval
-- [ ] User feedback incorporated (if any)
-- [ ] Files written (after approval)
-- [ ] Structured return provided to orchestrator
+- [ ] Files written immediately (durability — Step 7)
+- [ ] Structured summary (## ROADMAP CREATED + preview) returned for orchestrator presentation and approval
+- [ ] User feedback incorporated on re-run (if any)
 
 Quality indicators:
 

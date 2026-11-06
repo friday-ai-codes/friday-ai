@@ -43,21 +43,46 @@ const node_fs_1 = __importDefault(require("node:fs"));
 const node_path_1 = __importDefault(require("node:path"));
 const node_child_process_1 = require("node:child_process");
 const markdown_sectionizer_cjs_1 = require("./markdown-sectionizer.cjs");
+const read_only_git_env_cjs_1 = require("./read-only-git-env.cjs");
+const runtime_slash_cjs_1 = require("./runtime-slash.cjs");
+// #3696: the calendar-validity predicate moved to the STATE.md document module
+// so `state validate` can assert the same `last_activity` invariant this reader
+// already enforces (ADR-227). Two copies would let the two surfaces disagree
+// about whether a STATE.md is usable — which is the defect #3696 reports.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ioMod = require("./io.cjs");
 const { output } = ioMod;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const planningWorkspace = require("./planning-workspace.cjs");
-const { planningPaths } = planningWorkspace;
+const { planningPaths, resolvePhaseIdConvention } = planningWorkspace;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const frontmatter = require("./frontmatter.cjs");
-const { extractFrontmatter } = frontmatter;
+const { extractFrontmatter, frontmatterBlock } = frontmatter;
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- phase-lifecycle.cjs is an export= CommonJS module
+const phaseLifecycle = require("./phase-lifecycle.cjs");
+const { deriveProgressFromRoadmap } = phaseLifecycle;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const roadmapParser = require("./roadmap-parser.cjs");
+const { extractCurrentMilestone, scanMilestonePhaseIds } = roadmapParser;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const stateDocument = require("./state-document.cjs");
-const { stateExtractField } = stateDocument;
+const { stateFieldValue } = stateDocument;
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const phaseId = require("./phase-id.cjs");
-const { comparePhaseNum, extractPhaseToken, normalizePhaseName, phaseTokenMatches } = phaseId;
+const { comparePhaseNum, extractPhaseToken, customPhaseQuery, customDirectoryOwner, parsePhaseFromProse, stripProjectCodePrefix } = phaseId;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const stateMod = require("./state.cjs");
+const { readStateHeadFreshness } = stateMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const phaseLocatorMod = require("./phase-locator.cjs");
+const { phaseDirectoryOptions, resolvePhaseDirectoryLookup, matchPhaseDirsForLookup } = phaseLocatorMod;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const unusableInput = require("./unusable-input.cjs");
+const { warnUnusableInput, UNUSABLE_REASON } = unusableInput;
+// #5118: the verification-status owner's frontmatter-only report check.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const verificationMod = require("./verification.cjs");
+const { findVerificationStatusError } = verificationMod;
 // ─── Constants ────────────────────────────────────────────────────────────────
 /**
  * Staleness threshold for idle-stranded detection. A clean tree whose last
@@ -80,15 +105,6 @@ exports.SITUATIONS = Object.freeze([
     'unknown',
 ]);
 // ─── Detection ─────────────────────────────────────────────────────────────────
-/** Frontmatter scalar helper: prefer YAML frontmatter, fall back to body field. */
-function fmScalar(fm, body, key, bodyField) {
-    const v = fm[key];
-    if (typeof v === 'string' && v.trim())
-        return v.trim();
-    if (typeof v === 'number' || typeof v === 'boolean')
-        return String(v);
-    return stateExtractField(body, bodyField);
-}
 /** Read a scalar value from a nested frontmatter object (e.g. progress.total_phases). */
 function fmScalarKey(obj, key) {
     if (!obj || typeof obj !== 'object')
@@ -107,19 +123,97 @@ function parseIntOrNull(s) {
     const n = Number.parseInt(cleaned, 10);
     return Number.isFinite(n) ? n : null;
 }
-function phaseTokenFromDirName(name) {
-    const token = extractPhaseToken(name);
-    return /^\d+(?:[A-Z])?(?:\.\d+)*(?:-|$)/i.test(token) ? token : null;
+function phaseTokenFromDirName(name, convention) {
+    const token = extractPhaseToken(name, convention);
+    // #2528: the shape probe runs on the PROJECT-CODE-STRIPPED token. A prefixed
+    // directory tokenizes to `MEM-05-80-20`, which does not start with a digit,
+    // so the unstripped probe rejected it and the entry was dropped before any
+    // resolution ran — every phase in a project-coded plan was invisible here.
+    // The full token is still what is returned: `comparePhaseNum` strips the
+    // prefix itself, so the sort is unaffected, and `matchPhaseDirs` needs the
+    // real directory name.
+    const probe = stripProjectCodePrefix(token);
+    return /^\d+(?:[A-Z])?(?:\.\d+)*(?:-|$)/i.test(probe) ? token : null;
 }
 /**
  * Parse a `last_activity` value that may be an ISO date or a free-form string
  * into an epoch-ms timestamp. Returns null when unparseable.
+ *
+ * #2570: `last_activity` routinely carries a trailing " — <description>" — the
+ * shape `templates/state.md` itself prescribes (`Last activity: [YYYY-MM-DD] —
+ * [What happened]`), which gsd-core's own STATE.md mirrors into frontmatter.
+ * `Date.parse` on the whole string returns NaN, and because `staleActivity`
+ * treats null as "not stale" (fails open), the ONLY idle/staleness detector
+ * never fired on any project whose last_activity retained its description.
+ * Be liberal in what we accept (Postel): read the leading ISO date/time token
+ * when the value carries one, so the description suffix — whatever separator
+ * (em dash or hyphen) it uses — no longer silently blinds the detector; fall
+ * back to a whole-string parse for any other shape a hand edit might use.
  */
+/** Leading ISO date, with an optional time-of-day and offset. */
+const ISO_LEADING_RE = /^(\d{4})-(\d{2})-(\d{2})((?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?)/;
+/**
+ * A NAMED timezone designator at the start of the un-reconstructable remainder
+ * (#2571). ISO_LEADING_RE's offset group captures only `Z` / `±HH:MM`, so a
+ * named zone (GMT, EST, ...) is not in the leading token — it sits here.
+ * Reconstructing the token without it would let Date.parse read the time as
+ * LOCAL, shifting the instant by the host's offset (a wrong, host-dependent
+ * value), so a zone-shaped remainder must fail open (ADR-227).
+ *
+ * The shape is a short all-caps run (2–5 letters) that stands alone — the
+ * negative lookahead excludes the first letter of a Capitalised word like
+ * "Milestone", and an optional trailing offset is subsumed because the leading
+ * all-caps run already matches. Everything else — a lowercase or Capitalised
+ * description, a separator — is describable text and is reconstructed from the
+ * leading date.
+ *
+ * Consulted ONLY when the leading token captured a time-of-day (see the caller):
+ * a zone designator qualifies a clock time, so a BARE date can carry no zone
+ * hazard — reconstructing it is always just that date's UTC midnight, whatever
+ * trails it. Gating on the time keeps a description that merely opens with a
+ * tech acronym ("2026-06-08 CI green", "API refactor") on the reconstruct path
+ * instead of failing open. The prior "any letter" guard was too liberal — it
+ * failed open on every letter-led description and re-opened #2570.
+ */
+const ZONE_DESIGNATOR_RE = /^\s*[A-Z]{2,5}(?![A-Za-z])/;
 function parseActivityTimestamp(raw) {
     if (!raw)
         return null;
-    const ms = Date.parse(raw);
-    return Number.isNaN(ms) ? null : ms;
+    const trimmed = raw.trim();
+    const iso = trimmed.match(ISO_LEADING_RE);
+    if (iso) {
+        const [, year, month, day, time] = iso;
+        // Reject an impossible calendar date outright rather than letting
+        // Date.parse substitute a rolled-forward one. null = "no activity signal",
+        // the safe default staleActivity already fails open on.
+        if (!stateDocument.isRealCalendarDate(Number(year), Number(month), Number(day)))
+            return null;
+        // The date is real, so stay as liberal as before (Postel): a whole-string
+        // parse still wins when the engine can make sense of the value. Reading the
+        // token first would silently DROP a trailing zone name -- "2026-06-08
+        // 12:34:56 GMT" parses whole as 12:34:56Z but as local time from the token,
+        // shifting the instant by the host's UTC offset.
+        const whole = Date.parse(trimmed);
+        if (!Number.isNaN(whole))
+            return whole;
+        // Whole-string failed: the value carries a suffix the engine can't read as
+        // one instant (#2570). Reconstruct from the leading token UNLESS the remainder
+        // is a named zone the token dropped (GMT, EST, ...): reconstructing without it
+        // reads the time as LOCAL and shifts the instant by the host's offset, so a
+        // zone-shaped remainder fails open (ADR-227: never propagate a wrong instant;
+        // null is the base's not-stale default). An ordinary description -- the #2570
+        // template's " -- description", or a hand edit's bare-space/tab/colon suffix --
+        // carries no zone and IS reconstructed. See ZONE_DESIGNATOR_RE for the shape;
+        // the earlier "any letter" guard failed open on every description and re-opened
+        // #2570 for whitespace-separated suffixes.
+        const rest = trimmed.slice(iso[0].length);
+        if (time && ZONE_DESIGNATOR_RE.test(rest))
+            return null;
+        const ms = Date.parse(`${year}-${month}-${day}${time}`);
+        return Number.isNaN(ms) ? null : ms;
+    }
+    const direct = Date.parse(trimmed);
+    return Number.isNaN(direct) ? null : direct;
 }
 /** Read-only git signals. Any git error is swallowed → "no git signal". */
 function readGitSignals(cwd) {
@@ -131,6 +225,19 @@ function readGitSignals(cwd) {
                 maxBuffer: 4 * 1024 * 1024,
                 windowsHide: true,
                 stdio: ['pipe', 'pipe', 'pipe'],
+                timeout: 10_000,
+                // #5048: readGitSignals runs `git status`, which by default refreshes
+                // the index and takes an *optional* `.git/index.lock` to write the
+                // refreshed copy back. That lock is the one a real `git add` / `git
+                // commit` needs, so a routine "which phase am I in" probe can fail
+                // someone else's commit with `Unable to create '.git/index.lock': File
+                // exists`. GIT_OPTIONAL_LOCKS=0 turns off exactly that optional write.
+                // The `rev-parse` / `log` calls sharing this helper never open the
+                // index, so the variable is inert for them. The block itself is owned by
+                // src/read-only-git-env.cts and shared with every other read-only seam;
+                // parity across every read-only surface is asserted in
+                // tests/git-optional-locks-parity.test.cjs.
+                env: (0, read_only_git_env_cjs_1.readOnlyGitEnv)(),
             });
         }
         catch {
@@ -148,12 +255,9 @@ function readGitSignals(cwd) {
     const unpushed = run(['log', '@{u}..HEAD', '--oneline']).trim().length > 0;
     return { has_git: true, dirty, unpushed };
 }
-/** Leading numeric phase token from a STATE.md scalar or body `Phase:` value. */
-function phaseTokenFromState(raw) {
-    if (!raw?.trim())
-        return null;
-    const match = raw.trim().match(/^(\d+(?:[A-Z])?(?:\.\d+)*)/i);
-    return match ? match[1] : null;
+/** Phase identity from a STATE.md scalar or body `Phase:` value, honoring custom naming when a context is supplied. */
+function phaseTokenFromState(raw, context) {
+    return parsePhaseFromProse(raw, undefined, context).phase;
 }
 /**
  * Detect whether the current phase's verify report indicates failure. The
@@ -163,12 +267,20 @@ function phaseTokenFromState(raw) {
  */
 function detectVerifyFailed(cwd, currentPhaseRaw) {
     const phasesDir = node_path_1.default.join(planningPaths(cwd).phases);
+    // #4304: both the directory admission scan and the later selector must read
+    // the same current-checkout grammar. Bracket is the only opt-in widening.
+    const convention = resolvePhaseIdConvention(cwd) === 'bracket' ? 'bracket' : undefined;
+    const directoryContext = phaseDirectoryOptions(cwd);
     let entries = [];
     try {
         entries = node_fs_1.default.readdirSync(phasesDir)
-            .map((name) => ({ name, phaseToken: phaseTokenFromDirName(name) }))
+            .map((name) => {
+            const custom = customPhaseQuery(name, directoryContext);
+            const parts = custom && customDirectoryOwner(name, custom);
+            return { name, phaseToken: parts ? parts.id : phaseTokenFromDirName(name, convention) };
+        })
             .filter((entry) => entry.phaseToken !== null)
-            .sort((a, b) => comparePhaseNum(a.phaseToken, b.phaseToken) || a.name.localeCompare(b.name))
+            .sort((a, b) => comparePhaseNum(a.phaseToken, b.phaseToken, directoryContext) || a.name.localeCompare(b.name))
             .map((entry) => entry.name);
     }
     catch {
@@ -176,11 +288,20 @@ function detectVerifyFailed(cwd, currentPhaseRaw) {
     }
     if (entries.length === 0)
         return false;
-    const phaseToken = phaseTokenFromState(currentPhaseRaw);
+    const phaseToken = phaseTokenFromState(currentPhaseRaw, directoryContext);
     let targetDir;
     if (phaseToken) {
-        const normalized = normalizePhaseName(phaseToken);
-        targetDir = entries.find((name) => phaseTokenMatches(name, normalized));
+        const lookup = resolvePhaseDirectoryLookup(cwd, phaseToken, undefined, directoryContext);
+        // #2528: the fourth directory-resolution site, and the one where a miss is
+        // silent — a phase whose directory cannot be found reports "not failed",
+        // which reads identically to a healthy phase. It must therefore apply the
+        // same canonical selection as the locator and the two command scans, or a
+        // dir like `05-80-20-cleanup` (phase 5 named "80/20 Cleanup") never
+        // surfaces its own failed verification. `entries` is already sorted, and
+        // `matchPhaseDirs` filters without reordering, so taking the first match
+        // preserves the previous `.find()` selection exactly.
+        const { matches } = matchPhaseDirsForLookup(entries, lookup, undefined, directoryContext);
+        targetDir = matches[0];
         if (!targetDir)
             return false;
     }
@@ -196,11 +317,20 @@ function detectVerifyFailed(cwd, currentPhaseRaw) {
     catch {
         return false;
     }
+    // #5118: this phase's VERIFICATION report `status` is judged by its owner
+    // (src/verification.cts, the same frontmatter-only, containment-checked
+    // locator every reader shares) — an out-of-set value is the owner's hard
+    // error here as at every other reader, never a silent "not failed". The
+    // body `STATUS:` marker scan below is this probe's own signal.
+    const statusError = findVerificationStatusError([latestDir]);
+    if (statusError)
+        throw statusError;
     const candidates = files.filter((f) => /summary|verif(?:y|ication)|uat/i.test(f));
     for (const name of candidates) {
         let content = '';
+        const filePath = node_path_1.default.join(latestDir, name);
         try {
-            content = node_fs_1.default.readFileSync(node_path_1.default.join(latestDir, name), 'utf-8');
+            content = node_fs_1.default.readFileSync(filePath, 'utf-8');
         }
         catch {
             continue;
@@ -221,8 +351,11 @@ function readStateFile(statePath) {
     catch {
         return null;
     }
-    const fm = extractFrontmatter(content);
-    const body = content.replace(/^---[\s\S]*?---\s*/, '');
+    const fm = extractFrontmatter(content, statePath);
+    // The body starts after the block `extractFrontmatter` just read (the one fence owner), so a
+    // `---` inside a value, a BOM, or an adjacent empty block cannot cut it somewhere else.
+    const block = frontmatterBlock(content);
+    const body = block ? block.rest.replace(/^\s+/, '') : content;
     return { fm, body };
 }
 /** Collect the full signal set from disk for `cwd`. Exported for unit tests. */
@@ -245,6 +378,12 @@ function detectSignals(cwd, now = Date.now) {
         has_git: git.has_git,
         verify_failed: false,
         stale_activity: false,
+        roadmap_total_phases: null,
+        roadmap_completed_phases: null,
+        milestone_phases: [],
+        // No STATE.md (or unreadable) → no stamp to compare. Unknown, not fresh.
+        state_commits_behind: null,
+        state_commit_stale: null,
     };
     if (!hasPlanning)
         return empty;
@@ -258,21 +397,29 @@ function detectSignals(cwd, now = Date.now) {
     //   - body prose:         `Phase: 3`, `**Status:** verifying`, `Total Phases: 5`
     // Read each field across every form, scalar-first then nested then body, so
     // the classifier works on real STATE.md files written by current GSD.
-    const statusRaw = fmScalar(fm, body, 'status', 'Status');
-    const pausedAtRaw = fmScalar(fm, body, 'paused_at', 'Paused At');
-    const lastActivityRaw = fmScalar(fm, body, 'last_activity', 'Last Activity');
+    const statusRaw = stateFieldValue(fm, body, 'status', 'Status').value;
+    const pausedAtRaw = stateFieldValue(fm, body, 'paused_at', 'Paused At').value;
+    const lastActivityRaw = stateFieldValue(fm, body, 'last_activity', 'Last Activity').value;
     // current_phase: scalar fm → nested (none) → body "Current Phase" → body "Phase".
     // The body `Phase:` field is the canonical location in prose-form STATE.md
     // (e.g. "Phase: 3" or "Phase: 3 — ui-review"); parse the leading number.
-    const currentPhaseRaw = fmScalar(fm, body, 'current_phase', 'Current Phase') ??
-        stateExtractField(body, 'Phase');
+    // #3187 / ADR-3180 Amendment 3 ("0.x split"): this read is DELIBERATELY
+    // unscoped — smart-entry classifies `gsd next` routing over the whole body,
+    // whereas state.cts's copies of this same field scope it to `## Current
+    // Position` (#1776/#2956). Those are two different questions sharing a
+    // name; folding the scoped read in here would silently change smart-entry's
+    // routing, an undisclosed Tier-2 change (design's Rejected #3). Both owner
+    // calls below intentionally pass the unscoped `body`, never a Current-
+    // Position slice.
+    const currentPhaseRaw = stateFieldValue(fm, body, 'current_phase', 'Current Phase').value ??
+        stateFieldValue(fm, body, null, 'Phase').value;
     // total_phases & percent: nested `progress:` object takes precedence in the
     // nested schema; scalar fm / body fields cover the flat schema.
     const progressFm = typeof fm.progress === 'object' ? fm.progress : null;
     const totalPhasesRaw = fmScalarKey(progressFm, 'total_phases') ??
-        fmScalar(fm, body, 'total_phases', 'Total Phases');
+        stateFieldValue(fm, body, 'total_phases', 'Total Phases').value;
     const progressRaw = fmScalarKey(progressFm, 'percent') ??
-        fmScalar(fm, body, 'progress', 'Progress');
+        stateFieldValue(fm, body, 'progress', 'Progress').value;
     // Blockers list: `- <text>` items under a `## Blockers` heading.
     const blockers = [];
     const blockersSection = (0, markdown_sectionizer_cjs_1.collectSection)(body, (h) => h.level === 2 && h.text.trim().toLowerCase() === 'blockers', { levelBounded: true });
@@ -285,14 +432,52 @@ function detectSignals(cwd, now = Date.now) {
     // Stale = no recorded activity for IDLE_STALE_MS. Used only by idle-stranded.
     // Computed here (with the clock seam) so the pure classify() stays a function
     // of (signals, staleActivity) and detectSignals owns all disk reads.
+    // #3099 (ADR-1411 amendment): if last_activity is present but unparseable,
+    // emit a diagnostic so the silent fallback (stale_activity: false) is visible.
+    // The fallback itself stays — continuity is correct, the silence was the defect.
     const lastActivityMs = parseActivityTimestamp(lastActivityRaw);
+    if (lastActivityRaw && lastActivityMs === null) {
+        warnUnusableInput({
+            reason: UNUSABLE_REASON.LAST_ACTIVITY_UNPARSEABLE,
+            source: paths.state,
+        });
+    }
     const staleActivity = lastActivityMs !== null && now() - lastActivityMs > IDLE_STALE_MS;
     // Verify-failed may be signalled either by STATE.md status or by a failed
     // STATUS: marker on the current phase's summary/verify artifact.
     const verifyFailed = /\bverify-fail(ed)?|verification-fail|uat-fail\b/i.test(statusRaw || '') ||
         detectVerifyFailed(cwd, currentPhaseRaw);
+    // #2427: derive global phase counts from ROADMAP.md's Progress table. These
+    // are preferred over STATE.md's cached milestone-scoped `total_phases` (which
+    // goes stale when phases are appended after a milestone switch) for the
+    // completion check. Null when ROADMAP.md is absent or has no parseable
+    // Progress table — isComplete falls back to the legacy comparison in that case.
+    let roadmapTotalPhases = null;
+    let roadmapCompletedPhases = null;
+    let milestonePhases = [];
+    if (hasRoadmap) {
+        try {
+            const roadmapContent = node_fs_1.default.readFileSync(paths.roadmap, 'utf8');
+            const derived = deriveProgressFromRoadmap(roadmapContent);
+            roadmapTotalPhases = derived.totalPhases;
+            roadmapCompletedPhases = derived.completedPhases;
+            // #5228: the ordered phase list of the current milestone, from the same
+            // scan the milestone-scoped commands use.
+            milestonePhases = [
+                ...scanMilestonePhaseIds(extractCurrentMilestone(roadmapContent, cwd), resolvePhaseIdConvention(cwd)),
+            ].sort(comparePhaseNum);
+        }
+        catch {
+            /* ROADMAP.md unreadable — leave null; isComplete falls back to legacy. */
+        }
+    }
+    // #2573: commit-age freshness proxy. Derived through state.cjs's
+    // readStateHeadFreshness so the tri-state and the hash fence stay identical
+    // to validate.health's W024 — one derivation, two surfaces.
+    const stateHeadRaw = stateFieldValue(fm, body, 'state_head', 'State Head').value;
+    const freshness = readStateHeadFreshness(cwd, stateHeadRaw);
     return {
-        current_phase: parseIntOrNull(currentPhaseRaw),
+        current_phase: phaseTokenFromState(currentPhaseRaw),
         total_phases: parseIntOrNull(totalPhasesRaw),
         status: (statusRaw || '').toLowerCase(),
         progress: parseIntOrNull(progressRaw),
@@ -305,14 +490,71 @@ function detectSignals(cwd, now = Date.now) {
         has_git: git.has_git,
         verify_failed: verifyFailed,
         stale_activity: staleActivity,
+        roadmap_total_phases: roadmapTotalPhases,
+        roadmap_completed_phases: roadmapCompletedPhases,
+        milestone_phases: milestonePhases,
+        state_commits_behind: freshness.commits_behind,
+        state_commit_stale: freshness.commit_stale,
     };
 }
 // ─── Situation classification ─────────────────────────────────────────────────
-/** True when the workflow has fully completed all phases. */
+/**
+ * True when the workflow has fully completed all phases.
+ *
+ * #2427: completion is grounded in ROADMAP.md's Progress table (global,
+ * authoritative, never stale) when available, with a legacy fallback to
+ * STATE.md's cached `total_phases` when the roadmap has no parseable Progress
+ * table (e.g. a fresh project or a non-standard roadmap layout). The status
+ * regex was tightened to require milestone-level completion language
+ * (`milestone complete` / `all phases complete` / `complete(d)`) and no longer
+ * matches per-phase messages like "Phase X shipped — PR #N" that falsely
+ * satisfied the pre-fix alternation (`\bcomplete(d)?|done|shipped\b`).
+ */
 function isComplete(s) {
-    if (s.total_phases === null || s.current_phase === null)
-        return false;
-    return s.current_phase >= s.total_phases && /\bcomplete(d)?|done|shipped\b/i.test(s.status);
+    // Prefer ROADMAP-derived counts (global, authoritative) over STATE.md's
+    // cached milestone-scoped total_phases (stale-prone). Fall back to legacy
+    // when the roadmap has no Progress table.
+    if (s.roadmap_total_phases !== null && s.roadmap_completed_phases !== null) {
+        if (s.roadmap_total_phases === 0)
+            return false;
+        if (s.roadmap_completed_phases < s.roadmap_total_phases)
+            return false;
+    }
+    else {
+        // Legacy path: STATE.md comparison. It only fires when ROADMAP.md is
+        // absent or has no Progress table, and uses canonical phase-id ordering
+        // so dotted phase ids are never coerced to JavaScript numbers.
+        if (s.current_phase === null)
+            return false;
+        if (s.milestone_phases.length > 0) {
+            // #5228: compare against the milestone's LAST phase. The phase count is
+            // not a phase number once numbering continues from an earlier milestone.
+            const last = s.milestone_phases[s.milestone_phases.length - 1];
+            if (comparePhaseNum(s.current_phase, last) < 0)
+                return false;
+        }
+        else {
+            if (s.total_phases === null)
+                return false;
+            if (comparePhaseNum(s.current_phase, s.total_phases) < 0)
+                return false;
+        }
+    }
+    // Status regex: require milestone-level completion language. The pre-fix
+    // regex matched any "shipped" / "done" substring (per-phase language).
+    // Tightened to match:
+    //   - "milestone complete" (ADR-2207 terminal status — usually written as
+    //     "<version> milestone complete", e.g. "v1.0 milestone complete"; the
+    //     substring match handles both forms)
+    //   - "all phases complete" (ADR-2207 intermediate terminal)
+    //   - "complete" / "completed" (legacy short form — STATE.md milestone
+    //     status is a single value, not a per-phase log)
+    // Intentionally does NOT match "done" alone even though normalizeStateStatus
+    // (state-document.cts) treats "done" as "completed" — in the milestone
+    // status field, "done" is per-phase noise (e.g. "Phase X done"), not a
+    // milestone-completion signal. Mirrors workstream-inventory-builder.cts's
+    // terminal pattern \bmilestone\s+complete\b.
+    return /\b(milestone\s+complete|all\s+phases\s+complete|complete(d)?)\b/i.test(s.status);
 }
 /** Idle-stranded: clean tree, committed work not shipped, optionally stale. */
 function isIdleStranded(s) {
@@ -345,7 +587,13 @@ function classify(s) {
         return 'planning';
     if (/\bexecut(e|ing)|active|in.progress|building\b/i.test(s.status))
         return 'executing';
-    if (/\bverify|review|needs.review|pending.review\b/i.test(s.status))
+    // #3864: `verif` (not `verify`) — the same stem state-document's
+    // normalizeStateStatus matches. "verified" and "verification" contain no
+    // "verify" substring, so the exact word left them falling through to
+    // `unknown` (or idle-stranded on a clean unpushed tree — differently
+    // wrong). verify_failed is tested above, so a failed verification still
+    // wins over this branch.
+    if (/\bverif|review|needs.review|pending.review\b/i.test(s.status))
         return 'verify-pending';
     if (isIdleStranded(s))
         return 'idle-stranded';
@@ -357,52 +605,54 @@ function rec(id, label, command) {
     return action(id, label, command, true);
 }
 /** Per-situation ordered action list; recommended action first. */
-function actionsFor(situation, s) {
+function actionsFor(situation, s, runtime = 'claude') {
+    // #4859: commands are printed verbatim, so name them the way this runtime registers them.
+    const cmd = (name) => (0, runtime_slash_cjs_1.formatGsdSlash)(name, runtime);
     const phaseN = s.current_phase ?? '';
     const execLabel = phaseN === '' ? 'Continue executing' : `Continue executing phase ${phaseN}`;
     switch (situation) {
         case 'no-project':
             return [
-                rec('new-project', 'Start a new project', '/gsd:new-project'),
-                action('map-codebase', 'Map an existing codebase', '/gsd:map-codebase'),
-                action('quick', 'Quick task', '/gsd:quick'),
-                action('help', 'Show help', '/gsd:help'),
+                rec('new-project', 'Start a new project', cmd('new-project')),
+                action('map-codebase', 'Map an existing codebase', cmd('map-codebase')),
+                action('quick', 'Quick task', cmd('quick')),
+                action('help', 'Show help', cmd('help')),
             ];
         case 'paused':
             return [
-                rec('resume-work', 'Resume work', '/gsd:resume-work'),
-                action('progress', 'Show progress', '/gsd:progress'),
-                action('quick', 'Quick task', '/gsd:quick'),
-                action('help', 'Show help', '/gsd:help'),
+                rec('resume-work', 'Resume work', cmd('resume-work')),
+                action('progress', 'Show progress', cmd('progress')),
+                action('quick', 'Quick task', cmd('quick')),
+                action('help', 'Show help', cmd('help')),
             ];
         case 'blocked':
             return [
-                rec('debug', 'Debug the blocker', '/gsd:debug'),
-                action('verify-work', 'Verify current work', '/gsd:verify-work'),
-                action('capture', 'Capture a note', '/gsd:capture'),
-                action('progress', 'Show progress', '/gsd:progress'),
+                rec('debug', 'Debug the blocker', cmd('debug')),
+                action('verify-work', 'Verify current work', cmd('verify-work')),
+                action('capture', 'Capture a note', cmd('capture')),
+                action('progress', 'Show progress', cmd('progress')),
             ];
         case 'verify-failed':
             return [
-                rec('verify-work', 'Re-verify work', '/gsd:verify-work'),
-                action('debug', 'Debug the failure', '/gsd:debug'),
-                action('code-review', 'Review recent work', '/gsd:code-review'),
-                action('progress', 'Show progress', '/gsd:progress'),
+                rec('verify-work', 'Re-verify work', cmd('verify-work')),
+                action('debug', 'Debug the failure', cmd('debug')),
+                action('code-review', 'Review recent work', cmd('code-review')),
+                action('progress', 'Show progress', cmd('progress')),
             ];
         case 'needs-first-phase':
             return [
-                rec('discuss-phase', 'Discuss the first phase', '/gsd:discuss-phase'),
-                action('plan-phase', 'Plan phase 1', '/gsd:plan-phase'),
-                action('quick', 'Quick task', '/gsd:quick'),
-                action('progress', 'Show progress', '/gsd:progress'),
+                rec('discuss-phase', 'Discuss the first phase', cmd('discuss-phase')),
+                action('plan-phase', 'Plan phase 1', cmd('plan-phase')),
+                action('quick', 'Quick task', cmd('quick')),
+                action('progress', 'Show progress', cmd('progress')),
             ];
         case 'planning':
             // Forward motion → delegate to the single gated engine (see 'executing').
             return [
-                rec('progress-next', `Advance to the next step (plan phase ${phaseN || 1})`, '/gsd:progress --next'),
-                action('plan-phase', `Plan phase ${phaseN || 1}`, '/gsd:plan-phase'),
-                action('discuss-phase', 'Discuss before planning', '/gsd:discuss-phase'),
-                action('progress', 'Show progress', '/gsd:progress'),
+                rec('progress-next', `Advance to the next step (plan phase ${phaseN || 1})`, cmd('progress --next')),
+                action('plan-phase', `Plan phase ${phaseN || 1}`, cmd('plan-phase')),
+                action('discuss-phase', 'Discuss before planning', cmd('discuss-phase')),
+                action('progress', 'Show progress', cmd('progress')),
             ];
         case 'executing':
             // In-project forward motion delegates to the single gated engine
@@ -411,44 +661,66 @@ function actionsFor(situation, s) {
             // /gsd:execute-phase here — that divergence is why the old flat /gsd-next
             // was removed (#3054). Direct execute stays as an explicit secondary choice.
             return [
-                rec('progress-next', 'Advance to the next step', '/gsd:progress --next'),
-                action('execute-phase', execLabel, '/gsd:execute-phase'),
-                action('quick', 'Quick task', '/gsd:quick'),
-                action('code-review', 'Review recent work', '/gsd:code-review'),
+                rec('progress-next', 'Advance to the next step', cmd('progress --next')),
+                action('execute-phase', execLabel, cmd('execute-phase')),
+                action('quick', 'Quick task', cmd('quick')),
+                action('code-review', 'Review recent work', cmd('code-review')),
             ];
         case 'verify-pending':
             // Forward motion → delegate to the single gated engine (see 'executing').
             return [
-                rec('progress-next', 'Advance to the next step (verify)', '/gsd:progress --next'),
-                action('verify-work', 'Verify work', '/gsd:verify-work'),
-                action('code-review', 'Review recent work', '/gsd:code-review'),
-                action('ship', 'Ship completed work', '/gsd:ship'),
+                rec('progress-next', 'Advance to the next step (verify)', cmd('progress --next')),
+                action('verify-work', 'Verify work', cmd('verify-work')),
+                action('code-review', 'Review recent work', cmd('code-review')),
+                action('ship', 'Ship completed work', cmd('ship')),
             ];
         case 'idle-stranded':
             return [
-                rec('ship', 'Ship committed work', '/gsd:ship'),
-                action('complete-milestone', 'Complete the milestone', '/gsd:complete-milestone'),
-                action('progress', 'Show progress', '/gsd:progress'),
-                action('capture', 'Capture a note', '/gsd:capture'),
+                rec('ship', 'Ship committed work', cmd('ship')),
+                action('complete-milestone', 'Complete the milestone', cmd('complete-milestone')),
+                action('progress', 'Show progress', cmd('progress')),
+                action('capture', 'Capture a note', cmd('capture')),
             ];
         case 'complete':
             return [
-                rec('new-milestone', 'Start a new milestone', '/gsd:new-milestone'),
-                action('extract-learnings', 'Extract learnings', '/gsd:extract-learnings'),
-                action('quick', 'Quick task', '/gsd:quick'),
-                action('progress', 'Show progress', '/gsd:progress'),
+                rec('new-milestone', 'Start a new milestone', cmd('new-milestone')),
+                action('extract-learnings', 'Extract learnings', cmd('extract-learnings')),
+                action('quick', 'Quick task', cmd('quick')),
+                action('progress', 'Show progress', cmd('progress')),
             ];
         case 'unknown':
         default:
             return [
-                rec('progress', 'Show progress', '/gsd:progress'),
-                action('progress-next', 'Advance to the next step', '/gsd:progress --next'),
-                action('quick', 'Quick task', '/gsd:quick'),
-                action('help', 'Show help', '/gsd:help'),
+                rec('progress', 'Show progress', cmd('progress')),
+                action('progress-next', 'Advance to the next step', cmd('progress --next')),
+                action('quick', 'Quick task', cmd('quick')),
+                action('help', 'Show help', cmd('help')),
             ];
     }
 }
 // ─── Summary line ─────────────────────────────────────────────────────────────
+function phaseSummary(s) {
+    const phase = s.current_phase;
+    // Preserve the milestone ordinal introduced by #5228 when it is known.
+    const at = phase === null ? -1 : s.milestone_phases.findIndex((id) => comparePhaseNum(id, phase) === 0);
+    if (at >= 0)
+        return `Phase ${at + 1} of ${s.milestone_phases.length}`;
+    const total = s.total_phases;
+    const legacy = `Phase ${phase ?? '?'} of ${total ?? '?'}`;
+    const roadmapTotal = s.roadmap_total_phases;
+    // Keep the recorded pair when roadmap counts are unavailable, or when the
+    // pair can describe a single milestone without changing its existing text.
+    if (phase === null || total === null || roadmapTotal === null || roadmapTotal <= 0
+        || (total === roadmapTotal && comparePhaseNum(phase, total) <= 0)) {
+        return legacy;
+    }
+    // When the recorded pair cannot safely describe this roadmap, label its
+    // counts separately rather than printing a mixed-scope ratio.
+    const roadmapDone = s.roadmap_completed_phases;
+    return roadmapDone === null
+        ? `Phase ${phase} (${roadmapTotal} roadmap phases)`
+        : `Phase ${phase} (${roadmapDone} of ${roadmapTotal} roadmap phases complete)`;
+}
 function buildSummary(situation, s) {
     switch (situation) {
         case 'no-project':
@@ -462,7 +734,7 @@ function buildSummary(situation, s) {
         case 'needs-first-phase':
             return 'Project initialized — plan your first phase';
         case 'planning':
-            return `Phase ${s.current_phase ?? '?'} of ${s.total_phases ?? '?'} — needs a plan`;
+            return `${phaseSummary(s)} — needs a plan`;
         case 'executing':
             return progressLine('executing', s);
         case 'verify-pending':
@@ -479,7 +751,7 @@ function buildSummary(situation, s) {
 function progressLine(tail, s) {
     const parts = [];
     if (s.current_phase !== null && s.total_phases !== null) {
-        parts.push(`Phase ${s.current_phase} of ${s.total_phases}`);
+        parts.push(phaseSummary(s));
     }
     else if (s.current_phase !== null) {
         parts.push(`Phase ${s.current_phase}`);
@@ -498,7 +770,7 @@ function progressLine(tail, s) {
 function classifyProject(cwd, now = Date.now) {
     const signals = detectSignals(cwd, now);
     const situation = classify(signals);
-    const actions = actionsFor(situation, signals);
+    const actions = actionsFor(situation, signals, (0, runtime_slash_cjs_1.resolveRuntime)(cwd));
     const recommended = actions.find((a) => a.recommended)?.id ?? 'progress';
     const summary = buildSummary(situation, signals);
     return { situation, recommended, summary, signals, actions };
@@ -517,6 +789,6 @@ function runSmartEntry(cwd, args, raw) {
         return;
     }
     // Human mode: a compact one-liner plus the recommended action.
-    const human = `${result.summary}\nRecommended: ${result.recommended} → ${result.actions.find((a) => a.id === result.recommended)?.command ?? '/gsd:progress'}`;
+    const human = `${result.summary}\nRecommended: ${result.recommended} → ${result.actions.find((a) => a.id === result.recommended)?.command ?? (0, runtime_slash_cjs_1.runtimeCommand)(cwd, 'progress')}`;
     output(null, true, human);
 }

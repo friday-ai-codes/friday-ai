@@ -9,6 +9,14 @@
 // In .cts (CommonJS output) files, `require` is available as a global.
 const _require = require;
 const path = _require('node:path');
+const { tryWithinRootLexical } = _require('./security.cjs');
+const { hostBehaviorsFor } = _require('./runtime-name-policy.cjs');
+// #2870: InstallScope is owned by install-scope.cts, not re-declared here.
+// `isGlobalScope` centralizes the `scope === 'global'` boolean projection
+// this module needs at `_computePathPrefix`'s `isGlobal: boolean` boundary
+// (see the module-level doc comment on `isGlobalScope` for why the
+// projection is centralized rather than eliminated).
+const install_scope_cjs_1 = require("./install-scope.cjs");
 /**
  * Asserts that `destSubpath` resolves to a path inside `configDir`.
  *
@@ -27,11 +35,19 @@ function assertDestWithinConfigHome(configDir, destSubpath) {
         throw new Error(`destSubpath "${destSubpath}" contains a NUL byte and is not valid`);
     }
     const root = path.resolve(configDir);
-    const resolved = path.resolve(configDir, destSubpath);
-    if (resolved === root || !resolved.startsWith(root + path.sep)) {
+    // `resolved === root` is a DELIBERATE ADDITIONAL rejection, separate from
+    // the containment decision: `tryWithinRootLexical` treats target === root
+    // as CONTAINED, but a destSubpath of "" (or one that resolves to configDir
+    // itself) must never be accepted here — this is the strict-subpath
+    // requirement Phase B of ADR-1239 imposes on third-party descriptors, and
+    // it prevents a descriptor from writing at configHome itself. Kept as its
+    // own check per ADR-4650 decision 6 (a wrapper may add its own conditions
+    // on top of the canonical predicate, never invert it).
+    const contained = tryWithinRootLexical(destSubpath, configDir);
+    if (contained === null || contained === root) {
         throw new Error(`destSubpath "${destSubpath}" must be a strict subpath of configHome "${configDir}" — not configHome itself or outside it (escapes configHome)`);
     }
-    return resolved;
+    return contained;
 }
 function errorMessage(err) {
     if (err instanceof Error)
@@ -45,7 +61,7 @@ function addCleanupDir(cleanupDirs, stagedDir, rewrittenDir) {
     return sourceDir;
 }
 function createRuntimeArtifactInstallPlan(args) {
-    const { layout, resolvedProfile, homedir, platform, resolveAttribution, deps = {}, } = args;
+    const { layout, resolvedProfile, homedir, platform, resolveAttribution, projectDir, deps = {}, } = args;
     const conversionExports = _require('./runtime-artifact-conversion.cjs');
     const rewriteStagedSkillBodies = deps.rewriteStagedSkillBodies ?? conversionExports.rewriteStagedSkillBodies;
     const rewriteStagedCommandBodies = deps.rewriteStagedCommandBodies ?? conversionExports.rewriteStagedCommandBodies;
@@ -60,35 +76,42 @@ function createRuntimeArtifactInstallPlan(args) {
         platform,
         resolveAttribution,
     };
-    // ADR-1235 §1: build agentCtx once per plan so agents kind entries can apply
-    // the CORRECT pre-converter cross-cutting (path rewrites → attribution → converter
-    // → normalize). This mirrors the exact per-file order in the inline agent loop
-    // in bin/install.js (lines 9330-9415). agentCtx is passed as the second arg
-    // to kind.stage() for agents kind entries with a converter (convertedAgentsKind).
+    // ADR-1235 §1: build the staging context once per plan. Agent kinds apply
+    // the CORRECT pre-converter cross-cutting (path rewrites → attribution →
+    // converter → normalize). This
+    // mirrors the exact per-file order in the former inline agent loop.
     // NO _stampNonClaudeRuntimeDefaults — agents are NOT stamped in the inline loop.
     const os = _require('node:os');
     const { posixNormalize } = _require('./shell-command-projection.cjs');
     const homedirFn = homedir ?? (() => os.homedir());
     const resolvedTarget = posixNormalize(path.resolve(layout.configDir));
     const homeDir = posixNormalize(homedirFn());
-    const isGlobal = scope === 'global';
-    const isOpencode = layout.runtime === 'opencode';
+    // #2870: `scope` above is already the module-owned `InstallScope` value
+    // (`layout.scope ?? 'global'`, defaulted before this point, so it is never
+    // `undefined` here) — `isGlobalScope` projects it to the boolean
+    // `_computePathPrefix`'s existing `isGlobal: boolean` API requires.
+    const isGlobal = (0, install_scope_cjs_1.isGlobalScope)(scope);
+    const isOpencode = hostBehaviorsFor(layout.runtime).opencodePathPrefix === true;
     const isWindowsHost = (platform ?? process.platform) === 'win32';
-    const pathPrefix = conversionExports._computePathPrefix({ isGlobal, isOpencode, isWindowsHost, resolvedTarget, homeDir });
+    // #4377: descriptor-derived local dir name, so an opted-in local install
+    // emits a project-relative prefix instead of this checkout's absolute path.
+    const pathPrefix = conversionExports._computePathPrefix({ isGlobal, isOpencode, isWindowsHost, resolvedTarget, homeDir, localDirName: conversionExports._localIncludeDirName(layout.runtime) });
     const attribution = resolveAttribution ? resolveAttribution(layout.runtime) : undefined;
-    const agentCtx = { runtime: layout.runtime, pathPrefix, attribution };
+    // #2875 Part 2 (row I1): layout.configDir IS the install root the inline
+    // agent loop called `targetDir` — same value, same resolution.
+    const agentCtx = {
+        runtime: layout.runtime,
+        pathPrefix,
+        attribution,
+        targetDir: layout.configDir,
+        projectDir: projectDir ?? layout.configDir,
+    };
     for (const kind of layout.kinds) {
         let stagedDir;
         try {
-            if (kind.kind === 'agents') {
-                // ADR-1235 §1: pass agentCtx so stageAgentsForRuntimeWithConverter applies
-                // the full inline-loop order: pathRewrites → attribution → converter → normalize.
-                // The cross-cutting is now PRE-converter (inside staging), not POST.
-                stagedDir = kind.stage(resolvedProfile, agentCtx);
-            }
-            else {
-                stagedDir = kind.stage(resolvedProfile);
-            }
+            // Agent kinds use the context for their pre-converter cross-cutting
+            // sequence; other kinds ignore it.
+            stagedDir = kind.stage(resolvedProfile, agentCtx);
         }
         catch (err) {
             return { ok: false, kind: 'stage_failed', message: errorMessage(err), cleanupDirs, failedKind: kind.kind };
@@ -103,7 +126,7 @@ function createRuntimeArtifactInstallPlan(args) {
                 const rewrittenDir = rewriteStagedSkillBodies(stagedDir, rewriteOpts);
                 sourceDir = addCleanupDir(cleanupDirs, stagedDir, rewrittenDir);
             }
-            // agents kind: cross-cutting already applied INSIDE kind.stage() via agentCtx.
+            // Agent kinds: cross-cutting already applied INSIDE kind.stage() via agentCtx.
             // No POST-step needed. sourceDir stays as stagedDir.
         }
         catch (err) {
