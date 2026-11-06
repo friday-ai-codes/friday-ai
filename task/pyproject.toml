@@ -9,8 +9,8 @@ dependencies = [
     "pydantic-settings>=2.2.0",
     "gitpython>=3.1.42",
     "structlog>=24.1.0",
-    "claude-agent-sdk==0.1.58",
-    # claude-agent-sdk 0.1.58 只声明 mcp>=0.1.0，但它的 create_sdk_mcp_server 依赖
+    "claude-agent-sdk==0.1.81",
+    # claude-agent-sdk 0.1.81 只声明 mcp>=1.19.0，但它的 create_sdk_mcp_server 依赖
     # mcp 1.x lowlevel Server 的 @server.list_tools() 装饰器——mcp 2.0 已移除该 API。
     # 上界必须显式钉死，否则容器构建会解析到 2.x 并在建 MCP server 时直接 AttributeError。
     "mcp>=1.25.0,<2",
